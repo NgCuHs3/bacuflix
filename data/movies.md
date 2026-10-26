@@ -36,3 +36,8 @@
 - poster: [https://upload.wikimedia.org/wikipedia/vi/4/4c/Deadpool_%26_Wolverine_poster.jpg](https://upload.wikimedia.org/wikipedia/vi/4/4c/Deadpool_%26_Wolverine_poster.jpg)
 - m3u8: https://s6.kkphimplayer6.com/20250820/kdzG9ZaI/index.m3u8
 - source: motchillo.com
+## Movie
+- title: The Fantastic 4: First Steps (2025)
+- poster:[https://upload.wikimedia.org/wikipedia/vi/1/19/The_Fantastic_Four_First_Steps_%E2%80%93_Vietnamese_poster.jpg](https://upload.wikimedia.org/wikipedia/vi/1/19/The_Fantastic_Four_First_Steps_%E2%80%93_Vietnamese_poster.jpg)
+- m3u8: https://s6.kkphimplayer6.com/20250923/3vphPILU/index.m3u8
+- source: motchillo.com
