@@ -482,4 +482,16 @@ assert.ok(homeSource.includes("activateStageB"), "Home screen must support activ
 assert.ok(homeSource.includes("cancelStageB"), "Home screen must support canceling Stage B on Escape");
 assert.ok(homeSource.includes("catalog-play-icon"), "Play button must have clean SVG play icon");
 
+// Home navigation performance optimizations
+assert.ok(homeSource.includes("movie-card--selected"), "Home screen must support movie-card--selected class");
+assert.ok(homeSource.includes("ensureCardVisible"), "Home screen must support ensureCardVisible");
+assert.ok(homeSource.includes("preventScroll: true"), "Programmatic focus must specify preventScroll: true");
+assert.ok(homeSource.includes('image.decoding = "async";'), "Poster images must decode asynchronously");
+assert.ok(homeSource.includes("isProgrammaticFocus"), "Home screen must guard against duplicate focus events");
+
+const homeCss = fs.readFileSync("css/home.css", "utf8");
+assert.ok(homeCss.includes(".movie-card--selected"), "CSS must support .movie-card--selected");
+assert.ok(homeCss.includes("prefers-reduced-motion: reduce"), "CSS must respect prefers-reduced-motion");
+assert.ok(homeCss.includes("transition: transform 150ms"), "CSS must animate only transform with 120-180ms duration");
+
 console.log("All unit, subtitle, player UI, and keyboard navigation tests passed.");

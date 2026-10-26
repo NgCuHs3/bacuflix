@@ -185,6 +185,8 @@ function makeMovieCard(movie, actionsHandler) {
   const image = document.createElement("img");
   image.className = "catalog-poster";
   image.alt = "";
+  image.decoding = "async";
+  image.loading = "lazy";
   let usingFallback = !movie.poster || movie.poster === fallbackPoster;
   image.addEventListener("error", function onPosterError() {
     if (usingFallback) {
@@ -277,26 +279,99 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   let currentResult = null;
   let cards = [];
   let activeCardIndex = 0;
+  let selectedCardEntry = null;
+  let currentActionEntry = null;
+  let isProgrammaticFocus = false;
+  let cachedColumnsCount = 1;
 
-  function clearAllActionStates() {
-    cards.forEach(function (entry) {
-      entry.element.classList.remove("has-action-focus");
-      entry.playButton.tabIndex = -1;
-    });
+  function updateColumnsCount() {
+    if (cards.length < 2) {
+      cachedColumnsCount = 1;
+      return;
+    }
+    const firstTop = cards[0].element.offsetTop;
+    let count = cards.length;
+    for (let i = 1; i < cards.length; i += 1) {
+      if (cards[i].element.offsetTop > firstTop) {
+        count = i;
+        break;
+      }
+    }
+    cachedColumnsCount = count || 1;
+  }
+
+  function ensureCardVisible(cardElement) {
+    if (!cardElement || !screen) {
+      return;
+    }
+    const containerRect = screen.getBoundingClientRect();
+    const cardRect = cardElement.getBoundingClientRect();
+    const bufferTop = 20;
+    const bufferBottom = 24;
+    const bufferLeft = 16;
+    const bufferRight = 16;
+
+    const isAbove = cardRect.top < containerRect.top + bufferTop;
+    const isBelow = cardRect.bottom > containerRect.bottom - bufferBottom;
+    const isLeft = cardRect.left < containerRect.left + bufferLeft;
+    const isRight = cardRect.right > containerRect.right - bufferRight;
+
+    if (!isAbove && !isBelow && !isLeft && !isRight) {
+      return;
+    }
+
+    if (isAbove) {
+      screen.scrollTop += (cardRect.top - containerRect.top - bufferTop);
+    } else if (isBelow) {
+      screen.scrollTop += (cardRect.bottom - containerRect.bottom + bufferBottom);
+    }
+
+    if (isLeft) {
+      screen.scrollLeft += (cardRect.left - containerRect.left - bufferLeft);
+    } else if (isRight) {
+      screen.scrollLeft += (cardRect.right - containerRect.right + bufferRight);
+    }
+  }
+
+  function clearActionFocus() {
+    if (currentActionEntry) {
+      currentActionEntry.element.classList.remove("has-action-focus");
+      currentActionEntry.playButton.tabIndex = -1;
+      currentActionEntry = null;
+    }
   }
 
   function setSelectedCard(targetEntry, focusElement) {
-    clearAllActionStates();
-    cards.forEach(function (entry) {
-      const isTarget = entry === targetEntry;
-      entry.element.classList.toggle("is-selected", isTarget);
-    });
-    const foundIdx = cards.indexOf(targetEntry);
-    if (foundIdx !== -1) {
-      activeCardIndex = foundIdx;
+    if (!targetEntry) {
+      if (selectedCardEntry) {
+        selectedCardEntry.element.classList.remove("is-selected", "movie-card--selected");
+        clearActionFocus();
+        selectedCardEntry = null;
+      }
+      return;
     }
-    if (focusElement && targetEntry) {
-      targetEntry.element.focus();
+
+    clearActionFocus();
+
+    if (selectedCardEntry !== targetEntry) {
+      if (selectedCardEntry) {
+        selectedCardEntry.element.classList.remove("is-selected", "movie-card--selected");
+      }
+      selectedCardEntry = targetEntry;
+      targetEntry.element.classList.add("is-selected", "movie-card--selected");
+      const foundIdx = cards.indexOf(targetEntry);
+      if (foundIdx !== -1) {
+        activeCardIndex = foundIdx;
+      }
+    } else if (!targetEntry.element.classList.contains("is-selected")) {
+      targetEntry.element.classList.add("is-selected", "movie-card--selected");
+    }
+
+    if (focusElement) {
+      isProgrammaticFocus = true;
+      targetEntry.element.focus({ preventScroll: true });
+      isProgrammaticFocus = false;
+      ensureCardVisible(targetEntry.element);
     }
   }
 
@@ -304,30 +379,41 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     if (!cardEntry) {
       return;
     }
-    clearAllActionStates();
-    cards.forEach(function (entry) {
-      entry.element.classList.toggle("is-selected", entry === cardEntry);
-    });
-    activeCardIndex = cards.indexOf(cardEntry);
+    setSelectedCard(cardEntry, false);
     cardEntry.element.classList.add("has-action-focus");
     cardEntry.playButton.tabIndex = 0;
-    cardEntry.playButton.focus();
+    currentActionEntry = cardEntry;
+    isProgrammaticFocus = true;
+    cardEntry.playButton.focus({ preventScroll: true });
+    isProgrammaticFocus = false;
+    ensureCardVisible(cardEntry.element);
   }
 
   function cancelStageB(cardEntry) {
-    if (!cardEntry) {
+    const entry = cardEntry || currentActionEntry || selectedCardEntry;
+    if (!entry) {
       return;
     }
-    cardEntry.element.classList.remove("has-action-focus");
-    cardEntry.playButton.tabIndex = -1;
-    cardEntry.element.classList.add("is-selected");
-    cardEntry.element.focus();
+    clearActionFocus();
+    entry.element.classList.add("is-selected", "movie-card--selected");
+    isProgrammaticFocus = true;
+    entry.element.focus({ preventScroll: true });
+    isProgrammaticFocus = false;
+    ensureCardVisible(entry.element);
   }
 
   function getActiveCardIndex() {
+    if (!cards.length) {
+      return -1;
+    }
     const active = document.activeElement;
+    if (selectedCardEntry && (selectedCardEntry.element === active || selectedCardEntry.playButton === active || selectedCardEntry.element.contains(active))) {
+      return activeCardIndex;
+    }
     for (let i = 0; i < cards.length; i += 1) {
       if (cards[i].element === active || cards[i].playButton === active || cards[i].element.contains(active)) {
+        selectedCardEntry = cards[i];
+        activeCardIndex = i;
         return i;
       }
     }
@@ -424,6 +510,9 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         }
       });
       cardEntry.element.addEventListener("focus", function () {
+        if (isProgrammaticFocus) {
+          return;
+        }
         if (document.activeElement === cardEntry.element) {
           setSelectedCard(cardEntry, false);
         }
@@ -445,9 +534,15 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     }
 
     if (cards.length > 0) {
+      updateColumnsCount();
       setSelectedCard(targetCard || cards[0], false);
     }
   }
+
+  function onWindowResize() {
+    updateColumnsCount();
+  }
+  window.addEventListener("resize", onWindowResize);
 
   function refresh(force) {
     if (refreshing || destroyed) {
@@ -508,6 +603,10 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   return {
     onKeyDown(event, key) {
       if (key.isBack) {
+        if (currentActionEntry || (selectedCardEntry && selectedCardEntry.element.classList.contains("has-action-focus"))) {
+          cancelStageB(currentActionEntry || selectedCardEntry);
+          return true;
+        }
         const activeIdx = getActiveCardIndex();
         if (activeIdx !== -1) {
           const cardEntry = cards[activeIdx];
@@ -531,7 +630,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         const activeIdx = getActiveCardIndex();
         if (activeIdx !== -1) {
           const cardEntry = cards[activeIdx];
-          if (active === cardEntry.playButton) {
+          if (active === cardEntry.playButton || currentActionEntry === cardEntry) {
             if (cardEntry.movie.playbackEnabled) {
               actionsHandler.onSelect(cardEntry.movie);
             } else {
@@ -549,10 +648,14 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       if (key.direction === "left" || key.direction === "right") {
         const activeIdx = getActiveCardIndex();
         if (activeIdx !== -1) {
-          clearAllActionStates();
+          clearActionFocus();
           const delta = key.direction === "left" ? -1 : 1;
           const nextIdx = Math.max(0, Math.min(cards.length - 1, activeIdx + delta));
-          setSelectedCard(cards[nextIdx], true);
+          if (nextIdx !== activeIdx) {
+            setSelectedCard(cards[nextIdx], true);
+          } else {
+            setSelectedCard(cards[activeIdx], true);
+          }
           return true;
         } else if (document.activeElement === refreshButton && key.direction === "right" && cards.length > 0) {
           setSelectedCard(cards[0], true);
@@ -564,15 +667,31 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       if (key.direction === "up" || key.direction === "down") {
         const active = document.activeElement;
         const activeIdx = getActiveCardIndex();
+        const cols = cachedColumnsCount || 1;
+
         if (key.direction === "up") {
           if (activeIdx !== -1) {
-            clearAllActionStates();
-            refreshButton.focus();
-            return true;
+            clearActionFocus();
+            const targetIdx = activeIdx - cols;
+            if (targetIdx >= 0) {
+              setSelectedCard(cards[targetIdx], true);
+              return true;
+            } else {
+              refreshButton.focus();
+              return true;
+            }
           }
         } else if (key.direction === "down") {
           if (active === refreshButton && cards.length > 0) {
             setSelectedCard(cards[activeCardIndex] || cards[0], true);
+            return true;
+          } else if (activeIdx !== -1) {
+            clearActionFocus();
+            const targetIdx = activeIdx + cols;
+            if (targetIdx < cards.length) {
+              setSelectedCard(cards[targetIdx], true);
+              return true;
+            }
             return true;
           }
         }
@@ -597,7 +716,11 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     },
     destroy() {
       destroyed = true;
+      window.removeEventListener("resize", onWindowResize);
       window.clearTimeout(toastTimer);
+      cards = [];
+      selectedCardEntry = null;
+      currentActionEntry = null;
       while (root.firstChild) {
         root.removeChild(root.firstChild);
       }
