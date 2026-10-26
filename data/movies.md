@@ -30,3 +30,9 @@
 - poster: [https://upload.wikimedia.org/wikipedia/vi/9/94/Ti%E1%BB%83u_y%C3%AAu_qu%C3%A1i_n%C3%BAi_L%C3%A3ng_L%C3%A3ng.jpg](https://upload.wikimedia.org/wikipedia/vi/9/94/Ti%E1%BB%83u_y%C3%AAu_qu%C3%A1i_n%C3%BAi_L%C3%A3ng_L%C3%A3ng.jpg)
 - m3u8: https://s6.kkphimplayer6.com/20251204/V9oiAJ3d/index.m3u8
 - source: motchillo.com
+
+## Movie
+- title: Deadpool Và Wolverine
+- poster: [https://upload.wikimedia.org/wikipedia/vi/4/4c/Deadpool_%26_Wolverine_poster.jpg](https://upload.wikimedia.org/wikipedia/vi/4/4c/Deadpool_%26_Wolverine_poster.jpg)
+- m3u8: https://s6.kkphimplayer6.com/20250820/kdzG9ZaI/index.m3u8
+- source: motchillo.com
