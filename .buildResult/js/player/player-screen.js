@@ -1,5 +1,7 @@
 import { createPlaybackService } from "./playback-service.js";
 import { createSeekController } from "./seek-controller.js";
+import { createSubtitleService } from "./subtitle-service.js";
+import { getActiveSubtitleText } from "./subtitle-parser.js";
 import { activateFocusedElement, focusNext } from "../navigation/remote-navigation.js";
 import { formatTime } from "../utils/format-time.js";
 
@@ -7,6 +9,7 @@ function playerMarkup(movie) {
   return '<section id="video-stage" class="video-stage controls-visible" aria-label="Video player">' +
     '<div class="cinema-shade" aria-hidden="true"></div>' +
     '<video id="video" autoplay playsinline preload="auto" aria-label="BACUFlix video playback"></video>' +
+    '<div id="subtitles" class="subtitle-overlay" aria-live="polite" aria-atomic="true"></div>' +
     '<header class="topbar ui-overlay">' +
     '<button class="brand home-return-button" type="button" aria-label="Return to movie catalog"><img src="icon.png" alt="">' +
     '<span>BACU<span class="brand-accent">Flix</span></span></button>' +
@@ -40,6 +43,8 @@ function playerMarkup(movie) {
     '<span id="sound-symbol" class="control-symbol" aria-hidden="true">♪</span><span id="sound-label" class="control-caption">Mute</span></button>' +
     '<button id="volume-up-button" class="control-button compact-control" type="button" aria-label="Volume up">' +
     '<span class="control-symbol volume-symbol" aria-hidden="true">+</span><span class="control-caption">Vol +</span></button>' +
+    '<button id="subtitle-button" class="control-button compact-control" type="button" aria-pressed="true" aria-label="Toggle subtitles">' +
+    '<span id="subtitle-symbol" class="control-symbol subtitle-symbol" aria-hidden="true">CC</span><span id="subtitle-label" class="control-caption">Subs</span></button>' +
     '<button id="fullscreen-button" class="control-button compact-control" type="button" aria-label="Toggle fullscreen">' +
     '<span class="control-symbol fullscreen-symbol" aria-hidden="true">□</span><span class="control-caption">Full screen</span></button>' +
     '</div><p class="remote-hint">← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Back to return to library</p>' +
@@ -67,7 +72,15 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   const volumeHudLevel = root.querySelector("#volume-hud-level");
   const volumeHudPercent = root.querySelector("#volume-hud-percent");
   const nowPlayingTitle = root.querySelector(".now-playing-title");
+  const subtitleButton = root.querySelector("#subtitle-button");
+  const subtitleLabel = root.querySelector("#subtitle-label");
+  const subtitleSymbol = root.querySelector("#subtitle-symbol");
+  const subtitlesContainer = root.querySelector("#subtitles");
+  const subtitleService = createSubtitleService();
   const cleanups = [];
+  let subtitleCues = [];
+  let subtitlesEnabled = true;
+  let displayedSubtitleText = "";
   let statusTimer = 0;
   let controlsTimer = 0;
   let volumeHudTimer = 0;
@@ -126,6 +139,102 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       volumeHud.classList.remove("is-visible");
       volumeHud.setAttribute("aria-hidden", "true");
     }, 2200);
+  }
+
+  function renderSubtitles(text) {
+    if (displayedSubtitleText === text) {
+      return;
+    }
+    displayedSubtitleText = text;
+    if (!text) {
+      subtitlesContainer.innerHTML = "";
+      subtitlesContainer.classList.remove("has-cues");
+      return;
+    }
+    subtitlesContainer.classList.add("has-cues");
+    subtitlesContainer.innerHTML = "";
+    const box = document.createElement("div");
+    box.className = "subtitle-box";
+    const lines = text.split("\n");
+    lines.forEach(function (line, index) {
+      if (index > 0) {
+        box.appendChild(document.createElement("br"));
+      }
+      const lineSpan = document.createElement("span");
+      lineSpan.className = "subtitle-line";
+      lineSpan.textContent = line;
+      box.appendChild(lineSpan);
+    });
+    subtitlesContainer.appendChild(box);
+  }
+
+  function updateSubtitleDisplay(time) {
+    if (!subtitlesEnabled || !subtitleCues || subtitleCues.length === 0) {
+      renderSubtitles("");
+      return;
+    }
+    const currentTime = typeof time === "number" ? time : playback.getCurrentTime();
+    const activeText = getActiveSubtitleText(subtitleCues, currentTime);
+    renderSubtitles(activeText);
+  }
+
+  function initSubtitles() {
+    if (!movie || !movie.subtitle) {
+      subtitleButton.disabled = true;
+      subtitleButton.classList.add("is-unavailable");
+      subtitleButton.setAttribute("aria-label", "Subtitles unavailable");
+      subtitleButton.setAttribute("aria-pressed", "false");
+      subtitleLabel.textContent = "No subs";
+      return;
+    }
+
+    subtitleButton.disabled = false;
+    subtitleButton.classList.add("is-loading");
+    subtitleButton.setAttribute("aria-label", "Loading subtitles");
+    subtitleLabel.textContent = "Loading...";
+
+    subtitleService.loadSubtitle(movie.subtitle).then(function (result) {
+      if (disposed) {
+        return;
+      }
+      subtitleButton.classList.remove("is-loading");
+      if (result.aborted) {
+        return;
+      }
+      if (result.error || !result.cues || result.cues.length === 0) {
+        subtitleCues = [];
+        subtitlesEnabled = false;
+        subtitleButton.disabled = true;
+        subtitleButton.classList.add("is-unavailable");
+        subtitleButton.setAttribute("aria-label", "Subtitles unavailable");
+        subtitleButton.setAttribute("aria-pressed", "false");
+        subtitleLabel.textContent = "No subs";
+        if (result.error && result.error !== "No subtitle URL provided.") {
+          showStatus("Subtitles could not be loaded: " + result.error);
+        }
+        return;
+      }
+
+      subtitleCues = result.cues;
+      subtitlesEnabled = true;
+      subtitleButton.disabled = false;
+      subtitleButton.classList.add("is-active");
+      subtitleButton.setAttribute("aria-label", "Turn subtitles off");
+      subtitleButton.setAttribute("aria-pressed", "true");
+      subtitleLabel.textContent = "Subs ON";
+      updateSubtitleDisplay();
+    }).catch(function () {
+      if (disposed) {
+        return;
+      }
+      subtitleButton.classList.remove("is-loading");
+      subtitleButton.disabled = true;
+      subtitleButton.classList.add("is-unavailable");
+      subtitleButton.setAttribute("aria-label", "Subtitles unavailable");
+      subtitleButton.setAttribute("aria-pressed", "false");
+      subtitleLabel.textContent = "No subs";
+      showStatus("Subtitles could not be loaded.");
+    });
   }
 
   function updatePlaybackControl(state) {
@@ -336,6 +445,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       if (!seeking) {
         updateTimeline();
       }
+      updateSubtitleDisplay();
     },
     onAutoplayBlocked() {
       autoplayBlocked = true;
@@ -356,6 +466,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       stage.classList.remove("playback-error");
       status.dataset.visible = "false";
       scheduleHide(3000);
+      updateSubtitleDisplay();
     },
     onWaiting() {
       showControls(false);
@@ -371,10 +482,16 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     getCurrentTime: playback.getCurrentTime,
     onPreview(progress) {
       updateTimeline(progress);
+      const range = playback.getRange();
+      if (range && Number.isFinite(progress)) {
+        const previewTime = range.start + Math.max(0, Math.min(1, progress)) * (range.end - range.start);
+        updateSubtitleDisplay(previewTime);
+      }
     },
     onCommit(time) {
       playback.seek(time);
       updateTimeline();
+      updateSubtitleDisplay(time);
     }
   });
 
@@ -499,6 +616,35 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     autoplayBlocked = false;
     playback.play();
   });
+  listen(video, "timeupdate", function () {
+    updateSubtitleDisplay();
+  });
+  listen(video, "seeking", function () {
+    updateSubtitleDisplay();
+  });
+  listen(video, "seeked", function () {
+    updateSubtitleDisplay();
+  });
+  listen(subtitleButton, "click", function () {
+    if (!subtitleCues || subtitleCues.length === 0) {
+      return;
+    }
+    subtitlesEnabled = !subtitlesEnabled;
+    subtitleButton.setAttribute("aria-pressed", String(subtitlesEnabled));
+    if (subtitlesEnabled) {
+      subtitleButton.classList.add("is-active");
+      subtitleButton.setAttribute("aria-label", "Turn subtitles off");
+      subtitleLabel.textContent = "Subs ON";
+      updateSubtitleDisplay();
+      showStatus("Subtitles turned on");
+    } else {
+      subtitleButton.classList.remove("is-active");
+      subtitleButton.setAttribute("aria-label", "Turn subtitles on");
+      subtitleLabel.textContent = "Subs OFF";
+      renderSubtitles("");
+      showStatus("Subtitles turned off");
+    }
+  });
   listen(window, "blur", function () {
     seekController.commitPreview();
   });
@@ -511,6 +657,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   updateSoundControl(video.muted, video.volume);
   updatePlaybackControl({ paused: video.paused });
   updateTimeline();
+  initSubtitles();
   playback.start(movie.m3u8);
   scheduleHide(3000);
 
@@ -526,6 +673,9 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       window.clearTimeout(controlsTimer);
       window.clearTimeout(volumeHudTimer);
       window.clearTimeout(suppressClickTimer);
+      subtitleService.cancel();
+      subtitleCues = [];
+      renderSubtitles("");
       seekController.destroy();
       cleanups.forEach(function (cleanup) {
         cleanup();

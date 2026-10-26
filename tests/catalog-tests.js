@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { parseMovieMarkdown } from "../js/data/movie-markdown-parser.js";
 import { createCatalogService } from "../js/services/catalog-service.js";
 import { inspectSegment } from "../js/player/segment-inspector.js";
 import { createSegmentLoader } from "../js/player/segment-loader.js";
 import { catalogSources } from "../js/config/catalog-sources.js";
+import { parseSrt, srtToWebVtt, findActiveCues, getActiveSubtitleText, stripSubtitleHtml } from "../js/player/subtitle-parser.js";
+import { createSubtitleService } from "../js/player/subtitle-service.js";
 
 const fallbackPoster = "icon.png";
 const firstStream = "https://video.example.test/one/master.m3u8?token=abc";
@@ -268,4 +271,180 @@ assert.equal(parsedVariants.movies[0].poster, ironManPoster);
 assert.equal(parsedVariants.movies[1].poster, ironManPoster);
 assert.equal(parsedVariants.movies[2].poster, ironManPoster);
 
-console.log("Catalog parser and service tests passed.");
+// Subtitle Markdown parsing tests
+const subtitleUrl = "https://subtitle.123embed.net/subtitles/mv/184.vietnam.srt";
+const parsedSubtitleEntries = parseMovieMarkdown([
+  "## Movie",
+  "- title: Movie With Plain Subtitle",
+  "- poster: " + ironManPoster,
+  "- m3u8: https://video.example.test/stream1.m3u8",
+  "- subtitle: " + subtitleUrl,
+  "",
+  "## Movie",
+  "- title: Movie With Markdown Link Subtitle",
+  "- poster: " + ironManPoster,
+  "- m3u8: https://video.example.test/stream2.m3u8",
+  "- subtitle: [Tiếng Việt](" + subtitleUrl + ")",
+  "",
+  "## Movie",
+  "- title: Movie With Bracketed Subtitle",
+  "- poster: " + ironManPoster,
+  "- m3u8: https://video.example.test/stream3.m3u8",
+  "- subtitle: [" + subtitleUrl + "](" + subtitleUrl + ")",
+  "",
+  "## Movie",
+  "- title: Movie Without Subtitle",
+  "- poster: " + ironManPoster,
+  "- m3u8: https://video.example.test/stream4.m3u8",
+  "",
+  "## Movie",
+  "- title: Movie With Invalid Subtitle",
+  "- poster: " + ironManPoster,
+  "- m3u8: https://video.example.test/stream5.m3u8",
+  "- subtitle: javascript:alert('xss')"
+].join("\n"), { fallbackPoster: fallbackPoster });
+
+assert.equal(parsedSubtitleEntries.movies.length, 5);
+assert.equal(parsedSubtitleEntries.movies[0].subtitle, subtitleUrl);
+assert.equal(parsedSubtitleEntries.movies[1].subtitle, subtitleUrl);
+assert.equal(parsedSubtitleEntries.movies[2].subtitle, subtitleUrl);
+assert.equal(parsedSubtitleEntries.movies[3].subtitle, null);
+assert.equal(parsedSubtitleEntries.movies[4].subtitle, null);
+assert.equal(parsedSubtitleEntries.diagnostics.length, 1);
+assert.match(parsedSubtitleEntries.diagnostics[0].message, /subtitle URL is invalid/i);
+
+// Verify live data/movies.md Iron Man 1 subtitle
+const localMoviesMd = fs.readFileSync("data/movies.md", "utf8");
+const parsedLocalMovies = parseMovieMarkdown(localMoviesMd, { fallbackPoster: fallbackPoster });
+const ironManEntry = parsedLocalMovies.movies.find((m) => m.title.includes("IRON MAN"));
+assert.ok(ironManEntry, "Iron Man entry exists in data/movies.md");
+assert.equal(ironManEntry.subtitle, subtitleUrl);
+
+// Subtitle SRT parsing tests
+const srtSample = [
+  "\uFEFF1",
+  "00:00:01,000 --> 00:00:03,500",
+  "<i>Tôi là</i> <b>Người Sắt</b>.{\\an8}",
+  "",
+  "2",
+  "00:00:04,200 --> 00:00:06,800",
+  "&quot;Xin chào&quot; &amp; &lt;Việt Nam&gt;!",
+  "Dòng thứ hai.",
+  "",
+  "3",
+  "00:00:07,000 --> 00:00:09,000",
+  "Cuộc phiêu lưu tiếp tục."
+].join("\r\n");
+
+const parsedCues = parseSrt(srtSample);
+assert.equal(parsedCues.length, 3);
+assert.equal(parsedCues[0].start, 1.0);
+assert.equal(parsedCues[0].end, 3.5);
+assert.equal(parsedCues[0].text, "Tôi là Người Sắt.");
+assert.equal(parsedCues[1].start, 4.2);
+assert.equal(parsedCues[1].end, 6.8);
+assert.equal(parsedCues[1].text, '"Xin chào" & <Việt Nam>!\nDòng thứ hai.');
+
+// HTML/ASS sanitization tests
+assert.equal(stripSubtitleHtml("<i>Hello</i> &amp; <b>World</b>{\\an8}"), "Hello & World");
+assert.equal(stripSubtitleHtml("&quot;Test&quot; &lt;Tag&gt; &#39;Single&#39; &nbsp;"), '"Test" <Tag> \'Single\'');
+assert.equal(stripSubtitleHtml("<script>alert(1)</script>Safe"), "Safe");
+
+// Active cues & timeline synchronization tests
+assert.deepEqual(findActiveCues(parsedCues, 0.5), []);
+assert.equal(findActiveCues(parsedCues, 1.0).length, 1);
+assert.equal(findActiveCues(parsedCues, 2.0).length, 1);
+assert.equal(findActiveCues(parsedCues, 3.5).length, 1);
+assert.deepEqual(findActiveCues(parsedCues, 3.8), []);
+assert.equal(findActiveCues(parsedCues, 4.2).length, 1);
+assert.equal(findActiveCues(parsedCues, 5.0).length, 1);
+assert.equal(findActiveCues(parsedCues, 6.8).length, 1);
+assert.deepEqual(findActiveCues(parsedCues, 6.9), []);
+assert.equal(findActiveCues(parsedCues, 8.0).length, 1);
+assert.deepEqual(findActiveCues(parsedCues, 15.0), []);
+
+assert.equal(getActiveSubtitleText(parsedCues, 2.0), "Tôi là Người Sắt.");
+assert.equal(getActiveSubtitleText(parsedCues, 5.0), '"Xin chào" & <Việt Nam>!\nDòng thứ hai.');
+assert.equal(getActiveSubtitleText(parsedCues, 3.8), "");
+
+// WebVTT conversion tests
+const vtt = srtToWebVtt(srtSample);
+assert.ok(vtt.startsWith("WEBVTT\n"));
+assert.ok(vtt.includes("00:00:01.000 --> 00:00:03.500"));
+assert.ok(vtt.includes("Tôi là Người Sắt."));
+
+// Subtitle Service caching and fetching tests
+const originalFetch = globalThis.fetch;
+let subtitleFetchCalls = 0;
+globalThis.fetch = async function (url) {
+  subtitleFetchCalls += 1;
+  return {
+    ok: true,
+    status: 200,
+    text: async () => srtSample,
+    arrayBuffer: async () => Buffer.from(srtSample, "utf8")
+  };
+};
+
+const subtitleService = createSubtitleService();
+const subResult1 = await subtitleService.loadSubtitle(subtitleUrl);
+assert.equal(subResult1.cues.length, 3);
+assert.equal(subResult1.error, null);
+assert.equal(subtitleFetchCalls, 1);
+
+// Second call must be served from cache without extra fetch
+const subResult2 = await subtitleService.loadSubtitle(subtitleUrl);
+assert.equal(subResult2.cues.length, 3);
+assert.equal(subtitleFetchCalls, 1, "Cached subtitle should not invoke fetch again");
+
+// Empty or invalid URL test
+const emptySubResult = await subtitleService.loadSubtitle("");
+assert.equal(emptySubResult.cues.length, 0);
+assert.equal(emptySubResult.error, "No subtitle URL provided.");
+
+// HTTP failure handling test
+globalThis.fetch = async function () {
+  return { ok: false, status: 404, statusText: "Not Found" };
+};
+const errorSubResult = await subtitleService.loadSubtitle("https://example.test/missing.srt");
+assert.equal(errorSubResult.cues.length, 0);
+assert.match(errorSubResult.error, /HTTP 404/);
+
+// UTF-8 BOM buffer decoding test
+globalThis.fetch = async function () {
+  const bomBytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(srtSample, "utf8")]);
+  return {
+    ok: true,
+    status: 200,
+    arrayBuffer: async () => bomBytes
+  };
+};
+const bomSubResult = await subtitleService.loadSubtitle("https://example.test/bom.srt");
+assert.equal(bomSubResult.cues.length, 3);
+assert.equal(bomSubResult.cues[0].text, "Tôi là Người Sắt.");
+
+// AbortController / cancel test
+let abortedSignal = false;
+globalThis.fetch = async function (url, opts) {
+  return new Promise((_, reject) => {
+    if (opts && opts.signal) {
+      if (opts.signal.aborted) {
+        abortedSignal = true;
+        reject(Object.assign(new Error("Request aborted"), { name: "AbortError" }));
+        return;
+      }
+      opts.signal.addEventListener("abort", () => {
+        abortedSignal = true;
+        reject(Object.assign(new Error("Request aborted"), { name: "AbortError" }));
+      });
+    }
+  });
+};
+const pendingPromise = subtitleService.loadSubtitle("https://example.test/in-flight.srt");
+subtitleService.cancel();
+const abortedResult = await pendingPromise;
+assert.ok(abortedResult.aborted || abortedSignal, "Request must be aborted on cancel");
+
+globalThis.fetch = originalFetch;
+
+console.log("Catalog parser, subtitle parser, and service tests passed.");

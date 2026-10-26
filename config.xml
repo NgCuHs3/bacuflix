@@ -12,6 +12,7 @@
   <access origin="https://raw.githubusercontent.com" subdomains="true"/>
   <access origin="https://tikpho.apiaz.xyz" subdomains="true"/>
   <access origin="https://p16-oec-sg.ibyteimg.com" subdomains="true"/>
+  <access origin="https://subtitle.123embed.net" subdomains="true"/>
   <tizen:privilege name="http://tizen.org/privilege/application.launch"/>
   <tizen:privilege name="http://tizen.org/privilege/internet"/>
   <content src="index.html"/>

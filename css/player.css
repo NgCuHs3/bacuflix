@@ -738,3 +738,126 @@ video {
     font-size: 18px;
   }
 }
+
+/* Subtitle Overlay & Closed Captions */
+.subtitle-overlay {
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  bottom: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  pointer-events: none;
+  z-index: 1;
+  transition: bottom 220ms ease;
+}
+
+.video-stage.controls-visible .subtitle-overlay {
+  bottom: 195px;
+}
+
+.subtitle-box {
+  display: inline-block;
+  max-width: 86%;
+  margin: 0 auto;
+  padding: 6px 18px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.8);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.65);
+  text-align: center;
+  pointer-events: none;
+}
+
+.subtitle-line {
+  display: inline-block;
+  color: #fff;
+  font-family: inherit;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-shadow:
+    0 1px 3px #000,
+    0 2px 6px rgba(0, 0, 0, 0.95),
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.subtitle-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  line-height: 1;
+  padding: 2px 5px;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+  margin-bottom: 2px;
+}
+
+.control-button#subtitle-button.is-active {
+  border-color: rgba(229, 9, 36, 0.7);
+  background: rgba(229, 9, 36, 0.16);
+}
+
+.control-button#subtitle-button.is-active .control-caption {
+  color: var(--flix-red);
+  font-weight: 700;
+}
+
+.control-button#subtitle-button.is-loading .control-caption {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.control-button#subtitle-button:disabled,
+.control-button#subtitle-button.is-unavailable {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+@media (min-width: 1400px) {
+  .subtitle-line {
+    font-size: 2vw;
+  }
+}
+
+@media (max-width: 900px) {
+  .subtitle-line {
+    font-size: 20px;
+  }
+
+  .video-stage.controls-visible .subtitle-overlay {
+    bottom: 170px;
+  }
+}
+
+@media (max-width: 600px) {
+  .subtitle-line {
+    font-size: 16px;
+  }
+
+  .subtitle-box {
+    padding: 4px 10px;
+  }
+
+  .video-stage.controls-visible .subtitle-overlay {
+    bottom: 150px;
+  }
+}
+
+@media (max-width: 400px) {
+  .subtitle-line {
+    font-size: 13px;
+  }
+
+  .video-stage.controls-visible .subtitle-overlay {
+    bottom: 135px;
+  }
+}

@@ -626,12 +626,18 @@ function createDoubleBack(timeout, onReset) {
 return {createDoubleBack: createDoubleBack};
 });
 registerModule("js/player/player-screen.js", function (requireModule) {
-var createPlaybackService = requireModule("js/player/playback-service.js")["createPlaybackService"];var createSeekController = requireModule("js/player/seek-controller.js")["createSeekController"];var activateFocusedElement = requireModule("js/navigation/remote-navigation.js")["activateFocusedElement"];
-var focusNext = requireModule("js/navigation/remote-navigation.js")["focusNext"];var formatTime = requireModule("js/utils/format-time.js")["formatTime"];
+var createPlaybackService = requireModule("js/player/playback-service.js")["createPlaybackService"];
+var createSeekController = requireModule("js/player/seek-controller.js")["createSeekController"];
+var createSubtitleService = requireModule("js/player/subtitle-service.js")["createSubtitleService"];
+var getActiveSubtitleText = requireModule("js/player/subtitle-parser.js")["getActiveSubtitleText"];
+var activateFocusedElement = requireModule("js/navigation/remote-navigation.js")["activateFocusedElement"];
+var focusNext = requireModule("js/navigation/remote-navigation.js")["focusNext"];
+var formatTime = requireModule("js/utils/format-time.js")["formatTime"];
 function playerMarkup(movie) {
   return '<section id="video-stage" class="video-stage controls-visible" aria-label="Video player">' +
     '<div class="cinema-shade" aria-hidden="true"></div>' +
     '<video id="video" autoplay playsinline preload="auto" aria-label="BACUFlix video playback"></video>' +
+    '<div id="subtitles" class="subtitle-overlay" aria-live="polite" aria-atomic="true"></div>' +
     '<header class="topbar ui-overlay">' +
     '<button class="brand home-return-button" type="button" aria-label="Return to movie catalog"><img src="icon.png" alt="">' +
     '<span>BACU<span class="brand-accent">Flix</span></span></button>' +
@@ -665,6 +671,8 @@ function playerMarkup(movie) {
     '<span id="sound-symbol" class="control-symbol" aria-hidden="true">♪</span><span id="sound-label" class="control-caption">Mute</span></button>' +
     '<button id="volume-up-button" class="control-button compact-control" type="button" aria-label="Volume up">' +
     '<span class="control-symbol volume-symbol" aria-hidden="true">+</span><span class="control-caption">Vol +</span></button>' +
+    '<button id="subtitle-button" class="control-button compact-control" type="button" aria-pressed="true" aria-label="Toggle subtitles">' +
+    '<span id="subtitle-symbol" class="control-symbol subtitle-symbol" aria-hidden="true">CC</span><span id="subtitle-label" class="control-caption">Subs</span></button>' +
     '<button id="fullscreen-button" class="control-button compact-control" type="button" aria-label="Toggle fullscreen">' +
     '<span class="control-symbol fullscreen-symbol" aria-hidden="true">□</span><span class="control-caption">Full screen</span></button>' +
     '</div><p class="remote-hint">← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Back to return to library</p>' +
@@ -692,7 +700,15 @@ function createPlayerScreen(root, movie, onBackRequest) {
   const volumeHudLevel = root.querySelector("#volume-hud-level");
   const volumeHudPercent = root.querySelector("#volume-hud-percent");
   const nowPlayingTitle = root.querySelector(".now-playing-title");
+  const subtitleButton = root.querySelector("#subtitle-button");
+  const subtitleLabel = root.querySelector("#subtitle-label");
+  const subtitleSymbol = root.querySelector("#subtitle-symbol");
+  const subtitlesContainer = root.querySelector("#subtitles");
+  const subtitleService = createSubtitleService();
   const cleanups = [];
+  let subtitleCues = [];
+  let subtitlesEnabled = true;
+  let displayedSubtitleText = "";
   let statusTimer = 0;
   let controlsTimer = 0;
   let volumeHudTimer = 0;
@@ -751,6 +767,102 @@ function createPlayerScreen(root, movie, onBackRequest) {
       volumeHud.classList.remove("is-visible");
       volumeHud.setAttribute("aria-hidden", "true");
     }, 2200);
+  }
+
+  function renderSubtitles(text) {
+    if (displayedSubtitleText === text) {
+      return;
+    }
+    displayedSubtitleText = text;
+    if (!text) {
+      subtitlesContainer.innerHTML = "";
+      subtitlesContainer.classList.remove("has-cues");
+      return;
+    }
+    subtitlesContainer.classList.add("has-cues");
+    subtitlesContainer.innerHTML = "";
+    const box = document.createElement("div");
+    box.className = "subtitle-box";
+    const lines = text.split("\n");
+    lines.forEach(function (line, index) {
+      if (index > 0) {
+        box.appendChild(document.createElement("br"));
+      }
+      const lineSpan = document.createElement("span");
+      lineSpan.className = "subtitle-line";
+      lineSpan.textContent = line;
+      box.appendChild(lineSpan);
+    });
+    subtitlesContainer.appendChild(box);
+  }
+
+  function updateSubtitleDisplay(time) {
+    if (!subtitlesEnabled || !subtitleCues || subtitleCues.length === 0) {
+      renderSubtitles("");
+      return;
+    }
+    const currentTime = typeof time === "number" ? time : playback.getCurrentTime();
+    const activeText = getActiveSubtitleText(subtitleCues, currentTime);
+    renderSubtitles(activeText);
+  }
+
+  function initSubtitles() {
+    if (!movie || !movie.subtitle) {
+      subtitleButton.disabled = true;
+      subtitleButton.classList.add("is-unavailable");
+      subtitleButton.setAttribute("aria-label", "Subtitles unavailable");
+      subtitleButton.setAttribute("aria-pressed", "false");
+      subtitleLabel.textContent = "No subs";
+      return;
+    }
+
+    subtitleButton.disabled = false;
+    subtitleButton.classList.add("is-loading");
+    subtitleButton.setAttribute("aria-label", "Loading subtitles");
+    subtitleLabel.textContent = "Loading...";
+
+    subtitleService.loadSubtitle(movie.subtitle).then(function (result) {
+      if (disposed) {
+        return;
+      }
+      subtitleButton.classList.remove("is-loading");
+      if (result.aborted) {
+        return;
+      }
+      if (result.error || !result.cues || result.cues.length === 0) {
+        subtitleCues = [];
+        subtitlesEnabled = false;
+        subtitleButton.disabled = true;
+        subtitleButton.classList.add("is-unavailable");
+        subtitleButton.setAttribute("aria-label", "Subtitles unavailable");
+        subtitleButton.setAttribute("aria-pressed", "false");
+        subtitleLabel.textContent = "No subs";
+        if (result.error && result.error !== "No subtitle URL provided.") {
+          showStatus("Subtitles could not be loaded: " + result.error);
+        }
+        return;
+      }
+
+      subtitleCues = result.cues;
+      subtitlesEnabled = true;
+      subtitleButton.disabled = false;
+      subtitleButton.classList.add("is-active");
+      subtitleButton.setAttribute("aria-label", "Turn subtitles off");
+      subtitleButton.setAttribute("aria-pressed", "true");
+      subtitleLabel.textContent = "Subs ON";
+      updateSubtitleDisplay();
+    }).catch(function () {
+      if (disposed) {
+        return;
+      }
+      subtitleButton.classList.remove("is-loading");
+      subtitleButton.disabled = true;
+      subtitleButton.classList.add("is-unavailable");
+      subtitleButton.setAttribute("aria-label", "Subtitles unavailable");
+      subtitleButton.setAttribute("aria-pressed", "false");
+      subtitleLabel.textContent = "No subs";
+      showStatus("Subtitles could not be loaded.");
+    });
   }
 
   function updatePlaybackControl(state) {
@@ -961,6 +1073,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
       if (!seeking) {
         updateTimeline();
       }
+      updateSubtitleDisplay();
     },
     onAutoplayBlocked() {
       autoplayBlocked = true;
@@ -981,6 +1094,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
       stage.classList.remove("playback-error");
       status.dataset.visible = "false";
       scheduleHide(3000);
+      updateSubtitleDisplay();
     },
     onWaiting() {
       showControls(false);
@@ -996,10 +1110,16 @@ function createPlayerScreen(root, movie, onBackRequest) {
     getCurrentTime: playback.getCurrentTime,
     onPreview(progress) {
       updateTimeline(progress);
+      const range = playback.getRange();
+      if (range && Number.isFinite(progress)) {
+        const previewTime = range.start + Math.max(0, Math.min(1, progress)) * (range.end - range.start);
+        updateSubtitleDisplay(previewTime);
+      }
     },
     onCommit(time) {
       playback.seek(time);
       updateTimeline();
+      updateSubtitleDisplay(time);
     }
   });
 
@@ -1124,6 +1244,35 @@ function createPlayerScreen(root, movie, onBackRequest) {
     autoplayBlocked = false;
     playback.play();
   });
+  listen(video, "timeupdate", function () {
+    updateSubtitleDisplay();
+  });
+  listen(video, "seeking", function () {
+    updateSubtitleDisplay();
+  });
+  listen(video, "seeked", function () {
+    updateSubtitleDisplay();
+  });
+  listen(subtitleButton, "click", function () {
+    if (!subtitleCues || subtitleCues.length === 0) {
+      return;
+    }
+    subtitlesEnabled = !subtitlesEnabled;
+    subtitleButton.setAttribute("aria-pressed", String(subtitlesEnabled));
+    if (subtitlesEnabled) {
+      subtitleButton.classList.add("is-active");
+      subtitleButton.setAttribute("aria-label", "Turn subtitles off");
+      subtitleLabel.textContent = "Subs ON";
+      updateSubtitleDisplay();
+      showStatus("Subtitles turned on");
+    } else {
+      subtitleButton.classList.remove("is-active");
+      subtitleButton.setAttribute("aria-label", "Turn subtitles on");
+      subtitleLabel.textContent = "Subs OFF";
+      renderSubtitles("");
+      showStatus("Subtitles turned off");
+    }
+  });
   listen(window, "blur", function () {
     seekController.commitPreview();
   });
@@ -1136,6 +1285,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
   updateSoundControl(video.muted, video.volume);
   updatePlaybackControl({ paused: video.paused });
   updateTimeline();
+  initSubtitles();
   playback.start(movie.m3u8);
   scheduleHide(3000);
 
@@ -1151,6 +1301,9 @@ function createPlayerScreen(root, movie, onBackRequest) {
       window.clearTimeout(controlsTimer);
       window.clearTimeout(volumeHudTimer);
       window.clearTimeout(suppressClickTimer);
+      subtitleService.cancel();
+      subtitleCues = [];
+      renderSubtitles("");
       seekController.destroy();
       cleanups.forEach(function (cleanup) {
         cleanup();
@@ -1850,6 +2003,370 @@ function createSeekController(options) {
 
 return {createSeekController: createSeekController};
 });
+registerModule("js/player/subtitle-service.js", function (requireModule) {
+var parseSrt = requireModule("js/player/subtitle-parser.js")["parseSrt"];
+var srtToWebVtt = requireModule("js/player/subtitle-parser.js")["srtToWebVtt"];
+const SUBTITLE_TIMEOUT_MS = 15000;
+const memoryCache = new Map();
+
+function decodeSubtitleBuffer(buffer) {
+  const bytes = new Uint8Array(buffer);
+  // Check for UTF-8 BOM
+  let offset = 0;
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    offset = 3;
+  }
+  const payload = bytes.subarray(offset);
+
+  if (typeof TextDecoder === "function") {
+    try {
+      const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+      return utf8Decoder.decode(payload);
+    } catch (utf8Error) {
+      try {
+        const win1258Decoder = new TextDecoder("windows-1258");
+        return win1258Decoder.decode(payload);
+      } catch (winError) {
+        try {
+          const fallbackDecoder = new TextDecoder("utf-8", { fatal: false });
+          return fallbackDecoder.decode(payload);
+        } catch (error) {
+          console.warn("TextDecoder fallback failed; attempting string escape decoding:", error);
+        }
+      }
+    }
+  }
+
+  // Fallback for environments without TextDecoder
+  let result = "";
+  for (let index = 0; index < payload.length; index += 1) {
+    result += String.fromCharCode(payload[index]);
+  }
+  try {
+    return decodeURIComponent(escape(result));
+  } catch (error) {
+    return result;
+  }
+}
+
+function createSubtitleService() {
+  let inFlightController = null;
+
+  return {
+    getCached(url) {
+      if (!url) {
+        return null;
+      }
+      return memoryCache.get(url) || null;
+    },
+    loadSubtitle(url, options) {
+      if (!url || typeof url !== "string") {
+        return Promise.resolve({ cues: [], vttText: "", url: "", error: "No subtitle URL provided." });
+      }
+
+      if (memoryCache.has(url)) {
+        return Promise.resolve(memoryCache.get(url));
+      }
+
+      if (inFlightController) {
+        inFlightController.abort();
+        inFlightController = null;
+      }
+
+      const controller = (typeof AbortController === "function") ? new AbortController() : null;
+      inFlightController = controller;
+      let timer = 0;
+
+      const fetchOptions = {};
+      if (controller) {
+        fetchOptions.signal = controller.signal;
+      }
+      if (options && options.signal) {
+        options.signal.addEventListener("abort", function () {
+          if (controller) {
+            controller.abort();
+          }
+        });
+      }
+
+      const scheduleTimer = typeof window !== "undefined" && typeof window.setTimeout === "function"
+        ? window.setTimeout
+        : setTimeout;
+      const cancelTimer = typeof window !== "undefined" && typeof window.clearTimeout === "function"
+        ? window.clearTimeout
+        : clearTimeout;
+      const fetchImpl = typeof fetch === "function"
+        ? fetch
+        : (typeof window !== "undefined" && typeof window.fetch === "function" ? window.fetch : null);
+
+      const timeoutPromise = new Promise(function (_, reject) {
+        timer = scheduleTimer(function () {
+          if (controller) {
+            controller.abort();
+          }
+          reject(new Error("Subtitle request timed out."));
+        }, SUBTITLE_TIMEOUT_MS);
+      });
+
+      const requestPromise = fetchImpl
+        ? fetchImpl(url, fetchOptions).then(function (response) {
+            if (!response.ok) {
+              throw new Error("Subtitle request returned HTTP " + response.status + ".");
+            }
+            if (typeof response.arrayBuffer === "function") {
+              return response.arrayBuffer().then(decodeSubtitleBuffer);
+            }
+            return response.text();
+          })
+        : new Promise(function (resolve, reject) {
+            if (typeof XMLHttpRequest !== "function") {
+              reject(new Error("No fetch or XMLHttpRequest available."));
+              return;
+            }
+            const xhr = new XMLHttpRequest();
+            xhr.open("GET", url, true);
+            xhr.timeout = SUBTITLE_TIMEOUT_MS;
+            xhr.responseType = "arraybuffer";
+            xhr.onload = function () {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                resolve(decodeSubtitleBuffer(xhr.response));
+              } else {
+                reject(new Error("Subtitle request returned HTTP " + xhr.status + "."));
+              }
+            };
+            xhr.onerror = function () {
+              reject(new Error("Network error while loading subtitles."));
+            };
+            xhr.ontimeout = function () {
+              reject(new Error("Subtitle request timed out."));
+            };
+            xhr.send();
+          });
+
+      return Promise.race([requestPromise, timeoutPromise]).then(function (rawText) {
+        cancelTimer(timer);
+        if (inFlightController === controller) {
+          inFlightController = null;
+        }
+
+        const cues = parseSrt(rawText);
+        const vttText = srtToWebVtt(rawText);
+        const result = {
+          url: url,
+          cues: cues,
+          vttText: vttText,
+          cueCount: cues.length,
+          error: cues.length === 0 ? "No subtitle cues found in file." : null
+        };
+
+        if (cues.length > 0) {
+          memoryCache.set(url, result);
+        }
+        return result;
+      }).catch(function (error) {
+        cancelTimer(timer);
+        if (inFlightController === controller) {
+          inFlightController = null;
+        }
+        if (error.name === "AbortError") {
+          return { url: url, cues: [], vttText: "", cueCount: 0, aborted: true };
+        }
+        console.warn("Unable to load movie subtitle:", error.message);
+        return {
+          url: url,
+          cues: [],
+          vttText: "",
+          cueCount: 0,
+          error: error.message || "Failed to load subtitles."
+        };
+      });
+    },
+    cancel() {
+      if (inFlightController) {
+        inFlightController.abort();
+        inFlightController = null;
+      }
+    },
+    clearCache() {
+      memoryCache.clear();
+    }
+  };
+}
+
+return {createSubtitleService: createSubtitleService};
+});
+registerModule("js/player/subtitle-parser.js", function (requireModule) {
+function parseTimestamp(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/);
+  if (match) {
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const seconds = parseInt(match[3], 10);
+    const millis = parseInt(match[4].padEnd(3, "0").slice(0, 3), 10);
+    return hours * 3600 + minutes * 60 + seconds + millis / 1000;
+  }
+  const shortMatch = trimmed.match(/^(\d{1,2}):(\d{2})[,.](\d{1,3})/);
+  if (shortMatch) {
+    const minutes = parseInt(shortMatch[1], 10);
+    const seconds = parseInt(shortMatch[2], 10);
+    const millis = parseInt(shortMatch[3].padEnd(3, "0").slice(0, 3), 10);
+    return minutes * 60 + seconds + millis / 1000;
+  }
+  return null;
+}
+
+function formatVttTimestamp(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return "00:00:00.000";
+  }
+  const total = Math.floor(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  const millis = Math.floor((seconds - total) * 1000);
+
+  const hh = hours < 10 ? "0" + hours : String(hours);
+  const mm = minutes < 10 ? "0" + minutes : String(minutes);
+  const ss = secs < 10 ? "0" + secs : String(secs);
+  const ms = millis < 10 ? "00" + millis : (millis < 100 ? "0" + millis : String(millis));
+
+  return hh + ":" + mm + ":" + ss + "." + ms;
+}
+
+function stripSubtitleHtml(text) {
+  if (typeof text !== "string") {
+    return "";
+  }
+  return text
+    .replace(/\{[^}]*\}/g, "")
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .trim();
+}
+
+function parseSrt(rawText) {
+  if (typeof rawText !== "string" || !rawText.trim()) {
+    return [];
+  }
+
+  const clean = rawText
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+
+  const blocks = clean.split(/\n\s*\n+/);
+  const cues = [];
+
+  blocks.forEach(function (block, blockIndex) {
+    const lines = block.split("\n").map(function (line) {
+      return line.trim();
+    }).filter(Boolean);
+
+    if (!lines.length) {
+      return;
+    }
+
+    let timeLineIndex = -1;
+    for (let index = 0; index < lines.length; index += 1) {
+      if (lines[index].indexOf("-->") !== -1) {
+        timeLineIndex = index;
+        break;
+      }
+    }
+
+    if (timeLineIndex === -1) {
+      return;
+    }
+
+    const timeParts = lines[timeLineIndex].split("-->");
+    if (timeParts.length !== 2) {
+      return;
+    }
+
+    const start = parseTimestamp(timeParts[0]);
+    const endRaw = timeParts[1].trim().split(/\s+/)[0];
+    const end = parseTimestamp(endRaw);
+
+    if (start === null || end === null || end <= start) {
+      return;
+    }
+
+    const dialogueLines = lines.slice(timeLineIndex + 1);
+    const dialogue = dialogueLines.map(stripSubtitleHtml).filter(Boolean).join("\n");
+
+    if (dialogue) {
+      cues.push({
+        id: blockIndex + 1,
+        start: start,
+        end: end,
+        text: dialogue
+      });
+    }
+  });
+
+  cues.sort(function (a, b) {
+    return a.start - b.start;
+  });
+
+  return cues;
+}
+
+function srtToWebVtt(srtContent) {
+  const cues = parseSrt(srtContent);
+  const output = ["WEBVTT\n"];
+
+  cues.forEach(function (cue, index) {
+    output.push(
+      String(index + 1) + "\n" +
+      formatVttTimestamp(cue.start) + " --> " + formatVttTimestamp(cue.end) + "\n" +
+      cue.text + "\n"
+    );
+  });
+
+  return output.join("\n");
+}
+
+function findActiveCues(cues, currentTime) {
+  if (!Array.isArray(cues) || !cues.length || typeof currentTime !== "number" || currentTime < 0) {
+    return [];
+  }
+
+  const active = [];
+  for (let index = 0; index < cues.length; index += 1) {
+    const cue = cues[index];
+    if (cue.start <= currentTime && currentTime <= cue.end) {
+      active.push(cue);
+    } else if (cue.start > currentTime) {
+      break;
+    }
+  }
+
+  return active;
+}
+
+function getActiveSubtitleText(cues, currentTime) {
+  const active = findActiveCues(cues, currentTime);
+  if (!active.length) {
+    return "";
+  }
+  return active.map(function (cue) {
+    return cue.text;
+  }).join("\n");
+}
+
+return {formatVttTimestamp: formatVttTimestamp, stripSubtitleHtml: stripSubtitleHtml, parseSrt: parseSrt, srtToWebVtt: srtToWebVtt, findActiveCues: findActiveCues, getActiveSubtitleText: getActiveSubtitleText};
+});
 registerModule("js/utils/format-time.js", function (requireModule) {
 function formatTime(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) {
@@ -2151,7 +2668,7 @@ function makeStableId(value) {
 function parseMovieBlock(block, entryNumber, options, diagnostics) {
   const fields = Object.create(null);
   block.split(/\r?\n/).forEach(function (line) {
-    const match = line.match(/^\s*-\s*(title|poster|m3u8|source)\s*:\s*(.*?)\s*$/i);
+    const match = line.match(/^\s*-\s*(title|poster|m3u8|subtitle|source)\s*:\s*(.*?)\s*$/i);
     if (match) {
       fields[match[1].toLowerCase()] = match[2].trim();
     }
@@ -2172,12 +2689,20 @@ function parseMovieBlock(block, entryNumber, options, diagnostics) {
   if (fields.poster && !posterUrl) {
     diagnostics.push({ entry: entryNumber, message: "Movie poster URL is invalid; using the fallback poster." });
   }
+
+  const rawSubtitle = fields.subtitle ? extractLinkDestination(fields.subtitle) : "";
+  const subtitleUrl = rawSubtitle ? parseHttpsUrl(rawSubtitle) : null;
+  if (fields.subtitle && !subtitleUrl) {
+    diagnostics.push({ entry: entryNumber, message: "Movie subtitle URL is invalid." });
+  }
+
   const source = (fields.source || "").replace(/\s+/g, " ").trim() || streamUrl.hostname;
   return {
     id: makeStableId(streamUrl.href),
     title: title,
     poster: posterUrl ? posterUrl.href : options.fallbackPoster,
     m3u8: streamUrl.href,
+    subtitle: subtitleUrl ? subtitleUrl.href : null,
     source: source,
     catalogSourceId: options.catalogSourceId,
     playbackEnabled: options.playbackEnabled === true

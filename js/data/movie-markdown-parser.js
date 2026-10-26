@@ -36,7 +36,7 @@ function makeStableId(value) {
 function parseMovieBlock(block, entryNumber, options, diagnostics) {
   const fields = Object.create(null);
   block.split(/\r?\n/).forEach(function (line) {
-    const match = line.match(/^\s*-\s*(title|poster|m3u8|source)\s*:\s*(.*?)\s*$/i);
+    const match = line.match(/^\s*-\s*(title|poster|m3u8|subtitle|source)\s*:\s*(.*?)\s*$/i);
     if (match) {
       fields[match[1].toLowerCase()] = match[2].trim();
     }
@@ -57,12 +57,20 @@ function parseMovieBlock(block, entryNumber, options, diagnostics) {
   if (fields.poster && !posterUrl) {
     diagnostics.push({ entry: entryNumber, message: "Movie poster URL is invalid; using the fallback poster." });
   }
+
+  const rawSubtitle = fields.subtitle ? extractLinkDestination(fields.subtitle) : "";
+  const subtitleUrl = rawSubtitle ? parseHttpsUrl(rawSubtitle) : null;
+  if (fields.subtitle && !subtitleUrl) {
+    diagnostics.push({ entry: entryNumber, message: "Movie subtitle URL is invalid." });
+  }
+
   const source = (fields.source || "").replace(/\s+/g, " ").trim() || streamUrl.hostname;
   return {
     id: makeStableId(streamUrl.href),
     title: title,
     poster: posterUrl ? posterUrl.href : options.fallbackPoster,
     m3u8: streamUrl.href,
+    subtitle: subtitleUrl ? subtitleUrl.href : null,
     source: source,
     catalogSourceId: options.catalogSourceId,
     playbackEnabled: options.playbackEnabled === true
