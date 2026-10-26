@@ -12,3 +12,9 @@
 - poster: [https://upload.wikimedia.org/wikipedia/vi/5/53/Captain_America_Civil_War_poster.jpg?](https://upload.wikimedia.org/wikipedia/vi/5/53/Captain_America_Civil_War_poster.jpg?)
 - m3u8: https://s2.phim1280.tv/20231021/94ifoyEz/index.m3u8
 - source: motchillo.mx
+
+## Movie
+- title: Spider Man: Brand New Day
+- poster: [https://upload.wikimedia.org/wikipedia/vi/e/e3/SpiderManKhoiDauMoi.jpg](https://upload.wikimedia.org/wikipedia/vi/e/e3/SpiderManKhoiDauMoi.jpg)
+- m3u8: https://a.kvp726.com/20261005/QuUnZ1PZ/index.m3u8
+- source: motchillo.com
