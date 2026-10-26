@@ -10,63 +10,150 @@ function requireModule(id) {
   return exports;
 }
 registerModule("js/app.js", function (requireModule) {
-var movieCatalog = requireModule("js/data/movie-catalog.js")["movieCatalog"];var createHomeScreen = requireModule("js/home/home-screen.js")["createHomeScreen"];var createDoubleBack = requireModule("js/navigation/double-back.js")["createDoubleBack"];var createRemoteNavigation = requireModule("js/navigation/remote-navigation.js")["createRemoteNavigation"];var createPlayerScreen = requireModule("js/player/player-screen.js")["createPlayerScreen"];
+var createHomeScreen = requireModule("js/home/home-screen.js")["createHomeScreen"];
+var createDoubleBack = requireModule("js/navigation/double-back.js")["createDoubleBack"];
+var createRemoteNavigation = requireModule("js/navigation/remote-navigation.js")["createRemoteNavigation"];
+var createPlayerScreen = requireModule("js/player/player-screen.js")["createPlayerScreen"];
+var createCatalogService = requireModule("js/services/catalog-service.js")["createCatalogService"];
 const root = document.getElementById("app");
 const remoteNavigation = createRemoteNavigation();
 const doubleBack = createDoubleBack(2200);
-let activeScreen = null;
-let disposed = false;
+const catalogService = createCatalogService();
 
-function clearScreen() {
-  if (activeScreen) {
-    activeScreen.destroy();
-    activeScreen = null;
+const NavigationState = {
+  activeScreenName: "catalog",
+  selectedMovie: null,
+  screenInstance: null,
+  disposed: false
+};
+
+function setActiveScreen(name, screen) {
+  NavigationState.activeScreenName = name;
+  NavigationState.screenInstance = screen;
+  if (name) {
+    root.setAttribute("data-screen", name);
+  } else {
+    root.removeAttribute("data-screen");
   }
-  remoteNavigation.setScreen(null);
+  remoteNavigation.setScreen(screen);
 }
 
-function showHome() {
-  if (disposed) {
+function clearScreen() {
+  if (NavigationState.screenInstance) {
+    NavigationState.screenInstance.destroy();
+    NavigationState.screenInstance = null;
+  }
+  setActiveScreen(null, null);
+}
+
+function showHome(options) {
+  if (NavigationState.disposed) {
     return;
   }
   doubleBack.reset();
+  const previousMovie = NavigationState.selectedMovie;
+  NavigationState.selectedMovie = null;
   clearScreen();
-  activeScreen = createHomeScreen(root, movieCatalog, {
-    onSelect: showPlayer,
+
+  const homeScreen = createHomeScreen(root, catalogService, {
+    onSelect: function (movie) {
+      showPlayer(movie, true);
+    },
+    onPlaybackUnavailable: function () {
+      if (NavigationState.screenInstance && NavigationState.screenInstance.showBackPrompt) {
+        NavigationState.screenInstance.showBackPrompt("Playback is disabled until an authorized stream is configured.");
+      }
+    },
     onBack: function () {
       doubleBack.handle(function () {
-        activeScreen.showBackPrompt("Press BACK again to exit BACUFlix");
+        if (NavigationState.screenInstance && NavigationState.screenInstance.showBackPrompt) {
+          NavigationState.screenInstance.showBackPrompt("Press BACK again to exit BACUFlix");
+        }
       }, function () {
         if (window.tizen && window.tizen.application) {
           window.tizen.application.getCurrentApplication().exit();
         }
       });
     }
+  }, {
+    selectedMovieId: options && options.selectedMovieId ? options.selectedMovieId : (previousMovie ? previousMovie.id : null)
   });
-  remoteNavigation.setScreen(activeScreen);
+
+  setActiveScreen("catalog", homeScreen);
+
+  if (typeof window !== "undefined" && window.history && window.history.state) {
+    if (window.history.state.screen === "player") {
+      window.history.replaceState({ screen: "catalog" }, "", window.location.pathname + window.location.search);
+    }
+  }
 }
 
-function showPlayer(movie) {
-  if (disposed) {
+function handlePlayerBack() {
+  if (typeof window !== "undefined" && window.history && window.history.state && window.history.state.screen === "player") {
+    window.history.back();
+  } else {
+    showHome();
+  }
+}
+
+function showPlayer(movie, pushHistory) {
+  if (NavigationState.disposed || !movie || movie.playbackEnabled !== true) {
     return;
   }
   doubleBack.reset();
+  NavigationState.selectedMovie = movie;
   clearScreen();
-  activeScreen = createPlayerScreen(root, movie, function (showPrompt) {
-    doubleBack.handle(showPrompt, showHome);
-  });
-  remoteNavigation.setScreen(activeScreen);
+
+  const playerScreen = createPlayerScreen(root, movie, handlePlayerBack);
+  setActiveScreen("player", playerScreen);
+
+  if (pushHistory && typeof window !== "undefined" && window.history) {
+    window.history.pushState({ screen: "player", movieId: movie.id }, "", "#player");
+  }
+}
+
+function onPopState(event) {
+  if (NavigationState.disposed) {
+    return;
+  }
+  const state = event.state;
+  if (state && state.screen === "player") {
+    if (NavigationState.activeScreenName !== "player") {
+      const lastResult = catalogService.getLastResult();
+      const movie = (lastResult && lastResult.movies) ?
+        lastResult.movies.find(function (m) { return m.id === state.movieId; }) : null;
+      if (movie) {
+        showPlayer(movie, false);
+      } else {
+        showHome();
+      }
+    }
+  } else {
+    if (NavigationState.activeScreenName !== "catalog") {
+      showHome();
+    }
+  }
 }
 
 function onPageHide() {
-  if (disposed) {
+  if (NavigationState.disposed) {
     return;
   }
-  disposed = true;
+  NavigationState.disposed = true;
+  if (typeof window !== "undefined") {
+    window.removeEventListener("popstate", onPopState);
+  }
   doubleBack.destroy();
   clearScreen();
   remoteNavigation.destroy();
   window.removeEventListener("pagehide", onPageHide);
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("popstate", onPopState);
+  if (window.history) {
+    window.history.replaceState({ screen: "catalog" }, "", window.location.pathname + window.location.search);
+  }
 }
 
 window.addEventListener("pagehide", onPageHide);
@@ -74,24 +161,10 @@ showHome();
 
 return {};
 });
-registerModule("js/data/movie-catalog.js", function (requireModule) {
-const movieCatalog = [
-  {
-    id: "featured-stream",
-    title: "Featured Stream",
-    subtitle: "Your home cinema, ready to play.",
-    description: "Settle in and enjoy the featured BACUFlix stream.",
-    category: "Featured",
-    streamUrl: "https://a.kvp726.com/20261016/pD1jsW6Z/3500kb/hls/index.m3u8",
-    artwork: "icon.png"
-  }
-];
-
-return {movieCatalog: movieCatalog};
-});
 registerModule("js/home/home-screen.js", function (requireModule) {
 var activateFocusedElement = requireModule("js/navigation/remote-navigation.js")["activateFocusedElement"];
 var focusNext = requireModule("js/navigation/remote-navigation.js")["focusNext"];
+var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
 function makeButton(className, text, label) {
   const button = document.createElement("button");
   button.className = className;
@@ -101,117 +174,123 @@ function makeButton(className, text, label) {
   return button;
 }
 
-function makeArtwork(movie, className) {
-  const artwork = document.createElement("div");
-  artwork.className = className;
-  const image = document.createElement("img");
-  image.src = movie.artwork;
-  image.alt = "";
-  artwork.appendChild(image);
-  return artwork;
-}
+function makeMovieCard(movie, actionsHandler) {
+  const card = document.createElement("article");
+  card.className = "catalog-card";
 
-function createHomeScreen(root, movies, actionsHandler) {
-  if (!movies.length) {
-    throw new Error("The BACUFlix catalog must include at least one movie.");
+  const image = document.createElement("img");
+  image.className = "catalog-poster";
+  image.alt = "";
+  let usingFallback = !movie.poster || movie.poster === fallbackPoster;
+  image.addEventListener("error", function onPosterError() {
+    if (usingFallback) {
+      image.removeEventListener("error", onPosterError);
+      console.error("Fallback poster could not be loaded:", fallbackPoster);
+      return;
+    }
+    usingFallback = true;
+    console.warn("Movie poster could not be loaded; using fallback:", {
+      title: movie.title,
+      url: movie.poster
+    });
+    image.classList.add("is-fallback");
+    image.src = fallbackPoster;
+  });
+  image.src = usingFallback ? fallbackPoster : movie.poster;
+
+  const details = document.createElement("div");
+  details.className = "catalog-card-details";
+  const title = document.createElement("h2");
+  title.className = "catalog-card-title";
+  title.textContent = movie.title;
+  const source = document.createElement("p");
+  source.className = "catalog-card-source";
+  source.textContent = movie.source;
+  const play = makeButton(
+    "home-action primary-home-action catalog-play" + (movie.playbackEnabled ? "" : " is-unavailable"),
+    movie.playbackEnabled ? "▶  Play" : "Awaiting authorized stream",
+    (movie.playbackEnabled ? "Play " : "Playback unavailable for ") + movie.title
+  );
+  if (movie.playbackEnabled) {
+    play.addEventListener("click", function () {
+      actionsHandler.onSelect(movie);
+    });
+  } else {
+    play.title = "Playback is disabled until an authorized stream source is configured.";
+    play.addEventListener("click", function () {
+      actionsHandler.onPlaybackUnavailable(movie);
+    });
   }
 
-  const featured = movies[0];
+  details.appendChild(title);
+  details.appendChild(source);
+  details.appendChild(play);
+  card.appendChild(image);
+  card.appendChild(details);
+  return { element: card, playButton: play, movie: movie };
+}
+
+function createHomeScreen(root, catalogService, actionsHandler, options) {
   const screen = document.createElement("section");
-  screen.className = "home-screen";
-  screen.setAttribute("aria-label", "BACUFlix home");
+  screen.className = "home-screen catalog-screen";
+  screen.setAttribute("aria-label", "BACUFlix movie catalog");
   let toastTimer = 0;
-  let infoTimer = 0;
+  let destroyed = false;
+  let refreshing = false;
+  let currentResult = null;
+  let movieButtons = [];
 
   const header = document.createElement("header");
   header.className = "home-header";
-  header.innerHTML =
-    '<a class="home-brand" href="#" aria-label="BACUFlix home">' +
-    '<img src="icon.png" alt=""><span>BACU<span>Flix</span></span></a>' +
-    '<span class="home-nav-current">HOME</span>';
-  header.querySelector(".home-brand").addEventListener("click", function (event) {
-    event.preventDefault();
+  const brand = document.createElement("div");
+  brand.className = "home-brand";
+  const logo = document.createElement("img");
+  logo.src = "icon.png";
+  logo.alt = "";
+  const brandText = document.createElement("span");
+  brandText.textContent = "BACU";
+  const brandAccent = document.createElement("span");
+  brandAccent.textContent = "Flix";
+  brandText.appendChild(brandAccent);
+  brand.appendChild(logo);
+  brand.appendChild(brandText);
+
+  const catalogLabel = document.createElement("span");
+  catalogLabel.className = "home-nav-current";
+  catalogLabel.textContent = "MOVIES";
+  const refreshButton = makeButton("home-action secondary-home-action catalog-refresh", "Refresh catalog");
+  refreshButton.addEventListener("click", function () {
+    refresh(true);
   });
+  header.appendChild(brand);
+  header.appendChild(catalogLabel);
+  header.appendChild(refreshButton);
 
-  const hero = document.createElement("section");
-  hero.className = "home-feature";
-  const heroArt = makeArtwork(featured, "feature-artwork");
-  heroArt.setAttribute("aria-hidden", "true");
-
-  const featureCopy = document.createElement("div");
-  featureCopy.className = "feature-copy";
-  const category = document.createElement("span");
-  category.className = "feature-category";
-  category.textContent = featured.category || "FEATURED";
-  const title = document.createElement("h1");
-  title.textContent = featured.title;
-  const subtitle = document.createElement("p");
-  subtitle.className = "feature-subtitle";
-  subtitle.textContent = featured.subtitle;
-  const description = document.createElement("p");
-  description.className = "feature-description";
-  description.textContent = featured.description;
-  const actions = document.createElement("div");
-  actions.className = "feature-actions";
-  actions.dataset.focusGroup = "feature";
-  const play = makeButton("home-action primary-home-action", "▶  Play now", "Play " + featured.title);
-  const info = makeButton("home-action secondary-home-action", "More info");
-  info.addEventListener("click", function () {
-    description.classList.toggle("is-emphasized");
-    window.clearTimeout(infoTimer);
-    infoTimer = window.setTimeout(function () {
-      description.classList.remove("is-emphasized");
-    }, 1800);
-  });
-  play.addEventListener("click", function () {
-    actionsHandler.onSelect(featured);
-  });
-  actions.appendChild(play);
-  actions.appendChild(info);
-  featureCopy.appendChild(category);
-  featureCopy.appendChild(title);
-  featureCopy.appendChild(subtitle);
-  featureCopy.appendChild(description);
-  featureCopy.appendChild(actions);
-  hero.appendChild(heroArt);
-  hero.appendChild(featureCopy);
-
-  const library = document.createElement("section");
-  library.className = "home-library";
-  const libraryHeading = document.createElement("h2");
-  libraryHeading.textContent = "Watch on BACUFlix";
-  const row = document.createElement("div");
-  row.className = "movie-row";
-  row.dataset.focusGroup = "library";
-
-  movies.forEach(function (movie) {
-    const card = makeButton("movie-card", "", "Play " + movie.title);
-    card.dataset.movieId = movie.id;
-    const artwork = makeArtwork(movie, "movie-artwork");
-    const cardTitle = document.createElement("span");
-    cardTitle.className = "movie-card-title";
-    cardTitle.textContent = movie.title;
-    card.appendChild(artwork);
-    card.appendChild(cardTitle);
-    card.addEventListener("click", function () {
-      actionsHandler.onSelect(movie);
-    });
-    row.appendChild(card);
-  });
-  library.appendChild(libraryHeading);
-  library.appendChild(row);
-
-  const hint = document.createElement("p");
-  hint.className = "home-remote-hint";
-  hint.textContent = "Use the directional buttons to explore · Press OK to play";
+  const heading = document.createElement("h1");
+  heading.className = "catalog-heading";
+  heading.textContent = "Discover movies";
+  const message = document.createElement("p");
+  message.className = "catalog-message";
+  message.setAttribute("role", "status");
+  message.setAttribute("aria-live", "polite");
+  const grid = document.createElement("div");
+  grid.className = "catalog-grid";
+  grid.setAttribute("aria-label", "Movies");
+  const notice = document.createElement("p");
+  notice.className = "catalog-notice";
   const toast = document.createElement("p");
   toast.className = "home-toast";
   toast.setAttribute("role", "status");
   toast.setAttribute("aria-live", "polite");
   toast.hidden = true;
+  const hint = document.createElement("p");
+  hint.className = "home-remote-hint";
+  hint.textContent = "Use the directional buttons to explore · Press OK to select";
   screen.appendChild(header);
-  screen.appendChild(hero);
-  screen.appendChild(library);
+  screen.appendChild(heading);
+  screen.appendChild(message);
+  screen.appendChild(notice);
+  screen.appendChild(grid);
   screen.appendChild(hint);
   screen.appendChild(toast);
   while (root.firstChild) {
@@ -219,42 +298,134 @@ function createHomeScreen(root, movies, actionsHandler) {
   }
   root.appendChild(screen);
 
-  const groups = {
-    feature: Array.prototype.slice.call(actions.querySelectorAll("button")),
-    library: Array.prototype.slice.call(row.querySelectorAll("button"))
-  };
-  groups.feature[0].focus();
-
-  function focusGroup(name, first) {
-    const items = groups[name] || [];
-    if (items.length) {
-      (first ? items[0] : items[items.length - 1]).focus();
+  function render(result) {
+    currentResult = result;
+    while (grid.firstChild) {
+      grid.removeChild(grid.firstChild);
     }
+    movieButtons = [];
+    notice.textContent = "";
+    notice.hidden = true;
+    if (result.failedAll) {
+      const reason = result.errors.length ? " " + result.errors[0].message : "";
+      message.textContent = "Unable to load the movie catalog." + reason;
+      message.classList.add("is-error");
+      return;
+    }
+
+    message.classList.remove("is-error");
+    if (!result.movies.length) {
+      message.textContent = "No movies are available in this catalog.";
+      return;
+    }
+
+    message.textContent = result.movies.length + (result.movies.length === 1 ? " movie" : " movies");
+    let focusedButton = null;
+    result.movies.forEach(function (movie) {
+      const card = makeMovieCard(movie, actionsHandler);
+      grid.appendChild(card.element);
+      movieButtons.push(card.playButton);
+      if (options && options.selectedMovieId && movie.id === options.selectedMovieId) {
+        focusedButton = card.playButton;
+      }
+    });
+    if (result.errors.length) {
+      notice.textContent = "Some catalogs could not be refreshed. Showing available saved movies.";
+      notice.hidden = false;
+    } else if (result.diagnostics.length) {
+      notice.textContent = result.diagnostics.length + " invalid catalog entr" +
+        (result.diagnostics.length === 1 ? "y was" : "ies were") + " skipped.";
+      notice.hidden = false;
+    }
+
+    if (focusedButton && !screen.contains(document.activeElement)) {
+      focusedButton.focus();
+    }
+  }
+
+  function refresh(force) {
+    if (refreshing || destroyed) {
+      return;
+    }
+    refreshing = true;
+    refreshButton.disabled = true;
+    message.classList.remove("is-error");
+    if (!currentResult || !currentResult.movies.length) {
+      message.textContent = force ? "Refreshing movie catalog..." : "Loading movie catalog...";
+    } else {
+      notice.textContent = "Refreshing movie catalog...";
+      notice.hidden = false;
+    }
+    catalogService.load(force).then(function (result) {
+      if (!destroyed) {
+        render(result);
+      }
+    }).catch(function (error) {
+      if (!destroyed) {
+        render({
+          movies: [],
+          errors: [{ message: error.message || "Catalog request failed." }],
+          diagnostics: [],
+          failedAll: true
+        });
+      }
+    }).then(function () {
+      refreshing = false;
+      if (!destroyed) {
+        refreshButton.disabled = false;
+        if (!screen.contains(document.activeElement)) {
+          if (options && options.selectedMovieId) {
+            const matchIndex = currentResult && currentResult.movies ?
+              currentResult.movies.findIndex(function (m) { return m.id === options.selectedMovieId; }) : -1;
+            if (matchIndex >= 0 && movieButtons[matchIndex]) {
+              movieButtons[matchIndex].focus();
+              return;
+            }
+          }
+          if (movieButtons.length) {
+            movieButtons[0].focus();
+          } else {
+            refreshButton.focus();
+          }
+        }
+      }
+    });
+  }
+
+  const existingResult = (options && options.initialResult) ||
+    (catalogService && typeof catalogService.getLastResult === "function" ? catalogService.getLastResult() : null);
+  if (existingResult && existingResult.movies && existingResult.movies.length) {
+    render(existingResult);
+  }
+  refresh(false);
+
+  function allFocusable() {
+    return [refreshButton].concat(movieButtons);
   }
 
   return {
     onKeyDown(event, key) {
       if (key.isBack) {
-        if (key.isRepeat) {
-          return true;
-        }
-        actionsHandler.onBack();
-        return true;
-      }
-      const active = document.activeElement;
-      const all = groups.feature.concat(groups.library);
-      if (key.direction === "left" || key.direction === "right") {
-        focusNext(all, active, key.direction);
-        return true;
-      }
-      if (key.direction === "up" || key.direction === "down") {
-        if (groups.library.indexOf(active) !== -1 || active === groups.feature[0] || active === groups.feature[1]) {
-          focusGroup(key.direction === "up" ? "feature" : "library", true);
+        if (!key.isRepeat) {
+          actionsHandler.onBack();
         }
         return true;
       }
       if (key.isSelect) {
-        activateFocusedElement(active);
+        activateFocusedElement(document.activeElement);
+        return true;
+      }
+      if (key.direction === "left" || key.direction === "right") {
+        focusNext(allFocusable(), document.activeElement, key.direction);
+        return true;
+      }
+      if (key.direction === "up" || key.direction === "down") {
+        const active = document.activeElement;
+        if (active === refreshButton && key.direction === "down" && movieButtons.length) {
+          movieButtons[0].focus();
+        } else if (movieButtons.indexOf(active) !== -1 && key.direction === "up") {
+          refreshButton.focus();
+        }
         return true;
       }
       return false;
@@ -262,17 +433,20 @@ function createHomeScreen(root, movies, actionsHandler) {
     onKeyUp() {
       return false;
     },
-    showBackPrompt(message) {
+    showBackPrompt(text) {
       window.clearTimeout(toastTimer);
-      toast.textContent = message;
+      toast.textContent = text;
       toast.hidden = false;
       toastTimer = window.setTimeout(function () {
         toast.hidden = true;
       }, 2200);
     },
+    getResult() {
+      return currentResult;
+    },
     destroy() {
+      destroyed = true;
       window.clearTimeout(toastTimer);
-      window.clearTimeout(infoTimer);
       while (root.firstChild) {
         root.removeChild(root.firstChild);
       }
@@ -402,6 +576,19 @@ function createRemoteNavigation() {
 
 return {normalizeRemoteKey: normalizeRemoteKey, focusNext: focusNext, activateFocusedElement: activateFocusedElement, createRemoteNavigation: createRemoteNavigation};
 });
+registerModule("js/config/catalog-sources.js", function (requireModule) {
+const catalogSources = [
+  {
+    id: "bacuflix-main",
+    url: "https://raw.githubusercontent.com/NgCuHs3/bacuflix/refs/heads/main/data/movies.md",
+    playbackEnabled: true
+  }
+];
+
+const fallbackPoster = "icon.png";
+
+return {catalogSources: catalogSources, fallbackPoster: fallbackPoster};
+});
 registerModule("js/navigation/double-back.js", function (requireModule) {
 function createDoubleBack(timeout, onReset) {
   let timer = 0;
@@ -446,8 +633,8 @@ function playerMarkup(movie) {
     '<div class="cinema-shade" aria-hidden="true"></div>' +
     '<video id="video" autoplay playsinline preload="auto" aria-label="BACUFlix video playback"></video>' +
     '<header class="topbar ui-overlay">' +
-    '<a class="brand" href="#" aria-label="BACUFlix home"><img src="icon.png" alt="">' +
-    '<span>BACU<span class="brand-accent">Flix</span></span></a>' +
+    '<button class="brand home-return-button" type="button" aria-label="Return to movie catalog"><img src="icon.png" alt="">' +
+    '<span>BACU<span class="brand-accent">Flix</span></span></button>' +
     '<span class="stream-label"><span class="live-dot"></span> NOW PLAYING</span></header>' +
     '<div class="bottom-bar ui-overlay"><div class="now-playing">' +
     '<span class="eyebrow">NOW PLAYING</span><span class="now-playing-title"></span>' +
@@ -480,7 +667,7 @@ function playerMarkup(movie) {
     '<span class="control-symbol volume-symbol" aria-hidden="true">+</span><span class="control-caption">Vol +</span></button>' +
     '<button id="fullscreen-button" class="control-button compact-control" type="button" aria-label="Toggle fullscreen">' +
     '<span class="control-symbol fullscreen-symbol" aria-hidden="true">□</span><span class="control-caption">Full screen</span></button>' +
-    '</div><p class="remote-hint">← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Back twice for library</p>' +
+    '</div><p class="remote-hint">← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Back to return to library</p>' +
     '</div></section>';
 }
 
@@ -654,11 +841,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
         return true;
       }
       seekController.commitPreview();
-      showControls(false);
-      onBackRequest(function () {
-        showStatus("Press BACK again to return to BACUFlix");
-        showControls(false);
-      });
+      onBackRequest();
       return true;
     }
 
@@ -855,6 +1038,9 @@ function createPlayerScreen(root, movie, onBackRequest) {
   listen(togglePlayButton, "click", function () {
     playback.toggle();
   });
+  listen(root.querySelector(".home-return-button"), "click", function () {
+    onBackRequest();
+  });
   listen(root.querySelector("#volume-down-button"), "click", function () {
     changeVolume(-0.1);
   });
@@ -950,7 +1136,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
   updateSoundControl(video.muted, video.volume);
   updatePlaybackControl({ paused: video.paused });
   updateTimeline();
-  playback.start(movie.streamUrl);
+  playback.start(movie.m3u8);
   scheduleHide(3000);
 
   return {
@@ -980,6 +1166,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
 return {createPlayerScreen: createPlayerScreen};
 });
 registerModule("js/player/playback-service.js", function (requireModule) {
+var createSegmentLoader = requireModule("js/player/segment-loader.js")["createSegmentLoader"];
 function createPlaybackService(video, callbacks) {
   let hls = null;
   let sourceUrl = "";
@@ -1146,21 +1333,30 @@ function createPlaybackService(video, callbacks) {
       status("Loading stream...");
 
       if (window.Hls && window.Hls.isSupported()) {
-        hls = new window.Hls();
-        hls.on(window.Hls.Events.MEDIA_ATTACHED, function () {
-          hls.loadSource(sourceUrl);
-        });
-        hls.on(window.Hls.Events.MANIFEST_PARSED, attemptPlayback);
-        hls.on(window.Hls.Events.ERROR, function (_event, data) {
-          if (!data.fatal) {
-            return;
+        try {
+          hls = new window.Hls({
+            loader: createSegmentLoader(window.Hls.DefaultConfig.loader)
+          });
+          hls.on(window.Hls.Events.MEDIA_ATTACHED, function () {
+            hls.loadSource(sourceUrl);
+          });
+          hls.on(window.Hls.Events.MANIFEST_PARSED, attemptPlayback);
+          hls.on(window.Hls.Events.ERROR, function (_event, data) {
+            if (!data.fatal) {
+              return;
+            }
+            console.error("HLS playback error:", data);
+            if (!useNativeHls(data.details)) {
+              reportFailure("Stream error: " + data.details);
+            }
+          });
+          hls.attachMedia(video);
+        } catch (error) {
+          console.error("Unable to initialize HLS playback:", error);
+          if (!useNativeHls(error.message)) {
+            reportFailure("Unable to initialize the HLS player.", error);
           }
-          console.error("HLS playback error:", data);
-          if (!useNativeHls(data.details)) {
-            reportFailure("Stream error: " + data.details);
-          }
-        });
-        hls.attachMedia(video);
+        }
         return;
       }
 
@@ -1241,6 +1437,219 @@ function createPlaybackService(video, callbacks) {
 }
 
 return {createPlaybackService: createPlaybackService};
+});
+registerModule("js/player/segment-loader.js", function (requireModule) {
+var inspectSegment = requireModule("js/player/segment-inspector.js")["inspectSegment"];
+function isFragment(context) {
+  return context && (context.type === "fragment" ||
+    context.type === "media-fragment" || context.type === "audio-fragment");
+}
+
+function createSegmentLoader(DefaultLoader) {
+  if (typeof DefaultLoader !== "function") {
+    throw new Error("The HLS default loader is unavailable.");
+  }
+
+  function SegmentLoader(config) {
+    this.delegate = new DefaultLoader(config);
+    this.context = null;
+  }
+  Object.defineProperty(SegmentLoader.prototype, "stats", {
+    get() {
+      return this.delegate.stats;
+    }
+  });
+  SegmentLoader.prototype.load = function (context, config, callbacks) {
+    this.context = context;
+    if (!isFragment(context)) {
+      return this.delegate.load(context, config, callbacks);
+    }
+
+    const wrappedCallbacks = Object.create(callbacks);
+    wrappedCallbacks.onSuccess = function (response, stats, loadedContext, networkDetails) {
+      let inspection;
+      try {
+        inspection = inspectSegment(response.data);
+      } catch (error) {
+        console.warn("Rejected malformed wrapped media segment:", error.message);
+        callbacks.onError({
+          code: 0,
+          text: error.message
+        }, loadedContext, networkDetails, stats);
+        return;
+      }
+      if (inspection.kind === "png-wrapped-mpeg-ts") {
+        response = Object.assign({}, response, { data: inspection.data });
+        console.info(
+          "Recovered PNG-wrapped MPEG-TS segment (" +
+          inspection.pngBytes + " wrapper bytes, " +
+          inspection.transportStreamBytes + " media bytes)."
+        );
+      }
+      callbacks.onSuccess(response, stats, loadedContext, networkDetails);
+    };
+    return this.delegate.load(context, config, wrappedCallbacks);
+  };
+  SegmentLoader.prototype.abort = function () {
+    this.delegate.abort();
+  };
+  SegmentLoader.prototype.destroy = function () {
+    this.delegate.destroy();
+    this.delegate = null;
+  };
+  SegmentLoader.prototype.getResponseHeader = function (name) {
+    return this.delegate.getResponseHeader(name);
+  };
+  return SegmentLoader;
+}
+
+return {createSegmentLoader: createSegmentLoader};
+});
+registerModule("js/player/segment-inspector.js", function (requireModule) {
+const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
+const TS_PACKET_SIZE = 188;
+const CRC_TABLE = (function createCrcTable() {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < table.length; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
+    }
+    table[index] = value >>> 0;
+  }
+  return table;
+})();
+
+function asBytes(data) {
+  if (data instanceof ArrayBuffer) {
+    return new Uint8Array(data);
+  }
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  return null;
+}
+
+function hasSignature(bytes, signature) {
+  if (bytes.length < signature.length) {
+    return false;
+  }
+  for (let index = 0; index < signature.length; index += 1) {
+    if (bytes[index] !== signature[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function readUint32(bytes, offset) {
+  return bytes[offset] * 0x1000000 +
+    (bytes[offset + 1] << 16) +
+    (bytes[offset + 2] << 8) +
+    bytes[offset + 3];
+}
+
+function chunkName(bytes, offset) {
+  return String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+}
+
+function crc32(bytes, start, end) {
+  let crc = 0xffffffff;
+  for (let index = start; index < end; index += 1) {
+    crc = CRC_TABLE[(crc ^ bytes[index]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function validateTransportStream(bytes) {
+  if (bytes.length < TS_PACKET_SIZE * 2 || bytes.length % TS_PACKET_SIZE !== 0) {
+    return false;
+  }
+  const packetCount = Math.min(5, bytes.length / TS_PACKET_SIZE);
+  for (let packet = 0; packet < packetCount; packet += 1) {
+    if (bytes[packet * TS_PACKET_SIZE] !== 0x47) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function findPngTrailerStart(bytes) {
+  let offset = PNG_SIGNATURE.length;
+  let foundHeader = false;
+
+  while (offset + 12 <= bytes.length) {
+    const length = readUint32(bytes, offset);
+    const typeOffset = offset + 4;
+    const payloadOffset = typeOffset + 4;
+    if (length > bytes.length - payloadOffset - 4) {
+      throw new Error("PNG chunk extends beyond the segment boundary.");
+    }
+
+    const name = chunkName(bytes, typeOffset);
+    const crcOffset = payloadOffset + length;
+    const expectedCrc = readUint32(bytes, crcOffset);
+    if (crc32(bytes, typeOffset, crcOffset) !== expectedCrc) {
+      throw new Error("PNG chunk checksum is invalid.");
+    }
+
+    if (!foundHeader) {
+      if (name !== "IHDR" || length !== 13) {
+        throw new Error("PNG does not begin with a valid IHDR chunk.");
+      }
+      foundHeader = true;
+    } else if (name === "IHDR") {
+      throw new Error("PNG contains a duplicate IHDR chunk.");
+    }
+
+    offset = crcOffset + 4;
+    if (name === "IEND") {
+      if (length !== 0) {
+        throw new Error("PNG IEND chunk must have an empty payload.");
+      }
+      return offset;
+    }
+  }
+
+  throw new Error("PNG IEND chunk is missing or truncated.");
+}
+
+function inspectSegment(data) {
+  const bytes = asBytes(data);
+  if (!bytes || !bytes.length) {
+    return { kind: "unknown", data: data };
+  }
+
+  if (validateTransportStream(bytes)) {
+    return { kind: "mpeg-ts", data: data };
+  }
+
+  if (bytes.length >= 8 &&
+      (chunkName(bytes, 4) === "ftyp" || chunkName(bytes, 4) === "styp" ||
+       chunkName(bytes, 4) === "moof")) {
+    return { kind: "fragmented-mp4", data: data };
+  }
+
+  if (!hasSignature(bytes, PNG_SIGNATURE)) {
+    return { kind: "unknown", data: data };
+  }
+
+  const trailerStart = findPngTrailerStart(bytes);
+  const trailer = bytes.subarray(trailerStart);
+  if (!validateTransportStream(trailer)) {
+    throw new Error("PNG segment has no valid trailing MPEG-TS payload.");
+  }
+
+  const recovered = trailer.slice();
+  return {
+    kind: "png-wrapped-mpeg-ts",
+    data: recovered.buffer,
+    pngBytes: trailerStart,
+    transportStreamBytes: recovered.length
+  };
+}
+
+return {inspectSegment: inspectSegment};
 });
 registerModule("js/player/seek-controller.js", function (requireModule) {
 const DEFAULT_SPEED = {
@@ -1461,6 +1870,346 @@ function formatTime(seconds) {
 }
 
 return {formatTime: formatTime};
+});
+registerModule("js/services/catalog-service.js", function (requireModule) {
+var catalogSources = requireModule("js/config/catalog-sources.js")["catalogSources"];
+var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
+var parseMovieMarkdown = requireModule("js/data/movie-markdown-parser.js")["parseMovieMarkdown"];
+const CACHE_KEY = "bacuflix.movie-catalog.v1";
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 12000;
+
+function readCache() {
+  try {
+    const raw = window.localStorage.getItem(CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    console.warn("Unable to read the movie catalog cache:", error.message);
+    return {};
+  }
+}
+
+function writeCache(cache) {
+  try {
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch (error) {
+    console.warn("Unable to save the movie catalog cache:", error.message);
+  }
+}
+
+function errorMessage(error) {
+  return error && error.message ? error.message : "Catalog request failed.";
+}
+
+function fetchText(url, forceRefresh) {
+  if (typeof window.fetch === "function") {
+    const controller = typeof window.AbortController === "function" ? new window.AbortController() : null;
+    const options = controller ? { signal: controller.signal } : {};
+    if (forceRefresh) {
+      options.cache = "no-cache";
+    }
+    let timer = 0;
+    const request = window.fetch(url, options).then(function (response) {
+      if (!response.ok) {
+        throw new Error("Catalog request returned HTTP " + response.status + ".");
+      }
+      return response.text();
+    });
+    const timeout = new Promise(function (_resolve, reject) {
+      timer = window.setTimeout(function () {
+        if (controller) {
+          controller.abort();
+        }
+        reject(new Error("Catalog request timed out."));
+      }, REQUEST_TIMEOUT_MS);
+    });
+    return Promise.race([request, timeout]).then(function (text) {
+      window.clearTimeout(timer);
+      return text;
+    }, function (error) {
+      window.clearTimeout(timer);
+      throw error;
+    });
+  }
+
+  return new Promise(function (resolve, reject) {
+    const request = new XMLHttpRequest();
+    request.open("GET", url, true);
+    request.timeout = REQUEST_TIMEOUT_MS;
+    request.onload = function () {
+      if (request.status >= 200 && request.status < 300) {
+        resolve(request.responseText);
+      } else {
+        reject(new Error("Catalog request returned HTTP " + request.status + "."));
+      }
+    };
+    request.onerror = function () {
+      reject(new Error("Network error while loading the movie catalog."));
+    };
+    request.ontimeout = function () {
+      reject(new Error("Catalog request timed out."));
+    };
+    request.send();
+  });
+}
+
+function mergeMovies(sourceResults) {
+  const seen = Object.create(null);
+  const movies = [];
+  sourceResults.forEach(function (result) {
+    result.movies.forEach(function (movie) {
+      if (!seen[movie.m3u8]) {
+        seen[movie.m3u8] = true;
+        movies.push(movie);
+      }
+    });
+  });
+  return movies;
+}
+
+function createCatalogService(sources) {
+  const configuredSources = (sources || catalogSources).slice();
+  let inFlight = null;
+  let lastResult = null;
+
+  try {
+    const cached = readCache();
+    const initialResults = configuredSources.map(function (source) {
+      const saved = cached[source.id] && cached[source.id].url === source.url ? cached[source.id] : null;
+      if (saved && typeof saved.markdown === "string") {
+        const parsed = parseMovieMarkdown(saved.markdown, {
+          catalogSourceId: source.id,
+          fallbackPoster: fallbackPoster,
+          playbackEnabled: source.playbackEnabled
+        });
+        return { movies: parsed.movies, diagnostics: parsed.diagnostics, cached: true };
+      }
+      return { movies: [], diagnostics: [], cached: false };
+    });
+    const initialMovies = mergeMovies(initialResults);
+    if (initialMovies.length) {
+      lastResult = {
+        movies: initialMovies,
+        errors: [],
+        diagnostics: [],
+        failedAll: false,
+        cached: true
+      };
+    }
+  } catch (error) {
+    // Ignore cache bootstrap errors
+  }
+
+  return {
+    getLastResult() {
+      return lastResult;
+    },
+    load(forceRefresh) {
+      if (inFlight) {
+        return inFlight;
+      }
+
+      const cached = readCache();
+      const now = Date.now();
+      const requests = configuredSources.map(function (source) {
+        const saved = cached[source.id] && cached[source.id].url === source.url ?
+          cached[source.id] : null;
+        if (!forceRefresh && saved && now - saved.savedAt < CACHE_TTL_MS) {
+          const parsed = parseMovieMarkdown(saved.markdown, {
+            catalogSourceId: source.id,
+            fallbackPoster: fallbackPoster,
+            playbackEnabled: source.playbackEnabled
+          });
+          return Promise.resolve({
+            movies: parsed.movies,
+            diagnostics: parsed.diagnostics,
+            cached: true
+          });
+        }
+
+        return fetchText(source.url, forceRefresh).then(function (markdown) {
+          const parsed = parseMovieMarkdown(markdown, {
+            catalogSourceId: source.id,
+            fallbackPoster: fallbackPoster,
+            playbackEnabled: source.playbackEnabled
+          });
+          if (!parsed.movies.length) {
+            return {
+              movies: [],
+              diagnostics: parsed.diagnostics,
+              cached: false,
+              error: "Catalog contains no valid movie entries."
+            };
+          }
+          cached[source.id] = { url: source.url, markdown: markdown, savedAt: Date.now() };
+          return {
+            movies: parsed.movies,
+            diagnostics: parsed.diagnostics,
+            cached: false
+          };
+        }).catch(function (error) {
+          const stale = cached[source.id];
+          if (stale) {
+            const parsedStale = parseMovieMarkdown(stale.markdown, {
+              catalogSourceId: source.id,
+              fallbackPoster: fallbackPoster,
+              playbackEnabled: source.playbackEnabled
+            });
+            return {
+              movies: parsedStale.movies,
+              diagnostics: parsedStale.diagnostics,
+              cached: true,
+              error: errorMessage(error)
+            };
+          }
+          return {
+            movies: [],
+            diagnostics: [],
+            cached: false,
+            error: errorMessage(error)
+          };
+        });
+      });
+
+      const operation = Promise.all(requests).then(function (results) {
+        writeCache(cached);
+        const errors = [];
+        const diagnostics = [];
+        results.forEach(function (result, index) {
+          if (result.error) {
+            errors.push({ sourceId: configuredSources[index].id, message: result.error });
+          }
+          result.diagnostics.forEach(function (diagnostic) {
+            diagnostics.push({
+              sourceId: configuredSources[index].id,
+              entry: diagnostic.entry,
+              message: diagnostic.message
+            });
+          });
+        });
+        const movies = mergeMovies(results);
+        lastResult = {
+          movies: movies,
+          errors: errors,
+          diagnostics: diagnostics,
+          failedAll: movies.length === 0 && errors.length > 0,
+          cached: results.every(function (result) { return result.cached; })
+        };
+        return lastResult;
+      });
+      inFlight = operation.then(function (result) {
+        inFlight = null;
+        return result;
+      }, function (error) {
+        inFlight = null;
+        throw error;
+      });
+      return inFlight;
+    }
+  };
+}
+
+return {createCatalogService: createCatalogService};
+});
+registerModule("js/data/movie-markdown-parser.js", function (requireModule) {
+function extractLinkDestination(value) {
+  const trimmed = value.trim();
+  const autolink = trimmed.match(/^<(https:\/\/[^>\s]+)>$/i);
+  if (autolink) {
+    return autolink[1].trim();
+  }
+  const markdownLink = trimmed.match(/^\[[^\]]*\]\(\s*<?(https:\/\/[^)\s>]+)>?(?:\s+["'][^"']*["'])?\s*\)$/i);
+  if (markdownLink) {
+    return markdownLink[1].trim();
+  }
+  return trimmed.replace(/^["']|["']$/g, "").trim();
+}
+
+function parseHttpsUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || !url.hostname || url.username || url.password) {
+      return null;
+    }
+    url.hash = "";
+    return url;
+  } catch (error) {
+    return null;
+  }
+}
+
+function makeStableId(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return "movie-" + (hash >>> 0).toString(36);
+}
+
+function parseMovieBlock(block, entryNumber, options, diagnostics) {
+  const fields = Object.create(null);
+  block.split(/\r?\n/).forEach(function (line) {
+    const match = line.match(/^\s*-\s*(title|poster|m3u8|source)\s*:\s*(.*?)\s*$/i);
+    if (match) {
+      fields[match[1].toLowerCase()] = match[2].trim();
+    }
+  });
+
+  const title = (fields.title || "").replace(/\s+/g, " ").trim();
+  const streamUrl = parseHttpsUrl(extractLinkDestination(fields.m3u8 || ""));
+  if (!title) {
+    diagnostics.push({ entry: entryNumber, message: "Movie entry has no title." });
+    return null;
+  }
+  if (!streamUrl) {
+    diagnostics.push({ entry: entryNumber, message: "Movie entry has no valid HTTPS M3U8 URL." });
+    return null;
+  }
+
+  const posterUrl = parseHttpsUrl(extractLinkDestination(fields.poster || ""));
+  if (fields.poster && !posterUrl) {
+    diagnostics.push({ entry: entryNumber, message: "Movie poster URL is invalid; using the fallback poster." });
+  }
+  const source = (fields.source || "").replace(/\s+/g, " ").trim() || streamUrl.hostname;
+  return {
+    id: makeStableId(streamUrl.href),
+    title: title,
+    poster: posterUrl ? posterUrl.href : options.fallbackPoster,
+    m3u8: streamUrl.href,
+    source: source,
+    catalogSourceId: options.catalogSourceId,
+    playbackEnabled: options.playbackEnabled === true
+  };
+}
+
+function parseMovieMarkdown(markdown, options) {
+  const settings = Object.assign({
+    catalogSourceId: "unknown",
+    fallbackPoster: "icon.png",
+    playbackEnabled: false
+  }, options);
+  const diagnostics = [];
+  const movies = [];
+  const text = typeof markdown === "string" ? markdown.replace(/^\uFEFF/, "") : "";
+  const sections = text.split(/^##\s+Movie\s*$/gim);
+
+  if (sections.length < 2) {
+    return { movies: movies, diagnostics: [{ entry: 0, message: "No movie entries were found." }] };
+  }
+
+  sections.slice(1).forEach(function (block, index) {
+    const movie = parseMovieBlock(block, index + 1, settings, diagnostics);
+    if (movie) {
+      movies.push(movie);
+    }
+  });
+
+  return { movies: movies, diagnostics: diagnostics };
+}
+
+return {parseMovieMarkdown: parseMovieMarkdown};
 });
 requireModule("js/app.js");
 })(window);

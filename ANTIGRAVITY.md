@@ -21,8 +21,12 @@ existing plain JavaScript/CSS architecture and Tizen deployment workflow.
   ES-module entry points.
 - The editable source remains in `js/` as ES modules:
   - `js/app.js`: Home/Player state and transitions.
-  - `js/data/movie-catalog.js`: movie metadata and stream URL.
-  - `js/home/home-screen.js`: library rendering and home remote navigation.
+  - `js/config/catalog-sources.js`: Raw catalog URLs, source IDs, and playback
+    authorization flags.
+  - `js/data/movie-markdown-parser.js`: safe Markdown parsing and URL validation.
+  - `js/services/catalog-service.js`: fetching, cache, refresh, source merging,
+    deduplication, and partial failure reporting.
+  - `js/home/home-screen.js`: dynamic catalog grid and home remote navigation.
   - `js/player/player-screen.js`: player UI and interactions.
   - `js/player/playback-service.js`: playback, HLS/native setup, errors,
     volume, and seek integration.
@@ -69,11 +73,50 @@ the viewport size, device scale, and computed layout values.
 
 ## Playback status
 
-The catalog currently contains one featured HLS URL in
-`js/data/movie-catalog.js`. Previous desktop-browser playback attempts showed
-media error 4 / `NotSupportedError` and a failed segment request. Playback on
-the TV has not been confirmed. Do not claim that the stream works; distinguish
-this from whether the app launches.
+The configured Raw GitHub catalog currently lists IRON MAN with a third-party
+stream URL. The user explicitly confirmed they are authorized to use that
+catalog and its streams; `playbackEnabled` is therefore true for that source.
+The app requests no stream until a movie is selected. Previous desktop browser
+playback attempts on a different test URL showed media error 4 /
+`NotSupportedError`; successful playback is not confirmed on the TV.
+
+The current catalog screen fetches only the Markdown metadata, uses a
+ten-minute local cache, has manual refresh/loading/error states, validates
+HTTPS M3U8 URLs, and falls back to `icon.png` for invalid/unavailable posters.
+Poster URLs may be plain HTTPS values or Markdown links; a poster load/decode
+failure is logged and falls back to `icon.png` once without retrying the same
+source. The supplied GitHub Raw `.jfif` URL parsed without changes and decoded
+in Chromium (HTTP 200, `image/jpeg`, 369x542). The catalog points to the Iron
+Man GitHub Raw poster URL. Fallback behavior handles invalid or unreachable
+posters gracefully without card layout distortion.
+
+Screen state is managed as a unified source of truth in `js/app.js` and exposed
+on `#app[data-screen]`. Switching screens updates the active remote-navigation
+handler together with that state. Browser history is synchronized with the
+`#player` state so browser Back returns cleanly to the catalog without leaving
+the app. Player Back and the in-app brand return button return to the catalog
+immediately and destroy player resources, while catalog data is retained for
+instant restoration without reloading; catalog Back remains a two-press exit
+confirmation.
+
+The player wraps hls.js 1.7.3's configured loader. hls.js identifies media
+requests with `context.type === "media-fragment"` (and audio requests as
+`"audio-fragment"`), not only `"fragment"`; the wrapper must intercept these
+types. It inspects fragment responses only: standard TS, fragmented MP4/CMAF,
+and unknown responses pass through; PNG-prefixed fragments are parsed
+chunk-by-chunk with bounds and CRC checks, and only a valid trailing
+188-byte-packet MPEG-TS payload is passed to hls.js. This preserves hls.js
+playlist, buffering, seek, and retry ownership. Native HLS fallback cannot use
+the custom fragment loader, so PNG-wrapped stream support depends on hls.js/MSE
+being available.
+
+The configured stream's PNG wrapper is successfully recovered and hls.js
+parses the resulting fragments. The inspected media is H.264 High Profile
+(1920x800) plus AAC-LC (44.1 kHz stereo); ffmpeg decodes an extracted TS
+fragment. Desktop Chromium nevertheless reports an AAC decoder
+`DECODER_ERROR_NOT_SUPPORTED` during MSE playback. Treat TV playback as
+unverified until the current build is tested on the Samsung TV; do not mistake
+successful package installation for successful video playback.
 
 ## Build, install, and verify
 

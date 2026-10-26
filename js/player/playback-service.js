@@ -1,3 +1,5 @@
+import { createSegmentLoader } from "./segment-loader.js";
+
 export function createPlaybackService(video, callbacks) {
   let hls = null;
   let sourceUrl = "";
@@ -164,21 +166,30 @@ export function createPlaybackService(video, callbacks) {
       status("Loading stream...");
 
       if (window.Hls && window.Hls.isSupported()) {
-        hls = new window.Hls();
-        hls.on(window.Hls.Events.MEDIA_ATTACHED, function () {
-          hls.loadSource(sourceUrl);
-        });
-        hls.on(window.Hls.Events.MANIFEST_PARSED, attemptPlayback);
-        hls.on(window.Hls.Events.ERROR, function (_event, data) {
-          if (!data.fatal) {
-            return;
+        try {
+          hls = new window.Hls({
+            loader: createSegmentLoader(window.Hls.DefaultConfig.loader)
+          });
+          hls.on(window.Hls.Events.MEDIA_ATTACHED, function () {
+            hls.loadSource(sourceUrl);
+          });
+          hls.on(window.Hls.Events.MANIFEST_PARSED, attemptPlayback);
+          hls.on(window.Hls.Events.ERROR, function (_event, data) {
+            if (!data.fatal) {
+              return;
+            }
+            console.error("HLS playback error:", data);
+            if (!useNativeHls(data.details)) {
+              reportFailure("Stream error: " + data.details);
+            }
+          });
+          hls.attachMedia(video);
+        } catch (error) {
+          console.error("Unable to initialize HLS playback:", error);
+          if (!useNativeHls(error.message)) {
+            reportFailure("Unable to initialize the HLS player.", error);
           }
-          console.error("HLS playback error:", data);
-          if (!useNativeHls(data.details)) {
-            reportFailure("Stream error: " + data.details);
-          }
-        });
-        hls.attachMedia(video);
+        }
         return;
       }
 

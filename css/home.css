@@ -319,6 +319,159 @@
   display: none;
 }
 
+.catalog-screen > .home-header,
+.catalog-heading,
+.catalog-message,
+.catalog-notice,
+.catalog-grid,
+.catalog-screen > .home-remote-hint {
+  position: relative;
+  z-index: 1;
+}
+
+.catalog-screen > .home-header {
+  display: flex;
+  align-items: center;
+}
+
+.catalog-screen .home-brand {
+  margin-right: 36px;
+}
+
+.catalog-screen .home-nav-current {
+  margin-right: 24px;
+}
+
+.catalog-refresh {
+  margin-left: auto;
+  min-width: 190px;
+}
+
+.catalog-heading {
+  margin: 22px 0 8px;
+  color: #fff;
+  font-size: 38px;
+  font-weight: 900;
+  text-shadow: 0 2px 16px #000;
+}
+
+.catalog-message,
+.catalog-notice {
+  margin: 0 0 18px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 18px;
+}
+
+.catalog-message.is-error {
+  color: #ff8d9a;
+}
+
+.catalog-notice {
+  color: #ffd36a;
+}
+
+.catalog-notice[hidden] {
+  display: none;
+}
+
+.catalog-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.catalog-card {
+  display: flex;
+  width: 220px;
+  margin: 0 20px 24px 0;
+  overflow: hidden;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(8, 10, 24, 0.78);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+
+
+.catalog-poster.is-fallback {
+  object-fit: contain;
+  padding: 32px;
+  box-sizing: border-box;
+}
+
+#app[data-screen="player"] .catalog-screen,
+#app[data-screen="player"] .home-header {
+  display: none !important;
+}
+
+#app[data-screen="catalog"] .video-stage,
+#app[data-screen="catalog"] .topbar {
+  display: none !important;
+}
+
+.catalog-poster {
+  display: block;
+  width: 100%;
+  height: 300px;
+  object-fit: cover;
+  background: linear-gradient(135deg, #18243a, #26132e);
+}
+
+.catalog-card-details {
+  display: flex;
+  min-height: 150px;
+  padding: 16px;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.catalog-card-title {
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: #fff;
+  font-size: 21px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-card-source {
+  width: 100%;
+  margin: 8px 0 18px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-play {
+  min-width: 100%;
+  min-height: 46px;
+  margin-top: auto;
+  padding: 8px 12px;
+  font-size: 15px;
+}
+
+.catalog-play.is-unavailable {
+  background: rgba(255, 255, 255, 0.1);
+  cursor: default;
+  line-height: 1.2;
+  white-space: normal;
+}
+
+.catalog-play:focus,
+.catalog-refresh:focus {
+  outline: 3px solid #fff;
+  outline-offset: 4px;
+}
+
+.catalog-play:not(.primary-home-action) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 @media (min-width: 1400px) {
   .home-screen {
     padding-right: 5.5vw;
@@ -364,6 +517,30 @@
 
   .home-library {
     margin-top: 4vh;
+  }
+
+  .catalog-heading {
+    font-size: 2vw;
+  }
+
+  .catalog-message,
+  .catalog-notice {
+    font-size: 1vw;
+  }
+
+  .catalog-card {
+    width: 18vw;
+    max-width: 360px;
+    margin-right: 1.5vw;
+  }
+
+  .catalog-poster {
+    height: 28vw;
+    max-height: 520px;
+  }
+
+  .catalog-card-title {
+    font-size: 1.1vw;
   }
 
   .movie-card {
@@ -434,6 +611,39 @@
     margin-top: 70px;
   }
 
+  .catalog-heading {
+    font-size: 48px;
+  }
+
+  .catalog-message,
+  .catalog-notice {
+    font-size: 24px;
+  }
+
+  .catalog-card {
+    width: 360px;
+    max-width: none;
+    margin-right: 28px;
+  }
+
+  .catalog-poster {
+    height: 500px;
+    max-height: none;
+  }
+
+  .catalog-card-title {
+    font-size: 26px;
+  }
+
+  .catalog-card-source {
+    font-size: 18px;
+  }
+
+  .catalog-play {
+    min-height: 64px;
+    font-size: 20px;
+  }
+
   .home-library h2 {
     font-size: 40px;
   }
@@ -458,6 +668,62 @@
 
   .home-header {
     height: 74px;
+  }
+
+  .catalog-screen > .home-header {
+    height: 74px;
+  }
+
+  .catalog-screen .home-brand {
+    margin-right: 12px;
+  }
+
+  .catalog-screen .home-nav-current {
+    margin-right: 8px;
+  }
+
+  .catalog-refresh {
+    min-width: 0;
+  }
+
+  .catalog-heading {
+    margin-top: 18px;
+    font-size: 28px;
+  }
+
+  .catalog-message,
+  .catalog-notice {
+    font-size: 14px;
+  }
+
+  .catalog-card {
+    width: 44vw;
+    margin-right: 3vw;
+    margin-bottom: 18px;
+  }
+
+  .catalog-poster {
+    height: 58vw;
+  }
+
+  .catalog-card-details {
+    min-height: 120px;
+    padding: 10px;
+  }
+
+  .catalog-card-title {
+    font-size: 16px;
+  }
+
+  .catalog-card-source {
+    margin: 6px 0 12px;
+    font-size: 12px;
+  }
+
+  .catalog-play {
+    min-height: 42px;
+    padding: 8px;
+    font-size: 13px;
   }
 
   .home-brand {

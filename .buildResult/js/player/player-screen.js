@@ -8,8 +8,8 @@ function playerMarkup(movie) {
     '<div class="cinema-shade" aria-hidden="true"></div>' +
     '<video id="video" autoplay playsinline preload="auto" aria-label="BACUFlix video playback"></video>' +
     '<header class="topbar ui-overlay">' +
-    '<a class="brand" href="#" aria-label="BACUFlix home"><img src="icon.png" alt="">' +
-    '<span>BACU<span class="brand-accent">Flix</span></span></a>' +
+    '<button class="brand home-return-button" type="button" aria-label="Return to movie catalog"><img src="icon.png" alt="">' +
+    '<span>BACU<span class="brand-accent">Flix</span></span></button>' +
     '<span class="stream-label"><span class="live-dot"></span> NOW PLAYING</span></header>' +
     '<div class="bottom-bar ui-overlay"><div class="now-playing">' +
     '<span class="eyebrow">NOW PLAYING</span><span class="now-playing-title"></span>' +
@@ -42,7 +42,7 @@ function playerMarkup(movie) {
     '<span class="control-symbol volume-symbol" aria-hidden="true">+</span><span class="control-caption">Vol +</span></button>' +
     '<button id="fullscreen-button" class="control-button compact-control" type="button" aria-label="Toggle fullscreen">' +
     '<span class="control-symbol fullscreen-symbol" aria-hidden="true">□</span><span class="control-caption">Full screen</span></button>' +
-    '</div><p class="remote-hint">← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Back twice for library</p>' +
+    '</div><p class="remote-hint">← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Back to return to library</p>' +
     '</div></section>';
 }
 
@@ -216,11 +216,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
         return true;
       }
       seekController.commitPreview();
-      showControls(false);
-      onBackRequest(function () {
-        showStatus("Press BACK again to return to BACUFlix");
-        showControls(false);
-      });
+      onBackRequest();
       return true;
     }
 
@@ -417,6 +413,9 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   listen(togglePlayButton, "click", function () {
     playback.toggle();
   });
+  listen(root.querySelector(".home-return-button"), "click", function () {
+    onBackRequest();
+  });
   listen(root.querySelector("#volume-down-button"), "click", function () {
     changeVolume(-0.1);
   });
@@ -512,7 +511,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   updateSoundControl(video.muted, video.volume);
   updatePlaybackControl({ paused: video.paused });
   updateTimeline();
-  playback.start(movie.streamUrl);
+  playback.start(movie.m3u8);
   scheduleHide(3000);
 
   return {

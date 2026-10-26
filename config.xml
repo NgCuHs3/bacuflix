@@ -9,6 +9,9 @@
                      required_version="2.3"/>
   <name>BACUFlix</name>
   <icon src="icon.png"/>
+  <access origin="https://raw.githubusercontent.com" subdomains="true"/>
+  <access origin="https://tikpho.apiaz.xyz" subdomains="true"/>
+  <access origin="https://p16-oec-sg.ibyteimg.com" subdomains="true"/>
   <tizen:privilege name="http://tizen.org/privilege/application.launch"/>
   <tizen:privilege name="http://tizen.org/privilege/internet"/>
   <content src="index.html"/>
