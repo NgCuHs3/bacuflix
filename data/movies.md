@@ -28,5 +28,5 @@
 ## Movie
 - title: Tieu Yeu Quai Nui Lang Lang
 - poster: [https://upload.wikimedia.org/wikipedia/vi/9/94/Ti%E1%BB%83u_y%C3%AAu_qu%C3%A1i_n%C3%BAi_L%C3%A3ng_L%C3%A3ng.jpg](https://upload.wikimedia.org/wikipedia/vi/9/94/Ti%E1%BB%83u_y%C3%AAu_qu%C3%A1i_n%C3%BAi_L%C3%A3ng_L%C3%A3ng.jpg)
-- m3u8: https://s6.kkphimplayer6.com/20251204/V9oiAJ3d/index.m3u8z
+- m3u8: https://s6.kkphimplayer6.com/20251204/V9oiAJ3d/index.m3u8
 - source: motchillo.com
