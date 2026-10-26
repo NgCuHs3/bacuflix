@@ -7,6 +7,7 @@ import { createSegmentLoader } from "../js/player/segment-loader.js";
 import { catalogSources } from "../js/config/catalog-sources.js";
 import { parseSrt, srtToWebVtt, findActiveCues, getActiveSubtitleText, stripSubtitleHtml } from "../js/player/subtitle-parser.js";
 import { createSubtitleService } from "../js/player/subtitle-service.js";
+import { normalizeRemoteKey } from "../js/navigation/remote-navigation.js";
 
 const fallbackPoster = "icon.png";
 const firstStream = "https://video.example.test/one/master.m3u8?token=abc";
@@ -447,4 +448,38 @@ assert.ok(abortedResult.aborted || abortedSignal, "Request must be aborted on ca
 
 globalThis.fetch = originalFetch;
 
-console.log("Catalog parser, subtitle parser, and service tests passed.");
+// Keyboard normalization tests
+const escKey = normalizeRemoteKey({ key: "Escape", keyCode: 27 });
+assert.equal(escKey.isEscape, true);
+assert.equal(escKey.isBack, true);
+
+const tvBackKey = normalizeRemoteKey({ key: "Back", keyCode: 10009 });
+assert.equal(tvBackKey.isBack, true);
+assert.equal(tvBackKey.isEscape, false);
+
+const enterKey = normalizeRemoteKey({ key: "Enter", keyCode: 13 });
+assert.equal(enterKey.isSelect, true);
+assert.equal(enterKey.isBack, false);
+
+// Player navigation bar UI verification
+const playerSource = fs.readFileSync("js/player/player-screen.js", "utf8");
+assert.equal(playerSource.includes('id="sound-toggle"'), false, "sound-toggle should be removed from player markup");
+assert.equal(playerSource.includes('id="fullscreen-button"'), false, "fullscreen-button should be removed from player markup");
+assert.ok(playerSource.includes("m15 18-6-6 6-6"), "Rewind button should use chevron-left SVG icon");
+assert.ok(playerSource.includes("m9 18 6-6-6-6"), "Forward button should use chevron-right SVG icon");
+
+// Verify ESC hides controls first before triggering onBackRequest
+assert.ok(
+  playerSource.includes("if (controlsVisible || stage.classList.contains(\"controls-visible\")) {\n        window.clearTimeout(controlsTimer);\n        hideControls(true);"),
+  "ESC/Back while controls are visible must hide controls without triggering onBackRequest"
+);
+
+// Home screen Stage A & B verification
+const homeSource = fs.readFileSync("js/home/home-screen.js", "utf8");
+assert.ok(homeSource.includes("card.tabIndex = 0;"), "Movie card must have tabIndex = 0 for Stage A selection");
+assert.ok(homeSource.includes("play.tabIndex = -1;"), "Play button must start with tabIndex = -1");
+assert.ok(homeSource.includes("activateStageB"), "Home screen must support activating Stage B");
+assert.ok(homeSource.includes("cancelStageB"), "Home screen must support canceling Stage B on Escape");
+assert.ok(homeSource.includes("catalog-play-icon"), "Play button must have clean SVG play icon");
+
+console.log("All unit, subtitle, player UI, and keyboard navigation tests passed.");

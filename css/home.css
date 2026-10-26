@@ -378,20 +378,51 @@
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
+  padding: 12px 10px;
+  margin: -12px -10px;
+  overflow: visible;
 }
 
 .catalog-card {
+  position: relative;
   display: flex;
   width: 220px;
   margin: 0 20px 24px 0;
   overflow: hidden;
   flex-direction: column;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  background: rgba(8, 10, 24, 0.78);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(8, 10, 24, 0.85);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  outline: none;
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 180ms ease,
+              box-shadow 180ms ease;
 }
 
+.catalog-card:focus,
+.catalog-card.is-selected {
+  outline: none;
+  border-color: #fff;
+  transform: scale(1.04);
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 5px #e50924,
+    0 16px 48px rgba(0, 0, 0, 0.75),
+    0 0 24px rgba(229, 9, 36, 0.45);
+  z-index: 5;
+}
+
+.catalog-card.has-action-focus {
+  border-color: #e50924;
+  box-shadow:
+    0 0 0 2px #e50924,
+    0 0 0 5px rgba(255, 255, 255, 0.8),
+    0 18px 52px rgba(0, 0, 0, 0.85),
+    0 0 30px rgba(229, 9, 36, 0.55);
+  z-index: 6;
+}
 
 .catalog-poster.is-fallback {
   object-fit: contain;
@@ -448,21 +479,66 @@
 }
 
 .catalog-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-width: 100%;
-  min-height: 46px;
+  min-height: 48px;
   margin-top: auto;
-  padding: 8px 12px;
+  padding: 10px 16px;
+  border: 2px solid transparent;
+  border-radius: 6px;
   font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  outline: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
 }
 
-.catalog-play.is-unavailable {
-  background: rgba(255, 255, 255, 0.1);
-  cursor: default;
-  line-height: 1.2;
-  white-space: normal;
+.catalog-card.is-selected:not(.has-action-focus) .catalog-play {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .catalog-play:focus,
+.catalog-card.has-action-focus .catalog-play:focus {
+  outline: none;
+  border-color: #fff;
+  background: #e50924;
+  color: #fff;
+  transform: scale(1.02);
+  box-shadow:
+    0 0 0 3px #fff,
+    0 0 22px rgba(229, 9, 36, 0.85);
+}
+
+.catalog-play:hover {
+  background: #ff263f;
+  color: #fff;
+}
+
+.catalog-play-icon {
+  display: block;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+.catalog-play-label {
+  display: inline-block;
+}
+
+.catalog-play.is-unavailable {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
+  cursor: not-allowed;
+  border-color: transparent;
+}
+
 .catalog-refresh:focus {
   outline: 3px solid #fff;
   outline-offset: 4px;

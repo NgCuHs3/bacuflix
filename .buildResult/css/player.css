@@ -233,6 +233,11 @@ video {
   min-height: 88px;
   align-items: center;
   justify-content: center;
+  gap: 6px;
+}
+
+.compact-control {
+  min-width: 86px;
 }
 
 .control-button {
@@ -289,35 +294,31 @@ video {
   line-height: 1;
 }
 
-.rewind-symbol,
-.forward-symbol {
-  position: relative;
-  width: 27px;
-  height: 24px;
-  border: 2px solid currentColor;
-  border-radius: 50%;
-  font-size: 10px;
+.control-icon {
+  display: block;
+  width: 28px;
+  height: 28px;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 120ms ease;
 }
 
-.rewind-symbol::before,
-.forward-symbol::before {
-  position: absolute;
-  top: 6px;
-  width: 0;
-  height: 0;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
-  content: "";
+.control-button:hover .control-icon {
+  transform: scale(1.1);
 }
 
-.rewind-symbol::before {
-  left: -5px;
-  border-right: 6px solid currentColor;
+.control-button:active .control-icon,
+.control-button.is-pressed .control-icon {
+  transform: scale(0.92);
 }
 
-.forward-symbol::before {
-  right: -5px;
-  border-left: 6px solid currentColor;
+.control-button:active,
+.control-button.is-pressed {
+  transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .control-caption {
@@ -365,65 +366,6 @@ video {
   font-weight: 700;
   letter-spacing: -0.4px;
   text-shadow: 0 2px 12px #000;
-}
-
-.sound-button {
-  display: inline-flex;
-  min-width: 130px;
-  min-height: 48px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 17px;
-  border: 1px solid rgba(255, 255, 255, 0.68);
-  border-radius: 4px;
-  background: rgba(15, 15, 17, 0.55);
-  color: #fff;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background-color 160ms ease, border-color 160ms ease;
-}
-
-.sound-button:hover,
-.sound-button:focus {
-  border-color: #fff;
-  background: rgba(65, 65, 68, 0.85);
-}
-
-.sound-button.is-muted {
-  color: rgba(255, 255, 255, 0.72);
-}
-
-.sound-icon {
-  position: relative;
-  width: 17px;
-  height: 17px;
-  margin-right: 10px;
-  border: 2px solid currentColor;
-  border-radius: 50%;
-}
-
-.sound-icon::before {
-  position: absolute;
-  top: 3px;
-  left: 6px;
-  width: 3px;
-  height: 7px;
-  border-radius: 2px;
-  background: currentColor;
-  content: "";
-}
-
-.sound-button.is-muted .sound-icon::after {
-  position: absolute;
-  top: 6px;
-  left: 2px;
-  width: 11px;
-  height: 2px;
-  transform: rotate(-45deg);
-  background: var(--flix-red);
-  content: "";
 }
 
 .status {
@@ -563,7 +505,6 @@ video {
 }
 
 .brand:focus,
-.sound-button:focus,
 .play-button:focus {
   outline: 3px solid #fff;
   outline-offset: 4px;
@@ -664,13 +605,6 @@ video {
     font-size: 10px;
   }
 
-  .sound-button {
-    min-width: 104px;
-    min-height: 42px;
-    padding: 0 12px;
-    font-size: 12px;
-  }
-
   .status {
     top: 88px;
     left: 20px;
@@ -701,11 +635,6 @@ video {
 
   .eyebrow {
     font-size: 9px;
-  }
-
-  .sound-button {
-    min-width: 94px;
-    padding: 0 9px;
   }
 
   .control-button {

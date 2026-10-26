@@ -36,6 +36,7 @@ export function normalizeRemoteKey(event) {
     isRepeat: event.repeat === true,
     isBack: key === "Back" || key === "BrowserBack" || key === "Escape" ||
       key === "XF86Back" || code === 10009 || code === 27 || code === 8,
+    isEscape: key === "Escape" || code === 27,
     isSelect: key === "Enter" || key === " " || code === 13 || code === 32,
     isPlayPause: key === "MediaPlayPause" || code === 10252,
     isPlay: key === "MediaPlay" || code === 415,

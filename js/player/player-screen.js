@@ -30,24 +30,22 @@ function playerMarkup(movie) {
     '<span id="duration" class="time-label">0:00</span></label>' +
     '<div class="control-row">' +
     '<button id="rewind-button" class="control-button" type="button" aria-label="Rewind 10 seconds">' +
-    '<span class="control-symbol rewind-symbol" aria-hidden="true">10</span><span class="control-caption">Back</span></button>' +
+    '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m15 18-6-6 6-6"/></svg></span>' +
+    '<span class="control-caption">Back</span></button>' +
     '<button id="toggle-play-button" class="control-button primary-control" type="button" aria-label="Pause">' +
     '<span id="play-pause-symbol" class="control-symbol" aria-hidden="true">Ⅱ</span>' +
     '<span id="play-pause-caption" class="control-caption">Pause</span></button>' +
     '<button id="forward-button" class="control-button" type="button" aria-label="Forward 10 seconds">' +
-    '<span class="control-symbol forward-symbol" aria-hidden="true">10</span><span class="control-caption">Forward</span></button>' +
+    '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m9 18 6-6-6-6"/></svg></span>' +
+    '<span class="control-caption">Forward</span></button>' +
     '<span class="control-divider" aria-hidden="true"></span>' +
     '<button id="volume-down-button" class="control-button compact-control" type="button" aria-label="Volume down">' +
     '<span class="control-symbol volume-symbol" aria-hidden="true">−</span><span class="control-caption">Vol −</span></button>' +
-    '<button id="sound-toggle" class="control-button compact-control" type="button" aria-pressed="false" aria-label="Mute">' +
-    '<span id="sound-symbol" class="control-symbol" aria-hidden="true">♪</span><span id="sound-label" class="control-caption">Mute</span></button>' +
     '<button id="volume-up-button" class="control-button compact-control" type="button" aria-label="Volume up">' +
     '<span class="control-symbol volume-symbol" aria-hidden="true">+</span><span class="control-caption">Vol +</span></button>' +
     '<button id="subtitle-button" class="control-button compact-control" type="button" aria-pressed="true" aria-label="Toggle subtitles">' +
     '<span id="subtitle-symbol" class="control-symbol subtitle-symbol" aria-hidden="true">CC</span><span id="subtitle-label" class="control-caption">Subs</span></button>' +
-    '<button id="fullscreen-button" class="control-button compact-control" type="button" aria-label="Toggle fullscreen">' +
-    '<span class="control-symbol fullscreen-symbol" aria-hidden="true">□</span><span class="control-caption">Full screen</span></button>' +
-    '</div><p class="remote-hint">← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Back to return to library</p>' +
+    '</div><p class="remote-hint">← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Esc / Back to hide controls or return</p>' +
     '</div></section>';
 }
 
@@ -64,9 +62,6 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   const togglePlayButton = root.querySelector("#toggle-play-button");
   const playPauseSymbol = root.querySelector("#play-pause-symbol");
   const playPauseCaption = root.querySelector("#play-pause-caption");
-  const soundToggle = root.querySelector("#sound-toggle");
-  const soundLabel = root.querySelector("#sound-label");
-  const soundSymbol = root.querySelector("#sound-symbol");
   const volumeHud = root.querySelector("#volume-hud");
   const volumeHudIcon = root.querySelector("#volume-hud-icon");
   const volumeHudLevel = root.querySelector("#volume-hud-level");
@@ -119,11 +114,6 @@ export function createPlayerScreen(root, movie, onBackRequest) {
 
   function updateSoundControl(muted, volume) {
     const percentage = muted ? 0 : Math.round(volume * 100);
-    soundToggle.setAttribute("aria-pressed", String(muted));
-    soundToggle.setAttribute("aria-label", muted ? "Unmute" : "Mute");
-    soundLabel.textContent = muted ? "Unmute" : "Mute";
-    soundSymbol.textContent = muted ? "×" : "♪";
-    soundToggle.classList.toggle("is-muted", muted);
     volumeHudIcon.textContent = muted ? "×" : "♪";
     volumeHudLevel.style.width = percentage + "%";
     volumeHudPercent.textContent = percentage + "%";
@@ -265,6 +255,8 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     durationLabel.textContent = formatTime(range.end - range.start);
   }
 
+  const CONTROLS_AUTOHIDE_MS = 4500;
+
   function showControls(focusPlayback) {
     window.clearTimeout(controlsTimer);
     controlsVisible = true;
@@ -275,7 +267,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   }
 
   function hideControls(force) {
-    if (!force && (!mediaStarted || autoplayBlocked)) {
+    if (!force && (!mediaStarted || autoplayBlocked || (video && video.paused))) {
       return;
     }
     controlsVisible = false;
@@ -286,7 +278,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     window.clearTimeout(controlsTimer);
     controlsTimer = window.setTimeout(function () {
       hideControls(false);
-    }, delay);
+    }, typeof delay === "number" ? delay : CONTROLS_AUTOHIDE_MS);
   }
 
   function focusControl(direction) {
@@ -325,6 +317,14 @@ export function createPlayerScreen(root, movie, onBackRequest) {
         return true;
       }
       seekController.commitPreview();
+      if (controlsVisible || stage.classList.contains("controls-visible")) {
+        window.clearTimeout(controlsTimer);
+        hideControls(true);
+        if (controls.contains(document.activeElement)) {
+          document.activeElement.blur();
+        }
+        return true;
+      }
       onBackRequest();
       return true;
     }
@@ -332,7 +332,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     if (!controlsVisible) {
       showControls(true);
     }
-    scheduleHide(3000);
+    scheduleHide();
     const target = document.activeElement;
     const inControls = controls.contains(target);
 
@@ -457,7 +457,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       playButton.hidden = true;
       stage.classList.add("playback-error");
       showStatus(message, true);
-      scheduleHide(3000);
+      scheduleHide();
     },
     onPlaying() {
       mediaStarted = true;
@@ -465,12 +465,12 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       playButton.hidden = true;
       stage.classList.remove("playback-error");
       status.dataset.visible = "false";
-      scheduleHide(3000);
+      scheduleHide();
       updateSubtitleDisplay();
     },
     onWaiting() {
       showControls(false);
-      scheduleHide(3000);
+      scheduleHide();
     },
     onEnded() {
       showControls(true);
@@ -539,30 +539,6 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   listen(root.querySelector("#volume-up-button"), "click", function () {
     changeVolume(0.1);
   });
-  listen(soundToggle, "click", function () {
-    playback.toggleMute();
-    showVolumeHud();
-    showStatus(video.muted ? "Sound off" : "Sound on");
-  });
-  listen(root.querySelector("#fullscreen-button"), "click", function () {
-    const request = stage.requestFullscreen || stage.webkitRequestFullscreen;
-    const exit = document.exitFullscreen || document.webkitExitFullscreen;
-    if (document.fullscreenElement || document.webkitFullscreenElement) {
-      if (exit) {
-        exit.call(document);
-      }
-    } else if (request) {
-      const result = request.call(stage);
-      if (result && typeof result.catch === "function") {
-        result.catch(function (error) {
-          console.error("Could not enter fullscreen:", error);
-          showStatus("Full screen is unavailable.");
-        });
-      }
-    } else {
-      showStatus("Full screen is unavailable.");
-    }
-  });
   listen(seekBar, "input", function () {
     seeking = true;
     const range = playback.getRange();
@@ -584,30 +560,30 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   });
   listen(controls, "focusin", function () {
     showControls(false);
-    scheduleHide(3000);
+    scheduleHide();
   });
   listen(controls, "click", function () {
     showControls(false);
-    scheduleHide(3000);
+    scheduleHide();
   });
   listen(document, "mousemove", function () {
     if (!controlsVisible) {
       showControls(false);
     }
-    scheduleHide(3000);
+    scheduleHide();
   });
   listen(document, "touchstart", function () {
     showControls(false);
-    scheduleHide(3000);
+    scheduleHide();
   });
   listen(stage, "click", function (event) {
     if (event.target === video || event.target === stage) {
       if (!controlsVisible) {
         showControls(false);
-        scheduleHide(3000);
+        scheduleHide();
       } else {
         playback.toggle();
-        scheduleHide(3000);
+        scheduleHide();
       }
     }
   });
@@ -659,7 +635,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   updateTimeline();
   initSubtitles();
   playback.start(movie.m3u8);
-  scheduleHide(3000);
+  scheduleHide();
 
   return {
     onKeyDown,

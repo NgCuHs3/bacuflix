@@ -13,6 +13,10 @@ function makeButton(className, text, label) {
 function makeMovieCard(movie, actionsHandler) {
   const card = document.createElement("article");
   card.className = "catalog-card";
+  card.tabIndex = 0;
+  card.setAttribute("role", "button");
+  card.setAttribute("aria-label", movie.title);
+  card.dataset.movieId = movie.id;
 
   const image = document.createElement("img");
   image.className = "catalog-poster";
@@ -42,28 +46,61 @@ function makeMovieCard(movie, actionsHandler) {
   const source = document.createElement("p");
   source.className = "catalog-card-source";
   source.textContent = movie.source;
-  const play = makeButton(
-    "home-action primary-home-action catalog-play" + (movie.playbackEnabled ? "" : " is-unavailable"),
-    movie.playbackEnabled ? "▶  Play" : "Awaiting authorized stream",
-    (movie.playbackEnabled ? "Play " : "Playback unavailable for ") + movie.title
-  );
+
+  const play = document.createElement("button");
+  play.type = "button";
+  play.className = "home-action primary-home-action catalog-play" + (movie.playbackEnabled ? "" : " is-unavailable");
+  play.tabIndex = -1;
+  play.setAttribute("aria-label", (movie.playbackEnabled ? "Play " : "Playback unavailable for ") + movie.title);
+
+  const playIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  playIcon.setAttribute("class", "catalog-play-icon");
+  playIcon.setAttribute("viewBox", "0 0 24 24");
+  playIcon.setAttribute("width", "18");
+  playIcon.setAttribute("height", "18");
+  playIcon.setAttribute("fill", "currentColor");
+  playIcon.setAttribute("aria-hidden", "true");
+  const playPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  playPath.setAttribute("d", "M8 5v14l11-7z");
+  playIcon.appendChild(playPath);
+
+  const playText = document.createElement("span");
+  playText.className = "catalog-play-label";
+  playText.textContent = movie.playbackEnabled ? "Play" : "Unavailable";
+
+  play.appendChild(playIcon);
+  play.appendChild(playText);
+
+  const cardEntry = { element: card, playButton: play, movie: movie };
+
   if (movie.playbackEnabled) {
-    play.addEventListener("click", function () {
+    play.addEventListener("click", function (event) {
+      event.stopPropagation();
       actionsHandler.onSelect(movie);
     });
   } else {
     play.title = "Playback is disabled until an authorized stream source is configured.";
-    play.addEventListener("click", function () {
+    play.addEventListener("click", function (event) {
+      event.stopPropagation();
       actionsHandler.onPlaybackUnavailable(movie);
     });
   }
+
+  card.addEventListener("click", function (event) {
+    if (event.target === play || play.contains(event.target)) {
+      return;
+    }
+    if (typeof actionsHandler.onCardClick === "function") {
+      actionsHandler.onCardClick(cardEntry);
+    }
+  });
 
   details.appendChild(title);
   details.appendChild(source);
   details.appendChild(play);
   card.appendChild(image);
   card.appendChild(details);
-  return { element: card, playButton: play, movie: movie };
+  return cardEntry;
 }
 
 export function createHomeScreen(root, catalogService, actionsHandler, options) {
@@ -74,7 +111,64 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
   let destroyed = false;
   let refreshing = false;
   let currentResult = null;
-  let movieButtons = [];
+  let cards = [];
+  let activeCardIndex = 0;
+
+  function clearAllActionStates() {
+    cards.forEach(function (entry) {
+      entry.element.classList.remove("has-action-focus");
+      entry.playButton.tabIndex = -1;
+    });
+  }
+
+  function setSelectedCard(targetEntry, focusElement) {
+    clearAllActionStates();
+    cards.forEach(function (entry) {
+      const isTarget = entry === targetEntry;
+      entry.element.classList.toggle("is-selected", isTarget);
+    });
+    const foundIdx = cards.indexOf(targetEntry);
+    if (foundIdx !== -1) {
+      activeCardIndex = foundIdx;
+    }
+    if (focusElement && targetEntry) {
+      targetEntry.element.focus();
+    }
+  }
+
+  function activateStageB(cardEntry) {
+    if (!cardEntry) {
+      return;
+    }
+    clearAllActionStates();
+    cards.forEach(function (entry) {
+      entry.element.classList.toggle("is-selected", entry === cardEntry);
+    });
+    activeCardIndex = cards.indexOf(cardEntry);
+    cardEntry.element.classList.add("has-action-focus");
+    cardEntry.playButton.tabIndex = 0;
+    cardEntry.playButton.focus();
+  }
+
+  function cancelStageB(cardEntry) {
+    if (!cardEntry) {
+      return;
+    }
+    cardEntry.element.classList.remove("has-action-focus");
+    cardEntry.playButton.tabIndex = -1;
+    cardEntry.element.classList.add("is-selected");
+    cardEntry.element.focus();
+  }
+
+  function getActiveCardIndex() {
+    const active = document.activeElement;
+    for (let i = 0; i < cards.length; i += 1) {
+      if (cards[i].element === active || cards[i].playButton === active || cards[i].element.contains(active)) {
+        return i;
+      }
+    }
+    return -1;
+  }
 
   const header = document.createElement("header");
   header.className = "home-header";
@@ -139,7 +233,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     while (grid.firstChild) {
       grid.removeChild(grid.firstChild);
     }
-    movieButtons = [];
+    cards = [];
     notice.textContent = "";
     notice.hidden = true;
     if (result.failedAll) {
@@ -156,13 +250,25 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     }
 
     message.textContent = result.movies.length + (result.movies.length === 1 ? " movie" : " movies");
-    let focusedButton = null;
-    result.movies.forEach(function (movie) {
-      const card = makeMovieCard(movie, actionsHandler);
-      grid.appendChild(card.element);
-      movieButtons.push(card.playButton);
+    let targetCard = null;
+    result.movies.forEach(function (movie, idx) {
+      const cardEntry = makeMovieCard(movie, {
+        onSelect: actionsHandler.onSelect,
+        onPlaybackUnavailable: actionsHandler.onPlaybackUnavailable,
+        onCardClick: function (entry) {
+          activateStageB(entry);
+        }
+      });
+      cardEntry.element.addEventListener("focus", function () {
+        if (document.activeElement === cardEntry.element) {
+          setSelectedCard(cardEntry, false);
+        }
+      });
+      grid.appendChild(cardEntry.element);
+      cards.push(cardEntry);
       if (options && options.selectedMovieId && movie.id === options.selectedMovieId) {
-        focusedButton = card.playButton;
+        targetCard = cardEntry;
+        activeCardIndex = idx;
       }
     });
     if (result.errors.length) {
@@ -174,8 +280,8 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       notice.hidden = false;
     }
 
-    if (focusedButton && !screen.contains(document.activeElement)) {
-      focusedButton.focus();
+    if (cards.length > 0) {
+      setSelectedCard(targetCard || cards[0], false);
     }
   }
 
@@ -213,13 +319,13 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
           if (options && options.selectedMovieId) {
             const matchIndex = currentResult && currentResult.movies ?
               currentResult.movies.findIndex(function (m) { return m.id === options.selectedMovieId; }) : -1;
-            if (matchIndex >= 0 && movieButtons[matchIndex]) {
-              movieButtons[matchIndex].focus();
+            if (matchIndex >= 0 && cards[matchIndex]) {
+              setSelectedCard(cards[matchIndex], true);
               return;
             }
           }
-          if (movieButtons.length) {
-            movieButtons[0].focus();
+          if (cards.length) {
+            setSelectedCard(cards[activeCardIndex] || cards[0], true);
           } else {
             refreshButton.focus();
           }
@@ -235,35 +341,80 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
   }
   refresh(false);
 
-  function allFocusable() {
-    return [refreshButton].concat(movieButtons);
-  }
-
   return {
     onKeyDown(event, key) {
       if (key.isBack) {
+        const activeIdx = getActiveCardIndex();
+        if (activeIdx !== -1) {
+          const cardEntry = cards[activeIdx];
+          if (document.activeElement === cardEntry.playButton || cardEntry.element.classList.contains("has-action-focus")) {
+            cancelStageB(cardEntry);
+            return true;
+          }
+        }
         if (!key.isRepeat) {
           actionsHandler.onBack();
         }
         return true;
       }
+
       if (key.isSelect) {
-        activateFocusedElement(document.activeElement);
-        return true;
+        const active = document.activeElement;
+        if (active === refreshButton) {
+          refresh(true);
+          return true;
+        }
+        const activeIdx = getActiveCardIndex();
+        if (activeIdx !== -1) {
+          const cardEntry = cards[activeIdx];
+          if (active === cardEntry.playButton) {
+            if (cardEntry.movie.playbackEnabled) {
+              actionsHandler.onSelect(cardEntry.movie);
+            } else {
+              actionsHandler.onPlaybackUnavailable(cardEntry.movie);
+            }
+            return true;
+          } else {
+            activateStageB(cardEntry);
+            return true;
+          }
+        }
+        return false;
       }
+
       if (key.direction === "left" || key.direction === "right") {
-        focusNext(allFocusable(), document.activeElement, key.direction);
-        return true;
+        const activeIdx = getActiveCardIndex();
+        if (activeIdx !== -1) {
+          clearAllActionStates();
+          const delta = key.direction === "left" ? -1 : 1;
+          const nextIdx = Math.max(0, Math.min(cards.length - 1, activeIdx + delta));
+          setSelectedCard(cards[nextIdx], true);
+          return true;
+        } else if (document.activeElement === refreshButton && key.direction === "right" && cards.length > 0) {
+          setSelectedCard(cards[0], true);
+          return true;
+        }
+        return false;
       }
+
       if (key.direction === "up" || key.direction === "down") {
         const active = document.activeElement;
-        if (active === refreshButton && key.direction === "down" && movieButtons.length) {
-          movieButtons[0].focus();
-        } else if (movieButtons.indexOf(active) !== -1 && key.direction === "up") {
-          refreshButton.focus();
+        const activeIdx = getActiveCardIndex();
+        if (key.direction === "up") {
+          if (activeIdx !== -1) {
+            clearAllActionStates();
+            refreshButton.focus();
+            return true;
+          }
+        } else if (key.direction === "down") {
+          if (active === refreshButton && cards.length > 0) {
+            setSelectedCard(cards[activeCardIndex] || cards[0], true);
+            return true;
+          }
         }
-        return true;
+        return false;
       }
+
       return false;
     },
     onKeyUp() {

@@ -177,6 +177,10 @@ function makeButton(className, text, label) {
 function makeMovieCard(movie, actionsHandler) {
   const card = document.createElement("article");
   card.className = "catalog-card";
+  card.tabIndex = 0;
+  card.setAttribute("role", "button");
+  card.setAttribute("aria-label", movie.title);
+  card.dataset.movieId = movie.id;
 
   const image = document.createElement("img");
   image.className = "catalog-poster";
@@ -206,28 +210,61 @@ function makeMovieCard(movie, actionsHandler) {
   const source = document.createElement("p");
   source.className = "catalog-card-source";
   source.textContent = movie.source;
-  const play = makeButton(
-    "home-action primary-home-action catalog-play" + (movie.playbackEnabled ? "" : " is-unavailable"),
-    movie.playbackEnabled ? "▶  Play" : "Awaiting authorized stream",
-    (movie.playbackEnabled ? "Play " : "Playback unavailable for ") + movie.title
-  );
+
+  const play = document.createElement("button");
+  play.type = "button";
+  play.className = "home-action primary-home-action catalog-play" + (movie.playbackEnabled ? "" : " is-unavailable");
+  play.tabIndex = -1;
+  play.setAttribute("aria-label", (movie.playbackEnabled ? "Play " : "Playback unavailable for ") + movie.title);
+
+  const playIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  playIcon.setAttribute("class", "catalog-play-icon");
+  playIcon.setAttribute("viewBox", "0 0 24 24");
+  playIcon.setAttribute("width", "18");
+  playIcon.setAttribute("height", "18");
+  playIcon.setAttribute("fill", "currentColor");
+  playIcon.setAttribute("aria-hidden", "true");
+  const playPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  playPath.setAttribute("d", "M8 5v14l11-7z");
+  playIcon.appendChild(playPath);
+
+  const playText = document.createElement("span");
+  playText.className = "catalog-play-label";
+  playText.textContent = movie.playbackEnabled ? "Play" : "Unavailable";
+
+  play.appendChild(playIcon);
+  play.appendChild(playText);
+
+  const cardEntry = { element: card, playButton: play, movie: movie };
+
   if (movie.playbackEnabled) {
-    play.addEventListener("click", function () {
+    play.addEventListener("click", function (event) {
+      event.stopPropagation();
       actionsHandler.onSelect(movie);
     });
   } else {
     play.title = "Playback is disabled until an authorized stream source is configured.";
-    play.addEventListener("click", function () {
+    play.addEventListener("click", function (event) {
+      event.stopPropagation();
       actionsHandler.onPlaybackUnavailable(movie);
     });
   }
+
+  card.addEventListener("click", function (event) {
+    if (event.target === play || play.contains(event.target)) {
+      return;
+    }
+    if (typeof actionsHandler.onCardClick === "function") {
+      actionsHandler.onCardClick(cardEntry);
+    }
+  });
 
   details.appendChild(title);
   details.appendChild(source);
   details.appendChild(play);
   card.appendChild(image);
   card.appendChild(details);
-  return { element: card, playButton: play, movie: movie };
+  return cardEntry;
 }
 
 function createHomeScreen(root, catalogService, actionsHandler, options) {
@@ -238,7 +275,64 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   let destroyed = false;
   let refreshing = false;
   let currentResult = null;
-  let movieButtons = [];
+  let cards = [];
+  let activeCardIndex = 0;
+
+  function clearAllActionStates() {
+    cards.forEach(function (entry) {
+      entry.element.classList.remove("has-action-focus");
+      entry.playButton.tabIndex = -1;
+    });
+  }
+
+  function setSelectedCard(targetEntry, focusElement) {
+    clearAllActionStates();
+    cards.forEach(function (entry) {
+      const isTarget = entry === targetEntry;
+      entry.element.classList.toggle("is-selected", isTarget);
+    });
+    const foundIdx = cards.indexOf(targetEntry);
+    if (foundIdx !== -1) {
+      activeCardIndex = foundIdx;
+    }
+    if (focusElement && targetEntry) {
+      targetEntry.element.focus();
+    }
+  }
+
+  function activateStageB(cardEntry) {
+    if (!cardEntry) {
+      return;
+    }
+    clearAllActionStates();
+    cards.forEach(function (entry) {
+      entry.element.classList.toggle("is-selected", entry === cardEntry);
+    });
+    activeCardIndex = cards.indexOf(cardEntry);
+    cardEntry.element.classList.add("has-action-focus");
+    cardEntry.playButton.tabIndex = 0;
+    cardEntry.playButton.focus();
+  }
+
+  function cancelStageB(cardEntry) {
+    if (!cardEntry) {
+      return;
+    }
+    cardEntry.element.classList.remove("has-action-focus");
+    cardEntry.playButton.tabIndex = -1;
+    cardEntry.element.classList.add("is-selected");
+    cardEntry.element.focus();
+  }
+
+  function getActiveCardIndex() {
+    const active = document.activeElement;
+    for (let i = 0; i < cards.length; i += 1) {
+      if (cards[i].element === active || cards[i].playButton === active || cards[i].element.contains(active)) {
+        return i;
+      }
+    }
+    return -1;
+  }
 
   const header = document.createElement("header");
   header.className = "home-header";
@@ -303,7 +397,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     while (grid.firstChild) {
       grid.removeChild(grid.firstChild);
     }
-    movieButtons = [];
+    cards = [];
     notice.textContent = "";
     notice.hidden = true;
     if (result.failedAll) {
@@ -320,13 +414,25 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     }
 
     message.textContent = result.movies.length + (result.movies.length === 1 ? " movie" : " movies");
-    let focusedButton = null;
-    result.movies.forEach(function (movie) {
-      const card = makeMovieCard(movie, actionsHandler);
-      grid.appendChild(card.element);
-      movieButtons.push(card.playButton);
+    let targetCard = null;
+    result.movies.forEach(function (movie, idx) {
+      const cardEntry = makeMovieCard(movie, {
+        onSelect: actionsHandler.onSelect,
+        onPlaybackUnavailable: actionsHandler.onPlaybackUnavailable,
+        onCardClick: function (entry) {
+          activateStageB(entry);
+        }
+      });
+      cardEntry.element.addEventListener("focus", function () {
+        if (document.activeElement === cardEntry.element) {
+          setSelectedCard(cardEntry, false);
+        }
+      });
+      grid.appendChild(cardEntry.element);
+      cards.push(cardEntry);
       if (options && options.selectedMovieId && movie.id === options.selectedMovieId) {
-        focusedButton = card.playButton;
+        targetCard = cardEntry;
+        activeCardIndex = idx;
       }
     });
     if (result.errors.length) {
@@ -338,8 +444,8 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       notice.hidden = false;
     }
 
-    if (focusedButton && !screen.contains(document.activeElement)) {
-      focusedButton.focus();
+    if (cards.length > 0) {
+      setSelectedCard(targetCard || cards[0], false);
     }
   }
 
@@ -377,13 +483,13 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
           if (options && options.selectedMovieId) {
             const matchIndex = currentResult && currentResult.movies ?
               currentResult.movies.findIndex(function (m) { return m.id === options.selectedMovieId; }) : -1;
-            if (matchIndex >= 0 && movieButtons[matchIndex]) {
-              movieButtons[matchIndex].focus();
+            if (matchIndex >= 0 && cards[matchIndex]) {
+              setSelectedCard(cards[matchIndex], true);
               return;
             }
           }
-          if (movieButtons.length) {
-            movieButtons[0].focus();
+          if (cards.length) {
+            setSelectedCard(cards[activeCardIndex] || cards[0], true);
           } else {
             refreshButton.focus();
           }
@@ -399,35 +505,80 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   }
   refresh(false);
 
-  function allFocusable() {
-    return [refreshButton].concat(movieButtons);
-  }
-
   return {
     onKeyDown(event, key) {
       if (key.isBack) {
+        const activeIdx = getActiveCardIndex();
+        if (activeIdx !== -1) {
+          const cardEntry = cards[activeIdx];
+          if (document.activeElement === cardEntry.playButton || cardEntry.element.classList.contains("has-action-focus")) {
+            cancelStageB(cardEntry);
+            return true;
+          }
+        }
         if (!key.isRepeat) {
           actionsHandler.onBack();
         }
         return true;
       }
+
       if (key.isSelect) {
-        activateFocusedElement(document.activeElement);
-        return true;
+        const active = document.activeElement;
+        if (active === refreshButton) {
+          refresh(true);
+          return true;
+        }
+        const activeIdx = getActiveCardIndex();
+        if (activeIdx !== -1) {
+          const cardEntry = cards[activeIdx];
+          if (active === cardEntry.playButton) {
+            if (cardEntry.movie.playbackEnabled) {
+              actionsHandler.onSelect(cardEntry.movie);
+            } else {
+              actionsHandler.onPlaybackUnavailable(cardEntry.movie);
+            }
+            return true;
+          } else {
+            activateStageB(cardEntry);
+            return true;
+          }
+        }
+        return false;
       }
+
       if (key.direction === "left" || key.direction === "right") {
-        focusNext(allFocusable(), document.activeElement, key.direction);
-        return true;
+        const activeIdx = getActiveCardIndex();
+        if (activeIdx !== -1) {
+          clearAllActionStates();
+          const delta = key.direction === "left" ? -1 : 1;
+          const nextIdx = Math.max(0, Math.min(cards.length - 1, activeIdx + delta));
+          setSelectedCard(cards[nextIdx], true);
+          return true;
+        } else if (document.activeElement === refreshButton && key.direction === "right" && cards.length > 0) {
+          setSelectedCard(cards[0], true);
+          return true;
+        }
+        return false;
       }
+
       if (key.direction === "up" || key.direction === "down") {
         const active = document.activeElement;
-        if (active === refreshButton && key.direction === "down" && movieButtons.length) {
-          movieButtons[0].focus();
-        } else if (movieButtons.indexOf(active) !== -1 && key.direction === "up") {
-          refreshButton.focus();
+        const activeIdx = getActiveCardIndex();
+        if (key.direction === "up") {
+          if (activeIdx !== -1) {
+            clearAllActionStates();
+            refreshButton.focus();
+            return true;
+          }
+        } else if (key.direction === "down") {
+          if (active === refreshButton && cards.length > 0) {
+            setSelectedCard(cards[activeCardIndex] || cards[0], true);
+            return true;
+          }
         }
-        return true;
+        return false;
       }
+
       return false;
     },
     onKeyUp() {
@@ -495,6 +646,7 @@ function normalizeRemoteKey(event) {
     isRepeat: event.repeat === true,
     isBack: key === "Back" || key === "BrowserBack" || key === "Escape" ||
       key === "XF86Back" || code === 10009 || code === 27 || code === 8,
+    isEscape: key === "Escape" || code === 27,
     isSelect: key === "Enter" || key === " " || code === 13 || code === 32,
     isPlayPause: key === "MediaPlayPause" || code === 10252,
     isPlay: key === "MediaPlay" || code === 415,
@@ -658,24 +810,22 @@ function playerMarkup(movie) {
     '<span id="duration" class="time-label">0:00</span></label>' +
     '<div class="control-row">' +
     '<button id="rewind-button" class="control-button" type="button" aria-label="Rewind 10 seconds">' +
-    '<span class="control-symbol rewind-symbol" aria-hidden="true">10</span><span class="control-caption">Back</span></button>' +
+    '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m15 18-6-6 6-6"/></svg></span>' +
+    '<span class="control-caption">Back</span></button>' +
     '<button id="toggle-play-button" class="control-button primary-control" type="button" aria-label="Pause">' +
     '<span id="play-pause-symbol" class="control-symbol" aria-hidden="true">Ⅱ</span>' +
     '<span id="play-pause-caption" class="control-caption">Pause</span></button>' +
     '<button id="forward-button" class="control-button" type="button" aria-label="Forward 10 seconds">' +
-    '<span class="control-symbol forward-symbol" aria-hidden="true">10</span><span class="control-caption">Forward</span></button>' +
+    '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m9 18 6-6-6-6"/></svg></span>' +
+    '<span class="control-caption">Forward</span></button>' +
     '<span class="control-divider" aria-hidden="true"></span>' +
     '<button id="volume-down-button" class="control-button compact-control" type="button" aria-label="Volume down">' +
     '<span class="control-symbol volume-symbol" aria-hidden="true">−</span><span class="control-caption">Vol −</span></button>' +
-    '<button id="sound-toggle" class="control-button compact-control" type="button" aria-pressed="false" aria-label="Mute">' +
-    '<span id="sound-symbol" class="control-symbol" aria-hidden="true">♪</span><span id="sound-label" class="control-caption">Mute</span></button>' +
     '<button id="volume-up-button" class="control-button compact-control" type="button" aria-label="Volume up">' +
     '<span class="control-symbol volume-symbol" aria-hidden="true">+</span><span class="control-caption">Vol +</span></button>' +
     '<button id="subtitle-button" class="control-button compact-control" type="button" aria-pressed="true" aria-label="Toggle subtitles">' +
     '<span id="subtitle-symbol" class="control-symbol subtitle-symbol" aria-hidden="true">CC</span><span id="subtitle-label" class="control-caption">Subs</span></button>' +
-    '<button id="fullscreen-button" class="control-button compact-control" type="button" aria-label="Toggle fullscreen">' +
-    '<span class="control-symbol fullscreen-symbol" aria-hidden="true">□</span><span class="control-caption">Full screen</span></button>' +
-    '</div><p class="remote-hint">← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Back to return to library</p>' +
+    '</div><p class="remote-hint">← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Esc / Back to hide controls or return</p>' +
     '</div></section>';
 }
 
@@ -692,9 +842,6 @@ function createPlayerScreen(root, movie, onBackRequest) {
   const togglePlayButton = root.querySelector("#toggle-play-button");
   const playPauseSymbol = root.querySelector("#play-pause-symbol");
   const playPauseCaption = root.querySelector("#play-pause-caption");
-  const soundToggle = root.querySelector("#sound-toggle");
-  const soundLabel = root.querySelector("#sound-label");
-  const soundSymbol = root.querySelector("#sound-symbol");
   const volumeHud = root.querySelector("#volume-hud");
   const volumeHudIcon = root.querySelector("#volume-hud-icon");
   const volumeHudLevel = root.querySelector("#volume-hud-level");
@@ -747,11 +894,6 @@ function createPlayerScreen(root, movie, onBackRequest) {
 
   function updateSoundControl(muted, volume) {
     const percentage = muted ? 0 : Math.round(volume * 100);
-    soundToggle.setAttribute("aria-pressed", String(muted));
-    soundToggle.setAttribute("aria-label", muted ? "Unmute" : "Mute");
-    soundLabel.textContent = muted ? "Unmute" : "Mute";
-    soundSymbol.textContent = muted ? "×" : "♪";
-    soundToggle.classList.toggle("is-muted", muted);
     volumeHudIcon.textContent = muted ? "×" : "♪";
     volumeHudLevel.style.width = percentage + "%";
     volumeHudPercent.textContent = percentage + "%";
@@ -893,6 +1035,8 @@ function createPlayerScreen(root, movie, onBackRequest) {
     durationLabel.textContent = formatTime(range.end - range.start);
   }
 
+  const CONTROLS_AUTOHIDE_MS = 4500;
+
   function showControls(focusPlayback) {
     window.clearTimeout(controlsTimer);
     controlsVisible = true;
@@ -903,7 +1047,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
   }
 
   function hideControls(force) {
-    if (!force && (!mediaStarted || autoplayBlocked)) {
+    if (!force && (!mediaStarted || autoplayBlocked || (video && video.paused))) {
       return;
     }
     controlsVisible = false;
@@ -914,7 +1058,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
     window.clearTimeout(controlsTimer);
     controlsTimer = window.setTimeout(function () {
       hideControls(false);
-    }, delay);
+    }, typeof delay === "number" ? delay : CONTROLS_AUTOHIDE_MS);
   }
 
   function focusControl(direction) {
@@ -953,6 +1097,14 @@ function createPlayerScreen(root, movie, onBackRequest) {
         return true;
       }
       seekController.commitPreview();
+      if (controlsVisible || stage.classList.contains("controls-visible")) {
+        window.clearTimeout(controlsTimer);
+        hideControls(true);
+        if (controls.contains(document.activeElement)) {
+          document.activeElement.blur();
+        }
+        return true;
+      }
       onBackRequest();
       return true;
     }
@@ -960,7 +1112,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
     if (!controlsVisible) {
       showControls(true);
     }
-    scheduleHide(3000);
+    scheduleHide();
     const target = document.activeElement;
     const inControls = controls.contains(target);
 
@@ -1085,7 +1237,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
       playButton.hidden = true;
       stage.classList.add("playback-error");
       showStatus(message, true);
-      scheduleHide(3000);
+      scheduleHide();
     },
     onPlaying() {
       mediaStarted = true;
@@ -1093,12 +1245,12 @@ function createPlayerScreen(root, movie, onBackRequest) {
       playButton.hidden = true;
       stage.classList.remove("playback-error");
       status.dataset.visible = "false";
-      scheduleHide(3000);
+      scheduleHide();
       updateSubtitleDisplay();
     },
     onWaiting() {
       showControls(false);
-      scheduleHide(3000);
+      scheduleHide();
     },
     onEnded() {
       showControls(true);
@@ -1167,30 +1319,6 @@ function createPlayerScreen(root, movie, onBackRequest) {
   listen(root.querySelector("#volume-up-button"), "click", function () {
     changeVolume(0.1);
   });
-  listen(soundToggle, "click", function () {
-    playback.toggleMute();
-    showVolumeHud();
-    showStatus(video.muted ? "Sound off" : "Sound on");
-  });
-  listen(root.querySelector("#fullscreen-button"), "click", function () {
-    const request = stage.requestFullscreen || stage.webkitRequestFullscreen;
-    const exit = document.exitFullscreen || document.webkitExitFullscreen;
-    if (document.fullscreenElement || document.webkitFullscreenElement) {
-      if (exit) {
-        exit.call(document);
-      }
-    } else if (request) {
-      const result = request.call(stage);
-      if (result && typeof result.catch === "function") {
-        result.catch(function (error) {
-          console.error("Could not enter fullscreen:", error);
-          showStatus("Full screen is unavailable.");
-        });
-      }
-    } else {
-      showStatus("Full screen is unavailable.");
-    }
-  });
   listen(seekBar, "input", function () {
     seeking = true;
     const range = playback.getRange();
@@ -1212,30 +1340,30 @@ function createPlayerScreen(root, movie, onBackRequest) {
   });
   listen(controls, "focusin", function () {
     showControls(false);
-    scheduleHide(3000);
+    scheduleHide();
   });
   listen(controls, "click", function () {
     showControls(false);
-    scheduleHide(3000);
+    scheduleHide();
   });
   listen(document, "mousemove", function () {
     if (!controlsVisible) {
       showControls(false);
     }
-    scheduleHide(3000);
+    scheduleHide();
   });
   listen(document, "touchstart", function () {
     showControls(false);
-    scheduleHide(3000);
+    scheduleHide();
   });
   listen(stage, "click", function (event) {
     if (event.target === video || event.target === stage) {
       if (!controlsVisible) {
         showControls(false);
-        scheduleHide(3000);
+        scheduleHide();
       } else {
         playback.toggle();
-        scheduleHide(3000);
+        scheduleHide();
       }
     }
   });
@@ -1287,7 +1415,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
   updateTimeline();
   initSubtitles();
   playback.start(movie.m3u8);
-  scheduleHide(3000);
+  scheduleHide();
 
   return {
     onKeyDown,
