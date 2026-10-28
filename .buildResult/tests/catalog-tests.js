@@ -464,9 +464,42 @@ assert.equal(enterKey.isBack, false);
 // Player navigation bar UI verification
 const playerSource = fs.readFileSync("js/player/player-screen.js", "utf8");
 assert.equal(playerSource.includes('id="sound-toggle"'), false, "sound-toggle should be removed from player markup");
-assert.equal(playerSource.includes('id="fullscreen-button"'), false, "fullscreen-button should be removed from player markup");
+assert.ok(playerSource.includes('id="fullscreen-button"'), "fullscreen-button should be present in player markup");
+assert.ok(playerSource.includes('id="fullscreen-symbol"'), "fullscreen-symbol should be present in player markup");
+assert.ok(playerSource.includes('id="fullscreen-label"'), "fullscreen-label should be present in player markup");
+assert.ok(playerSource.includes("toggleFullscreen"), "toggleFullscreen function must be defined");
+assert.ok(playerSource.includes("tap-zone-left"), "tap-zone-left must be present for double tap seek");
+assert.ok(playerSource.includes("tap-zone-right"), "tap-zone-right must be present for double tap seek");
+assert.ok(playerSource.includes("seek-overlay-left"), "seek-overlay-left must be present for visual feedback");
+assert.ok(playerSource.includes("seek-overlay-right"), "seek-overlay-right must be present for visual feedback");
+assert.ok(playerSource.includes("handleStageTap"), "handleStageTap must be defined for double tap seek");
+assert.ok(playerSource.includes("lockLandscape"), "lockLandscape must be defined for orientation support");
 assert.ok(playerSource.includes("m15 18-6-6 6-6"), "Rewind button should use chevron-left SVG icon");
 assert.ok(playerSource.includes("m9 18 6-6-6-6"), "Forward button should use chevron-right SVG icon");
+assert.ok(playerSource.includes('id="player-loader"'), "player-loader must be present in player markup");
+assert.ok(playerSource.includes("loader-spinner"), "loader-spinner must be present in player markup");
+assert.ok(playerSource.includes("showLoader"), "showLoader function must be defined");
+assert.ok(playerSource.includes("hideLoader"), "hideLoader function must be defined");
+
+// Device detection tests
+import { detectDevice } from "../js/utils/device.js";
+assert.equal(typeof detectDevice(), "string");
+assert.ok(["desktop", "mobile", "tv"].includes(detectDevice()));
+
+const playerCss = fs.readFileSync("css/player.css", "utf8");
+assert.ok(playerCss.includes("@media (orientation: portrait)"), "player.css must support portrait orientation rotation");
+assert.ok(playerCss.includes("rotate(90deg)"), "player.css must rotate 90deg in portrait");
+assert.ok(playerCss.includes(".video-stage.is-fullscreen"), "player.css must only rotate when fullscreen is active");
+assert.ok(playerCss.includes('[data-device="mobile"]'), "player.css must support mobile device adaptations");
+assert.ok(playerCss.includes('[data-device="tv"]'), "player.css must support TV device adaptations");
+assert.ok(playerCss.includes('[data-device="desktop"]'), "player.css must support desktop device adaptations");
+assert.ok(playerCss.includes(".seek-tap-zone"), "player.css must define .seek-tap-zone");
+assert.ok(playerCss.includes("-webkit-text-stroke"), "Subtitles must use black text-stroke border");
+assert.ok(playerCss.includes("rgba(14, 14, 18, 0.52)"), "Navigation bar must use low opacity translucent background");
+assert.ok(playerCss.includes(".player-loader"), "player.css must define .player-loader");
+assert.ok(playerCss.includes("spinner-rotate"), "player.css must define spinner-rotate animation");
+assert.ok(playerCss.includes("spinner-dash"), "player.css must define spinner-dash animation");
+assert.ok(playerSource.includes("hideControls(true);"), "Click outside visible controls must hide navigation immediately");
 
 // Verify ESC hides controls first before triggering onBackRequest
 assert.ok(

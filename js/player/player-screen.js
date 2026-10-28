@@ -4,12 +4,32 @@ import { createSubtitleService } from "./subtitle-service.js";
 import { getActiveSubtitleText } from "./subtitle-parser.js";
 import { activateFocusedElement, focusNext } from "../navigation/remote-navigation.js";
 import { formatTime } from "../utils/format-time.js";
+import { currentDevice } from "../utils/device.js";
 
 function playerMarkup(movie) {
+  let hintText = "← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Esc / Back to hide controls or return";
+  if (currentDevice === "mobile") {
+    hintText = "Double-tap left/right to seek 10s · Tap to show controls";
+  } else if (currentDevice === "desktop") {
+    hintText = "Space / K to pause · F for full screen · ← → seek 10s · ↑ ↓ volume · M mute";
+  }
+
   return '<section id="video-stage" class="video-stage controls-visible" aria-label="Video player">' +
     '<div class="cinema-shade" aria-hidden="true"></div>' +
     '<video id="video" autoplay playsinline preload="auto" aria-label="BACUFlix video playback"></video>' +
     '<div id="subtitles" class="subtitle-overlay" aria-live="polite" aria-atomic="true"></div>' +
+    '<div id="tap-zone-left" class="seek-tap-zone seek-tap-left" aria-hidden="true"></div>' +
+    '<div id="tap-zone-right" class="seek-tap-zone seek-tap-right" aria-hidden="true"></div>' +
+    '<div id="seek-overlay-left" class="seek-feedback-overlay seek-feedback-left" aria-hidden="true">' +
+    '<div class="seek-feedback-ripple"></div>' +
+    '<div class="seek-feedback-content">' +
+    '<div class="seek-feedback-arrows"><svg viewBox="0 0 24 24" class="seek-feedback-icon" width="36" height="36" fill="currentColor"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg></div>' +
+    '<span class="seek-feedback-text">10 seconds</span></div></div>' +
+    '<div id="seek-overlay-right" class="seek-feedback-overlay seek-feedback-right" aria-hidden="true">' +
+    '<div class="seek-feedback-ripple"></div>' +
+    '<div class="seek-feedback-content">' +
+    '<div class="seek-feedback-arrows"><svg viewBox="0 0 24 24" class="seek-feedback-icon" width="36" height="36" fill="currentColor"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg></div>' +
+    '<span class="seek-feedback-text">10 seconds</span></div></div>' +
     '<header class="topbar ui-overlay">' +
     '<button class="brand home-return-button" type="button" aria-label="Return to movie catalog"><img src="icon.png" alt="">' +
     '<span>BACU<span class="brand-accent">Flix</span></span></button>' +
@@ -18,6 +38,13 @@ function playerMarkup(movie) {
     '<span class="eyebrow">NOW PLAYING</span><span class="now-playing-title"></span>' +
     '</div></div>' +
     '<p id="status" class="status" role="status" aria-live="polite">Loading stream...</p>' +
+    '<div id="player-loader" class="player-loader is-active" role="status" aria-label="Loading video">' +
+    '<div class="loader-spinner" aria-hidden="true">' +
+    '<svg class="spinner-svg" viewBox="0 0 50 50">' +
+    '<circle class="spinner-track" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>' +
+    '<circle class="spinner-circle" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>' +
+    '</svg></div>' +
+    '<span id="loader-label" class="loader-label">Loading movie...</span></div>' +
     '<div id="volume-hud" class="volume-hud" role="status" aria-live="polite" aria-hidden="true">' +
     '<span id="volume-hud-icon" class="volume-hud-icon" aria-hidden="true">♪</span>' +
     '<div class="volume-hud-track" aria-hidden="true"><div id="volume-hud-level" class="volume-hud-level"></div></div>' +
@@ -45,7 +72,11 @@ function playerMarkup(movie) {
     '<span class="control-symbol volume-symbol" aria-hidden="true">+</span><span class="control-caption">Vol +</span></button>' +
     '<button id="subtitle-button" class="control-button compact-control" type="button" aria-pressed="true" aria-label="Toggle subtitles">' +
     '<span id="subtitle-symbol" class="control-symbol subtitle-symbol" aria-hidden="true">CC</span><span id="subtitle-label" class="control-caption">Subs</span></button>' +
-    '</div><p class="remote-hint">← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Esc / Back to hide controls or return</p>' +
+    '<button id="fullscreen-button" class="control-button compact-control" type="button" aria-label="Enter fullscreen">' +
+    '<span id="fullscreen-symbol" class="control-symbol fullscreen-symbol" aria-hidden="true">' +
+    '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>' +
+    '</span><span id="fullscreen-label" class="control-caption">Full screen</span></button>' +
+    '</div><p class="remote-hint">' + hintText + '</p>' +
     '</div></section>';
 }
 
@@ -70,7 +101,18 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   const subtitleButton = root.querySelector("#subtitle-button");
   const subtitleLabel = root.querySelector("#subtitle-label");
   const subtitleSymbol = root.querySelector("#subtitle-symbol");
+  const fullscreenButton = root.querySelector("#fullscreen-button");
+  const fullscreenLabel = root.querySelector("#fullscreen-label");
+  const fullscreenSymbol = root.querySelector("#fullscreen-symbol");
+  const FULLSCREEN_ENTER_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+  const FULLSCREEN_EXIT_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
   const subtitlesContainer = root.querySelector("#subtitles");
+  const tapZoneLeft = root.querySelector("#tap-zone-left");
+  const tapZoneRight = root.querySelector("#tap-zone-right");
+  const seekOverlayLeft = root.querySelector("#seek-overlay-left");
+  const seekOverlayRight = root.querySelector("#seek-overlay-right");
+  const loader = root.querySelector("#player-loader");
+  const loaderLabel = root.querySelector("#loader-label");
   const subtitleService = createSubtitleService();
   const cleanups = [];
   let subtitleCues = [];
@@ -79,6 +121,11 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   let statusTimer = 0;
   let controlsTimer = 0;
   let volumeHudTimer = 0;
+  let singleClickTimer = 0;
+  let feedbackTimer = 0;
+  let lastTapTime = 0;
+  let lastTapSide = null;
+  let cumulativeSeconds = 0;
   let controlsVisible = true;
   let mediaStarted = false;
   let seeking = false;
@@ -110,6 +157,25 @@ export function createPlayerScreen(root, movie, onBackRequest) {
         status.dataset.visible = "false";
       }, 2400);
     }
+  }
+
+  function showLoader(message) {
+    if (disposed || !loader) {
+      return;
+    }
+    if (loaderLabel && message) {
+      loaderLabel.textContent = message;
+    }
+    loader.classList.add("is-active");
+    stage.classList.add("is-loading");
+  }
+
+  function hideLoader() {
+    if (!loader) {
+      return;
+    }
+    loader.classList.remove("is-active");
+    stage.classList.remove("is-loading", "is-buffering");
   }
 
   function updateSoundControl(muted, volume) {
@@ -227,6 +293,164 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     });
   }
 
+  function isFullscreenActive() {
+    return Boolean(
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement
+    );
+  }
+
+  function updateFullscreenControl() {
+    if (disposed) {
+      return;
+    }
+    const isFull = isFullscreenActive();
+    stage.classList.toggle("is-fullscreen", isFull);
+    fullscreenButton.setAttribute("aria-label", isFull ? "Exit fullscreen" : "Enter fullscreen");
+    fullscreenButton.setAttribute("aria-pressed", String(isFull));
+    fullscreenLabel.textContent = isFull ? "Exit full" : "Full screen";
+    fullscreenSymbol.innerHTML = isFull ? FULLSCREEN_EXIT_ICON : FULLSCREEN_ENTER_ICON;
+    fullscreenButton.classList.toggle("is-active", isFull);
+    if (isFull) {
+      lockLandscape();
+    } else {
+      unlockLandscape();
+    }
+  }
+
+  function toggleFullscreen() {
+    if (isFullscreenActive()) {
+      try {
+        unlockLandscape();
+        const exit = document.exitFullscreen ||
+          document.webkitExitFullscreen ||
+          document.mozCancelFullScreen ||
+          document.msExitFullscreen;
+        if (exit) {
+          const p = exit.call(document);
+          if (p && typeof p.catch === "function") {
+            p.catch(function (error) {
+              console.warn("Could not exit fullscreen:", error);
+            });
+          }
+        }
+      } catch (error) {
+        console.warn("Could not exit fullscreen:", error);
+      }
+    } else {
+      try {
+        lockLandscape();
+        const request = stage.requestFullscreen ||
+          stage.webkitRequestFullscreen ||
+          stage.mozRequestFullScreen ||
+          stage.msRequestFullscreen ||
+          (video && video.webkitEnterFullscreen ? function () { video.webkitEnterFullscreen(); } : null);
+        if (request) {
+          const p = request.call(stage);
+          if (p && typeof p.catch === "function") {
+            p.catch(function (error) {
+              console.error("Could not enter fullscreen:", error);
+              showStatus("Full screen is unavailable.");
+            });
+          }
+        } else {
+          showStatus("Full screen is unavailable.");
+        }
+      } catch (error) {
+        console.error("Could not enter fullscreen:", error);
+        showStatus("Full screen is unavailable.");
+      }
+    }
+  }
+
+  function lockLandscape() {
+    try {
+      if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock("landscape").catch(function () {});
+      } else if (screen.lockOrientation) {
+        screen.lockOrientation("landscape");
+      } else if (screen.mozLockOrientation) {
+        screen.mozLockOrientation("landscape");
+      } else if (screen.msLockOrientation) {
+        screen.msLockOrientation("landscape");
+      }
+    } catch (_) {}
+  }
+
+  function unlockLandscape() {
+    try {
+      if (screen.orientation && screen.orientation.unlock) {
+        screen.orientation.unlock();
+      } else if (screen.unlockOrientation) {
+        screen.unlockOrientation();
+      }
+    } catch (_) {}
+  }
+
+  function showSeekFeedback(side, seconds) {
+    if (disposed) {
+      return;
+    }
+    const overlay = side === "left" ? seekOverlayLeft : seekOverlayRight;
+    const otherOverlay = side === "left" ? seekOverlayRight : seekOverlayLeft;
+    const textEl = overlay.querySelector(".seek-feedback-text");
+
+    otherOverlay.classList.remove("is-active");
+    textEl.textContent = Math.abs(seconds) + " seconds";
+
+    overlay.classList.remove("is-active");
+    void overlay.offsetWidth;
+    overlay.classList.add("is-active");
+
+    window.clearTimeout(feedbackTimer);
+    feedbackTimer = window.setTimeout(function () {
+      overlay.classList.remove("is-active");
+      cumulativeSeconds = 0;
+      lastTapSide = null;
+    }, 750);
+  }
+
+  function handleStageTap(side) {
+    if (disposed) {
+      return;
+    }
+    const now = Date.now();
+    const timeSinceLast = now - lastTapTime;
+
+    if (timeSinceLast < 320 && lastTapSide === side) {
+      window.clearTimeout(singleClickTimer);
+      if (side === "center") {
+        toggleFullscreen();
+        lastTapTime = now;
+        scheduleHide();
+        return;
+      }
+      cumulativeSeconds += 10;
+      const direction = side === "left" ? -1 : 1;
+      seekController.seekBy(direction * 10);
+      showSeekFeedback(side, cumulativeSeconds);
+      lastTapTime = now;
+      scheduleHide();
+    } else {
+      lastTapTime = now;
+      lastTapSide = side;
+      cumulativeSeconds = 10;
+
+      const timeSinceShow = now - lastShowControlsTime;
+      if (controlsVisible && timeSinceShow > 400) {
+        hideControls(true);
+        if (controls.contains(document.activeElement)) {
+          document.activeElement.blur();
+        }
+      } else {
+        showControls(false);
+        scheduleHide();
+      }
+    }
+  }
+
   function updatePlaybackControl(state) {
     togglePlayButton.setAttribute("aria-label", state.paused ? "Play" : "Pause");
     playPauseCaption.textContent = state.paused ? "Play" : "Pause";
@@ -257,9 +481,12 @@ export function createPlayerScreen(root, movie, onBackRequest) {
 
   const CONTROLS_AUTOHIDE_MS = 4500;
 
+  let lastShowControlsTime = 0;
+
   function showControls(focusPlayback) {
     window.clearTimeout(controlsTimer);
     controlsVisible = true;
+    lastShowControlsTime = Date.now();
     stage.classList.add("controls-visible");
     if (focusPlayback) {
       togglePlayButton.focus();
@@ -371,6 +598,10 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       showStatus(video.muted ? "Sound off" : "Sound on");
       return true;
     }
+    if (key.key === "f" || key.key === "F") {
+      toggleFullscreen();
+      return true;
+    }
     if (key.isPlayPause) {
       playback.toggle();
       return true;
@@ -434,6 +665,9 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   const playback = createPlaybackService(video, {
     onStatus(message) {
       showStatus(message, message === "Loading stream...");
+      if (message === "Loading stream...") {
+        showLoader("Loading movie...");
+      }
     },
     onState(state) {
       updatePlaybackControl(state);
@@ -449,11 +683,13 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     },
     onAutoplayBlocked() {
       autoplayBlocked = true;
+      hideLoader();
       playButton.hidden = false;
       showControls(false);
     },
     onError(message) {
       autoplayBlocked = false;
+      hideLoader();
       playButton.hidden = true;
       stage.classList.add("playback-error");
       showStatus(message, true);
@@ -462,6 +698,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     onPlaying() {
       mediaStarted = true;
       autoplayBlocked = false;
+      hideLoader();
       playButton.hidden = true;
       stage.classList.remove("playback-error");
       status.dataset.visible = "false";
@@ -469,7 +706,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       updateSubtitleDisplay();
     },
     onWaiting() {
-      showControls(false);
+      showLoader("Buffering...");
       scheduleHide();
     },
     onEnded() {
@@ -562,34 +799,54 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     showControls(false);
     scheduleHide();
   });
-  listen(controls, "click", function () {
+  listen(controls, "click", function (event) {
+    event.stopPropagation();
     showControls(false);
     scheduleHide();
   });
-  listen(document, "mousemove", function () {
+  const topbar = root.querySelector(".topbar");
+  if (topbar) {
+    listen(topbar, "click", function (event) {
+      event.stopPropagation();
+      showControls(false);
+      scheduleHide();
+    });
+  }
+  let lastMouseX = -1;
+  let lastMouseY = -1;
+  listen(stage, "mousemove", function (event) {
+    if (Date.now() - lastTapTime < 500) {
+      return;
+    }
+    if (event && event.clientX === lastMouseX && event.clientY === lastMouseY) {
+      return;
+    }
+    if (event) {
+      lastMouseX = event.clientX;
+      lastMouseY = event.clientY;
+    }
     if (!controlsVisible) {
       showControls(false);
     }
     scheduleHide();
   });
-  listen(document, "touchstart", function () {
-    showControls(false);
-    scheduleHide();
+  listen(tapZoneLeft, "click", function (event) {
+    event.stopPropagation();
+    handleStageTap("left");
+  });
+  listen(tapZoneRight, "click", function (event) {
+    event.stopPropagation();
+    handleStageTap("right");
   });
   listen(stage, "click", function (event) {
     if (event.target === video || event.target === stage) {
-      if (!controlsVisible) {
-        showControls(false);
-        scheduleHide();
-      } else {
-        playback.toggle();
-        scheduleHide();
-      }
+      handleStageTap("center");
     }
   });
   listen(playButton, "click", function () {
     playButton.hidden = true;
     autoplayBlocked = false;
+    showLoader("Loading movie...");
     playback.play();
   });
   listen(video, "timeupdate", function () {
@@ -600,6 +857,21 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   });
   listen(video, "seeked", function () {
     updateSubtitleDisplay();
+    if (video.readyState >= 3) {
+      hideLoader();
+    }
+  });
+  listen(video, "waiting", function () {
+    showLoader("Buffering...");
+  });
+  listen(video, "canplay", function () {
+    hideLoader();
+  });
+  listen(video, "playing", function () {
+    hideLoader();
+  });
+  listen(video, "loadstart", function () {
+    showLoader("Loading movie...");
   });
   listen(subtitleButton, "click", function () {
     if (!subtitleCues || subtitleCues.length === 0) {
@@ -621,6 +893,20 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       showStatus("Subtitles turned off");
     }
   });
+  listen(fullscreenButton, "click", function () {
+    toggleFullscreen();
+  });
+  listen(document, "fullscreenchange", updateFullscreenControl);
+  listen(document, "webkitfullscreenchange", updateFullscreenControl);
+  listen(document, "mozfullscreenchange", updateFullscreenControl);
+  listen(document, "MSFullscreenChange", updateFullscreenControl);
+  listen(video, "webkitbeginfullscreen", updateFullscreenControl);
+  listen(video, "webkitendfullscreen", updateFullscreenControl);
+  listen(stage, "dblclick", function (event) {
+    if (event.target === video || event.target === stage) {
+      toggleFullscreen();
+    }
+  });
   listen(window, "blur", function () {
     seekController.commitPreview();
   });
@@ -634,6 +920,8 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   updatePlaybackControl({ paused: video.paused });
   updateTimeline();
   initSubtitles();
+  updateFullscreenControl();
+  showLoader("Loading movie...");
   playback.start(movie.m3u8);
   scheduleHide();
 
@@ -645,10 +933,22 @@ export function createPlayerScreen(root, movie, onBackRequest) {
         return;
       }
       disposed = true;
+      hideLoader();
+      unlockLandscape();
+      if (isFullscreenActive()) {
+        try {
+          const exit = document.exitFullscreen || document.webkitExitFullscreen;
+          if (exit) {
+            exit.call(document);
+          }
+        } catch (_) {}
+      }
       window.clearTimeout(statusTimer);
       window.clearTimeout(controlsTimer);
       window.clearTimeout(volumeHudTimer);
       window.clearTimeout(suppressClickTimer);
+      window.clearTimeout(singleClickTimer);
+      window.clearTimeout(feedbackTimer);
       subtitleService.cancel();
       subtitleCues = [];
       renderSubtitles("");

@@ -3,8 +3,15 @@ import { createDoubleBack } from "./navigation/double-back.js";
 import { createRemoteNavigation } from "./navigation/remote-navigation.js";
 import { createPlayerScreen } from "./player/player-screen.js";
 import { createCatalogService } from "./services/catalog-service.js";
+import { currentDevice } from "./utils/device.js";
 
 const root = document.getElementById("app");
+if (document.documentElement) {
+  document.documentElement.setAttribute("data-device", currentDevice);
+}
+if (root) {
+  root.setAttribute("data-device", currentDevice);
+}
 const remoteNavigation = createRemoteNavigation();
 const doubleBack = createDoubleBack(2200);
 const catalogService = createCatalogService();
