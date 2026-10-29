@@ -2,3 +2,4 @@
 .buildResult/
 *.wgt
 dist/*.wgt
+dist/
