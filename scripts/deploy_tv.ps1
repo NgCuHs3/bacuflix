@@ -16,6 +16,10 @@ Write-Host "3. Building web project..."
 if (Test-Path ".buildResult\.git") {
     Remove-Item -Recurse -Force ".buildResult\.git"
 }
+if (Test-Path ".buildResult\dist") {
+    Remove-Item -Recurse -Force ".buildResult\dist"
+}
+Get-ChildItem -Path ".buildResult" -Filter "*.png" | Where-Object { $_.Name -ne "icon.png" } | Remove-Item -Force
 
 Write-Host "4. Packaging WGT..."
 & $tizen package --type wgt --sign bacuhomeTV --output $output -- .buildResult
