@@ -56,9 +56,10 @@ video {
 
 .topbar {
   top: 0 !important;
-  min-height: 84px;
-  border-bottom: none;
+  min-height: calc(84px + env(safe-area-inset-top, 0px));
+  padding-top: max(16px, env(safe-area-inset-top, 0px));
   background: transparent;
+  border-bottom: none;
 }
 
 .brand {
@@ -68,18 +69,26 @@ video {
   border: 0;
   background: transparent;
   color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
   font-size: 36px;
   font-weight: 900;
   letter-spacing: -1.6px;
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.8);
   cursor: pointer;
+  transition: transform 0.15s cubic-bezier(0.2, 0.9, 0.42, 1), opacity 0.15s ease;
+}
+
+.brand:active {
+  transform: scale(0.97);
+  opacity: 0.85;
 }
 
 .brand img {
   width: 48px;
   height: 48px;
   margin-right: 13px;
-  border-radius: 10px;
+  border-radius: 22.37%;
+  border: 0.5px solid rgba(255, 255, 255, 0.16);
   box-shadow: 0 0 28px rgba(229, 9, 36, 0.28);
 }
 
@@ -204,7 +213,7 @@ video {
   width: 100%;
   min-width: 0;
   height: 24px;
-  margin: 0;
+  margin: 0 12px;
   padding: 0;
   border: none;
   outline: none;
@@ -800,6 +809,24 @@ video {
     min-width: 40px;
   }
 
+  #fullscreen-button {
+    width: 60px;
+    min-width: 60px;
+    max-width: 60px;
+    min-height: 36px;
+    padding: 2px 2px;
+    flex: 0 0 60px;
+  }
+
+  #fullscreen-button .fullscreen-symbol {
+    width: 20px;
+    height: 20px;
+  }
+
+  #fullscreen-button .control-caption {
+    font-size: 10px;
+  }
+
   .primary-control {
     min-width: 50px;
     min-height: 38px;
@@ -1012,10 +1039,34 @@ video {
   cursor: not-allowed;
 }
 
+/* Fullscreen button: fixed stable box model to prevent size glitch on toggle */
+#fullscreen-button {
+  width: 76px;
+  min-width: 76px;
+  max-width: 76px;
+  min-height: 52px;
+  padding: 3px 4px;
+  box-sizing: border-box;
+  flex: 0 0 76px;
+}
+
 .fullscreen-symbol {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+#fullscreen-button .control-caption {
+  display: block;
+  width: 100%;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
 }
 
 .control-button#fullscreen-button.is-active {
@@ -1025,7 +1076,7 @@ video {
 
 .control-button#fullscreen-button.is-active .control-caption {
   color: var(--flix-red);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .control-button#fullscreen-button:disabled,
@@ -1283,6 +1334,24 @@ video {
   min-width: 40px;
 }
 
+[data-device="mobile"] #fullscreen-button {
+  width: 60px;
+  min-width: 60px;
+  max-width: 60px;
+  min-height: 36px;
+  padding: 2px 2px;
+  flex: 0 0 60px;
+}
+
+[data-device="mobile"] #fullscreen-button .fullscreen-symbol {
+  width: 20px;
+  height: 20px;
+}
+
+[data-device="mobile"] #fullscreen-button .control-caption {
+  font-size: 10px;
+}
+
 [data-device="mobile"] .primary-control {
   min-width: 50px;
   min-height: 38px;
@@ -1377,6 +1446,20 @@ video {
     min-width: 38px;
     min-height: 28px;
     padding: 1px 2px;
+  }
+
+  #fullscreen-button {
+    width: 48px;
+    min-width: 48px;
+    max-width: 48px;
+    min-height: 28px;
+    padding: 1px 1px;
+    flex: 0 0 48px;
+  }
+
+  #fullscreen-button .fullscreen-symbol {
+    width: 16px;
+    height: 16px;
   }
 
   .primary-control {
@@ -1491,6 +1574,14 @@ video {
   min-width: 90px;
   min-height: 70px;
   margin: 0 5px;
+}
+
+[data-device="tv"] #fullscreen-button {
+  width: 86px;
+  min-width: 86px;
+  max-width: 86px;
+  min-height: 64px;
+  flex: 0 0 86px;
 }
 
 [data-device="tv"] .primary-control {

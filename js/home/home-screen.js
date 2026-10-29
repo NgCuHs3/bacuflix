@@ -881,8 +881,18 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     }).then(function () {
       refreshing = false;
       if (!destroyed) {
-        if (!screen.contains(document.activeElement) && cards.length) {
-          setSelectedCard(cards[0], true);
+        if (!screen.contains(document.activeElement)) {
+          if (options && options.selectedMovieId) {
+            const matchIndex = currentResult && currentResult.movies ?
+              currentResult.movies.findIndex(function (m) { return m.id === options.selectedMovieId; }) : -1;
+            if (matchIndex >= 0 && cards[matchIndex]) {
+              setSelectedCard(cards[matchIndex], true);
+              return;
+            }
+          }
+          if (cards.length) {
+            setSelectedCard(cards[activeCardIndex] || cards[0], true);
+          }
         }
       }
     });
