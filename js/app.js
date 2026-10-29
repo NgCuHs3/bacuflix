@@ -9,6 +9,9 @@ const root = document.getElementById("app");
 if (document.documentElement) {
   document.documentElement.setAttribute("data-device", currentDevice);
 }
+if (document.body) {
+  document.body.setAttribute("data-device", currentDevice);
+}
 if (root) {
   root.setAttribute("data-device", currentDevice);
 }

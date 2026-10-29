@@ -15,6 +15,9 @@ const root = document.getElementById("app");
 if (document.documentElement) {
   document.documentElement.setAttribute("data-device", currentDevice);
 }
+if (document.body) {
+  document.body.setAttribute("data-device", currentDevice);
+}
 if (root) {
   root.setAttribute("data-device", currentDevice);
 }
@@ -174,6 +177,7 @@ var getFavorites = requireModule("js/services/favorites-service.js")["getFavorit
 var createGoogleTrendingService = requireModule("js/services/google-trending-service.js")["createGoogleTrendingService"];
 var createMovieDetailModal = requireModule("js/home/movie-detail-modal.js")["createMovieDetailModal"];
 var createHeroCarousel = requireModule("js/home/hero-carousel.js")["createHeroCarousel"];
+var currentDevice = requireModule("js/utils/device.js")["currentDevice"];
 function makeButton(className, text, label) {
   const button = document.createElement("button");
   button.className = className;
@@ -333,6 +337,13 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   screen.className = "home-screen catalog-screen";
   screen.setAttribute("aria-label", "BACUFlix KKPhim movie catalog");
 
+  function isTv() {
+    return currentDevice === "tv" ||
+      (root && root.getAttribute("data-device") === "tv") ||
+      (document.documentElement && document.documentElement.getAttribute("data-device") === "tv") ||
+      (typeof window !== "undefined" && Boolean(window.tizen || window.webOS));
+  }
+
   const kkphimApi = createKkphimApi();
   const googleTrendingService = createGoogleTrendingService(kkphimApi);
 
@@ -415,6 +426,10 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   }
 
   function updateColumnsCount() {
+    if (isTv()) {
+      cachedColumnsCount = 5;
+      return;
+    }
     if (cards.length < 2) {
       cachedColumnsCount = 1;
       return;
@@ -427,7 +442,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         break;
       }
     }
-    cachedColumnsCount = count || 1;
+    cachedColumnsCount = count > 1 ? count : 4;
   }
 
   function ensureCardVisible(cardElement) {
@@ -546,6 +561,14 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         activeCardIndex = i;
         return i;
       }
+    }
+    const isHeader = (tabButtons && tabButtons.includes(active)) || (searchInput && (active === searchInput || searchInput.contains(active))) || (searchClear && active === searchClear);
+    const isHero = heroCarousel && heroCarousel.element && heroCarousel.element.contains(active);
+    if (!isHeader && !isHero) {
+      if (activeCardIndex >= 0 && activeCardIndex < cards.length) {
+        return activeCardIndex;
+      }
+      return 0;
     }
     return -1;
   }
@@ -801,7 +824,9 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
 
     if (cards.length > 0) {
       updateColumnsCount();
-      setSelectedCard(targetCard || cards[0], false);
+      const active = document.activeElement;
+      const isHeaderActive = (tabButtons && tabButtons.includes(active)) || active === searchInput || (heroCarousel && heroCarousel.element && heroCarousel.element.contains(active));
+      setSelectedCard(targetCard || cards[0], !isHeaderActive);
     }
   }
 
@@ -1165,6 +1190,21 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         return true;
       }
 
+      const topHeaderNav = tabButtons.concat([searchInput]);
+      const isHeaderActive = topHeaderNav.includes(active) || active === searchClear;
+      const isHeroActive = heroCarousel.element && heroCarousel.element.contains(active);
+
+      if (!isHeaderActive && !isHeroActive) {
+        let activeIdx = getActiveCardIndex();
+        if (activeIdx === -1 && cards.length > 0) {
+          const fallbackIdx = (activeCardIndex >= 0 && activeCardIndex < cards.length) ? activeCardIndex : 0;
+          setSelectedCard(cards[fallbackIdx], true);
+        } else if (cards.length > 0 && (!active || active === document.body || active === document.documentElement || active === screen || active === root)) {
+          const idxToFocus = activeIdx >= 0 ? activeIdx : 0;
+          setSelectedCard(cards[idxToFocus], true);
+        }
+      }
+
       if (key.isSelect) {
         if (tabButtons.includes(active)) {
           active.click();
@@ -1173,6 +1213,12 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         if (active === searchClear) {
           searchClear.click();
           return true;
+        }
+        if (heroCarousel.element.contains(active)) {
+          if (typeof active.click === "function") {
+            active.click();
+            return true;
+          }
         }
         const activeIdx = getActiveCardIndex();
         if (activeIdx !== -1) {
@@ -1243,7 +1289,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
 
       if (key.direction === "up" || key.direction === "down") {
         const activeIdx = getActiveCardIndex();
-        const cols = cachedColumnsCount || 1;
+        const cols = cachedColumnsCount || (isTv() ? 5 : 4);
         const topHeaderNav = tabButtons.concat([searchInput]);
 
         if (key.direction === "up") {
@@ -1285,7 +1331,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
               }
             }
             if (cards.length > 0) {
-              setSelectedCard(cards[activeCardIndex] || cards[0], true);
+              setSelectedCard(cards[activeCardIndex >= 0 ? activeCardIndex : 0], true);
               return true;
             }
           } else if (heroCarousel.element.contains(active)) {
@@ -2847,6 +2893,41 @@ function createHeroCarousel(parentContainer, actionsHandler) {
 }
 
 return {createHeroCarousel: createHeroCarousel};
+});
+registerModule("js/utils/device.js", function (requireModule) {
+function detectDevice() {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
+    return "desktop";
+  }
+  const ua = navigator.userAgent || "";
+
+  // 1. Smart TV detection (Samsung Tizen, LG webOS, Android TV, etc.)
+  const isTV = Boolean(
+    window.tizen ||
+    window.webOS ||
+    /SmartTV|Tizen|webOS|HbbTV|NetCast|BRAVIA|Viera|AppleTV|Roku|LargeScreen|GoogleTV|AndroidTV/i.test(ua)
+  );
+  if (isTV) {
+    return "tv";
+  }
+
+  // 2. Mobile / Phone detection (Android, iOS, mobile user agents or touch screens under 1024px)
+  const isMobile = Boolean(
+    /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Silk/i.test(ua) ||
+    (('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)) &&
+      window.matchMedia && window.matchMedia("(max-width: 1024px)").matches)
+  );
+  if (isMobile) {
+    return "mobile";
+  }
+
+  // 3. Desktop / PC
+  return "desktop";
+}
+
+const currentDevice = detectDevice();
+
+return {detectDevice: detectDevice, currentDevice: currentDevice};
 });
 registerModule("js/navigation/double-back.js", function (requireModule) {
 function createDoubleBack(timeout, onReset) {
@@ -5098,41 +5179,6 @@ function formatTime(seconds) {
 }
 
 return {formatTime: formatTime};
-});
-registerModule("js/utils/device.js", function (requireModule) {
-function detectDevice() {
-  if (typeof window === "undefined" || typeof navigator === "undefined") {
-    return "desktop";
-  }
-  const ua = navigator.userAgent || "";
-
-  // 1. Smart TV detection (Samsung Tizen, LG webOS, Android TV, etc.)
-  const isTV = Boolean(
-    window.tizen ||
-    window.webOS ||
-    /SmartTV|Tizen|webOS|HbbTV|NetCast|BRAVIA|Viera|AppleTV|Roku|LargeScreen|GoogleTV|AndroidTV/i.test(ua)
-  );
-  if (isTV) {
-    return "tv";
-  }
-
-  // 2. Mobile / Phone detection (Android, iOS, mobile user agents or touch screens under 1024px)
-  const isMobile = Boolean(
-    /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Silk/i.test(ua) ||
-    (('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)) &&
-      window.matchMedia && window.matchMedia("(max-width: 1024px)").matches)
-  );
-  if (isMobile) {
-    return "mobile";
-  }
-
-  // 3. Desktop / PC
-  return "desktop";
-}
-
-const currentDevice = detectDevice();
-
-return {detectDevice: detectDevice, currentDevice: currentDevice};
 });
 registerModule("js/services/catalog-service.js", function (requireModule) {
 var catalogSources = requireModule("js/config/catalog-sources.js")["catalogSources"];
