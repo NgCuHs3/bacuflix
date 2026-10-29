@@ -36,7 +36,7 @@ console.log("Starting Seek Controller & URL Deep Linking Tests...");
 }
 
 // --- 2. Seek Controller Acceleration & Boundary Tests ---
-{
+async function runSeekTests() {
   let currentTime = 0;
   let previewEvents = [];
   let commitEvents = [];
@@ -153,8 +153,23 @@ console.log("Starting Seek Controller & URL Deep Linking Tests...");
   assert.equal(dragCommit.time, 800, "Committed time must be 800 (80%)");
   assert.equal(dragCommit.meta.isDirect, true);
 
+  // Test TV Remote Hold Watchdog: Auto-release when TV drops keyup!
+  currentTime = 200;
+  commitEvents = [];
+  controller.pressKey(1, "right");
+  // Simulate repeat keydown events during hold without keyup
+  controller.pressKey(1, "right");
+  controller.pressKey(1, "right");
+  assert.equal(controller.isScrubbing(), true, "Must be scrubbing while keys are pressed");
+  // Wait for watchdog (160ms + margin)
+  await new Promise((r) => setTimeout(r, 220));
+  assert.equal(controller.isScrubbing(), false, "Watchdog must auto-release when keyup was dropped by TV remote");
+  assert.ok(commitEvents.length > 0, "Watchdog must commit the seek position");
+
   controller.destroy();
-  console.log("✓ Seek controller acceleration, boundary, direct click, and consecutive tap tests passed.");
+  console.log("✓ Seek controller acceleration, boundary, direct click, and TV watchdog auto-release tests passed.");
 }
+
+await runSeekTests();
 
 console.log("\nALL SEEK CONTROLLER AND URL TESTS PASSED SUCCESSFULLY!");

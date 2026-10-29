@@ -21,6 +21,27 @@ export function createSeekController(options) {
   let disposed = false;
   let lastTapTimestamp = 0;
   let tapCount = 0;
+  let keyWatchdogTimer = 0;
+  let keyRepeatCount = 0;
+  const KEY_WATCHDOG_TIMEOUT_MS = 160;
+
+  function clearKeyWatchdog() {
+    if (keyWatchdogTimer) {
+      window.clearTimeout(keyWatchdogTimer);
+      keyWatchdogTimer = 0;
+    }
+  }
+
+  function resetKeyWatchdog() {
+    clearKeyWatchdog();
+    keyWatchdogTimer = window.setTimeout(function () {
+      keyWatchdogTimer = 0;
+      if (pressedKeys.length || scrubbing) {
+        pressedKeys = [];
+        finish(true);
+      }
+    }, KEY_WATCHDOG_TIMEOUT_MS);
+  }
 
   function cancelFrame() {
     if (frame) {
@@ -110,10 +131,12 @@ export function createSeekController(options) {
   function finish(commit) {
     window.clearTimeout(holdTimer);
     holdTimer = 0;
+    clearKeyWatchdog();
     cancelFrame();
     if (!scrubbing) {
       heldSource = null;
       pressedKeys = [];
+      keyRepeatCount = 0;
       return false;
     }
 
@@ -158,6 +181,7 @@ export function createSeekController(options) {
     direction = 0;
     heldSource = null;
     pressedKeys = [];
+    keyRepeatCount = 0;
 
     const meta = {
       direction: finishedDirection,
@@ -185,17 +209,24 @@ export function createSeekController(options) {
       if (index === -1) {
         pressedKeys.push(key);
       }
+      if (scrubbing) {
+        keyRepeatCount++;
+      } else {
+        keyRepeatCount = 1;
+      }
       begin(nextDirection, null);
+      resetKeyWatchdog();
     },
     releaseKey(key) {
+      clearKeyWatchdog();
       const index = pressedKeys.indexOf(key);
-      if (index === -1) {
-        return;
+      if (index !== -1) {
+        pressedKeys.splice(index, 1);
       }
-      pressedKeys.splice(index, 1);
       if (pressedKeys.length) {
         const lastKey = pressedKeys[pressedKeys.length - 1];
         begin(lastKey === "left" || lastKey === "rewind" ? -1 : 1, null);
+        resetKeyWatchdog();
       } else {
         finish(true);
       }
@@ -273,10 +304,14 @@ export function createSeekController(options) {
       };
       options.onPreview(previewProgress, finalTime, meta);
     },
+    isScrubbing() {
+      return scrubbing;
+    },
     commitPreview() {
       finish(true);
     },
     cancel() {
+      clearKeyWatchdog();
       isDirectScrub = false;
       finish(false);
     },
@@ -285,6 +320,7 @@ export function createSeekController(options) {
     },
     destroy() {
       disposed = true;
+      clearKeyWatchdog();
       finish(false);
     }
   };
