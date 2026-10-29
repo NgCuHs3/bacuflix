@@ -17,10 +17,10 @@
   position: relative;
   width: 100%;
   height: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
   min-height: 100%;
-  padding: 0 4vw max(48px, env(safe-area-inset-bottom, 24px));
+  padding: 0 0 max(48px, env(safe-area-inset-bottom, 24px)) 0;
   background-color: var(--home-bg);
   background-image:
     radial-gradient(circle at 82% 0%, rgba(229, 9, 36, 0.14), transparent 42%),
@@ -61,9 +61,10 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  width: 100%;
   height: auto;
   min-height: 64px;
-  margin: 0 -4vw;
+  margin: 0 0 24px 0;
   padding-top: max(12px, env(safe-area-inset-top, 0px));
   padding-bottom: 12px;
   padding-left: max(4vw, env(safe-area-inset-left, 0px));
@@ -250,7 +251,7 @@
    ========================================================================== */
 
 .catalog-heading {
-  margin: 12px 0 6px;
+  margin: 12px 4vw 6px;
   color: var(--home-text-primary);
   font-size: clamp(24px, 2.5vw, 36px);
   font-weight: 900;
@@ -261,14 +262,14 @@
 .catalog-message {
   display: inline-flex;
   align-items: center;
-  margin: 0 0 22px;
+  margin: 0 4vw 22px;
   color: var(--home-text-secondary);
   font-size: 13.5px;
   font-weight: 500;
 }
 
 .catalog-message.is-error {
-  margin-top: 8px;
+  margin: 8px 4vw 16px;
   padding: 10px 16px;
   border-radius: 8px;
   background: rgba(255, 80, 80, 0.12);
@@ -278,7 +279,7 @@
 }
 
 .catalog-notice {
-  margin: 0 0 20px;
+  margin: 0 4vw 20px;
   padding: 10px 16px;
   border-radius: 8px;
   background: rgba(255, 211, 106, 0.12);
@@ -293,17 +294,17 @@
 }
 
 /* ==========================================================================
-   Responsive Smart Catalog Grid
+   Responsive Smart Catalog Grid (Standard 5 Cards / Row for 10-Foot TV Viewing)
    ========================================================================== */
 
 .catalog-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
-  gap: 22px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 24px;
   width: 100%;
-  max-width: 1600px;
-  margin: 0 auto 36px;
-  padding: 0;
+  max-width: none;
+  margin: 0 0 48px;
+  padding: 0 4vw;
   overflow: visible;
   box-sizing: border-box;
 }
@@ -890,6 +891,8 @@
 
 .movie-detail-info {
   flex: 1;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -1034,31 +1037,40 @@
 }
 
 .movie-episodes-container {
-  max-height: 180px;
+  max-height: 380px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 6px;
+  box-sizing: border-box;
 }
 
 .movie-detail-episodes-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .movie-episode-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 36px;
-  padding: 0 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
+  height: 48px;
+  min-height: 48px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   cursor: pointer;
   outline: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
   transition: all 120ms ease;
 }
 
@@ -1088,7 +1100,7 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding: 24px 0 32px;
+  padding: 24px 4vw 32px;
   color: var(--home-text-secondary);
   font-size: 14px;
   font-weight: 600;
@@ -1105,12 +1117,14 @@
 
 .home-hero-carousel {
   position: relative;
-  width: calc(100% + 8vw);
+  width: 100%;
+  max-width: 100vw;
   height: clamp(520px, 72vh, 760px);
-  margin: -72px -4vw 24px;
+  margin: 0 0 28px 0;
   border-radius: 0;
   border: none;
-  overflow: hidden;
+  overflow: hidden !important;
+  contain: paint;
   background: #08090e;
   box-shadow: none;
   box-sizing: border-box;
@@ -1134,7 +1148,7 @@
   transition: opacity 800ms cubic-bezier(0.4, 0, 0.2, 1), visibility 800ms cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: flex-end;
-  padding: 96px clamp(28px, 4vw, 54px) clamp(36px, 4.5vh, 60px);
+  padding: 96px 4vw clamp(36px, 4.5vh, 60px);
   box-sizing: border-box;
 }
 
@@ -1394,20 +1408,18 @@
 
 /* ==========================================================================
    Device Adaptations: TV / High-Definition Large Screens
-   Supports [data-device="tv"] attribute & @media (min-width: 1200px)
+   Supports [data-device="tv"] attribute & @media (min-width: 1024px)
    Compatible with older WebKit (Tizen 3.0 - 7.0, Chromium 47-63+)
    ========================================================================== */
 
-[data-device="tv"] .home-screen,
-body[data-device="tv"] .home-screen,
-@media (min-width: 1200px) {
+@media (min-width: 1024px) {
   .home-screen {
-    padding: 0 4vw 64px;
+    padding: 0 0 64px 0;
   }
 
   .home-header {
     height: 96px;
-    margin: 0 -4vw 24px;
+    margin: 0 0 24px 0;
     padding: 0 4vw;
     display: flex;
     flex-wrap: nowrap;
@@ -1489,13 +1501,16 @@ body[data-device="tv"] .home-screen,
   }
 
   .home-hero-carousel {
-    width: calc(100% + 8vw);
+    width: 100%;
+    max-width: 100vw;
     height: 700px;
-    margin: -96px -4vw 40px;
+    margin: 0 0 36px 0;
+    overflow: hidden !important;
+    contain: paint;
   }
 
   .hero-slide {
-    padding: 96px clamp(28px, 4vw, 54px) 50px;
+    padding: 96px 4vw 50px;
   }
 
   .hero-content {
@@ -1553,18 +1568,20 @@ body[data-device="tv"] .home-screen,
     border-radius: 14px;
   }
 
-  /* Catalog Grid on TV: 4-5 large cards per row for 10-foot viewing */
+  /* Catalog Grid on TV: exactly 5 cards per row for 10-foot viewing */
   .catalog-grid {
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)) !important;
-    gap: 30px;
-    width: 100%;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 28px !important;
+    width: 100% !important;
+    max-width: none !important;
     margin: 0 0 60px !important;
+    padding: 0 4vw !important;
   }
 
   .catalog-heading {
     font-size: 38px;
     font-weight: 800;
-    margin: 28px 0 18px;
+    margin: 28px 4vw 18px !important;
   }
 
   .catalog-card {
@@ -1577,8 +1594,8 @@ body[data-device="tv"] .home-screen,
     height: 480px !important;
     min-height: 480px !important;
     max-height: 480px !important;
-    width: 100%;
-    object-fit: cover;
+    width: 100% !important;
+    object-fit: cover !important;
   }
 
   .catalog-card-info {
@@ -1613,11 +1630,12 @@ body[data-device="tv"] .home-screen,
   }
 
   .movie-detail-modal {
-    max-width: 1520px;
-    width: 92vw;
+    max-width: 1440px;
+    width: 90vw;
     max-height: 88vh;
-    border-radius: 28px;
+    border-radius: 24px;
     background: #111422 !important;
+    overflow-x: hidden !important;
   }
 
   .movie-detail-body {
@@ -1647,16 +1665,24 @@ body[data-device="tv"] .home-screen,
     max-width: 980px;
   }
 
+  .movie-episodes-container {
+    max-height: 380px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Episode Grid on TV: exactly 5 episodes per row */
   .movie-detail-episodes-grid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 14px !important;
   }
 
   .movie-episode-btn {
-    min-height: 56px;
-    font-size: 17.5px;
-    font-weight: 700;
-    border-radius: 12px;
+    height: 56px !important;
+    min-height: 56px !important;
+    font-size: 17.5px !important;
+    font-weight: 700 !important;
+    border-radius: 12px !important;
   }
 
   .movie-detail-play-btn {
@@ -1665,6 +1691,37 @@ body[data-device="tv"] .home-screen,
     font-size: 18.5px;
     border-radius: 14px;
   }
+}
+
+/* Explicit fallback TV device overrides */
+[data-device="tv"] .catalog-grid,
+body[data-device="tv"] .catalog-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 28px !important;
+  padding: 0 4vw !important;
+}
+
+[data-device="tv"] .catalog-poster,
+body[data-device="tv"] .catalog-poster {
+  height: 480px !important;
+}
+
+[data-device="tv"] .movie-detail-episodes-grid,
+body[data-device="tv"] .movie-detail-episodes-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+}
+
+[data-device="tv"] .movie-episodes-container,
+body[data-device="tv"] .movie-episodes-container {
+  max-height: 380px !important;
+}
+
+[data-device="tv"] .movie-episode-btn,
+body[data-device="tv"] .movie-episode-btn {
+  height: 56px !important;
+  min-height: 56px !important;
+  font-size: 17.5px !important;
 }
 
 /* ==========================================================================
@@ -1742,13 +1799,13 @@ body[data-device="tv"] .movie-detail-play-btn:focus {
    ========================================================================== */
 @media (min-width: 2500px) {
   .home-screen {
-    padding: 0 3.5vw 72px;
+    padding: 0 0 72px 0;
   }
 
   .home-header {
     height: 110px;
-    margin: 0 -3.5vw 28px;
-    padding: 0 3.5vw;
+    margin: 0 0 28px 0;
+    padding: 0 4vw;
   }
 
   .home-brand {
@@ -1783,17 +1840,20 @@ body[data-device="tv"] .movie-detail-play-btn:focus {
   }
 
   .catalog-grid {
-    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)) !important;
-    gap: 40px;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 40px !important;
+    padding: 0 4vw !important;
+    margin: 0 0 80px !important;
   }
 
   .catalog-poster {
-    height: 600px !important;
-    min-height: 600px !important;
-    max-height: 600px !important;
+    height: 640px !important;
+    min-height: 640px !important;
+    max-height: 640px !important;
   }
 
   .catalog-heading {
+    margin: 36px 4vw 22px !important;
     font-size: 46px;
   }
 
@@ -1802,9 +1862,16 @@ body[data-device="tv"] .movie-detail-play-btn:focus {
   }
 
   .home-hero-carousel {
-    width: calc(100% + 7vw);
+    width: 100%;
+    max-width: 100vw;
     height: 920px;
-    margin: -110px -3.5vw 50px;
+    margin: 0 0 50px 0;
+    overflow: hidden !important;
+    contain: paint;
+  }
+
+  .hero-slide {
+    padding: 110px 4vw 60px;
   }
 
   .hero-title {
@@ -1824,9 +1891,29 @@ body[data-device="tv"] .movie-detail-play-btn:focus {
   }
 
   .movie-detail-modal {
-    max-width: 1950px;
+    max-width: 2000px;
     width: 90vw;
     border-radius: 36px;
+    overflow-x: hidden !important;
+  }
+
+  .movie-episodes-container {
+    max-height: 500px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  .movie-detail-episodes-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 20px !important;
+  }
+
+  .movie-episode-btn {
+    height: 72px !important;
+    min-height: 72px !important;
+    font-size: 22px !important;
+    font-weight: 700 !important;
+    border-radius: 16px !important;
   }
 }
 
@@ -1838,7 +1925,7 @@ body[data-device="tv"] .movie-detail-play-btn:focus {
 
 @media (max-width: 768px) {
   .home-screen {
-    padding: 0 14px max(28px, env(safe-area-inset-bottom, 20px));
+    padding: 0 0 max(28px, env(safe-area-inset-bottom, 20px)) 0;
   }
 
   .home-header {
@@ -1848,7 +1935,7 @@ body[data-device="tv"] .movie-detail-play-btn:focus {
     justify-content: space-between;
     height: auto;
     min-height: auto;
-    margin: 0 -14px 10px;
+    margin: 0 0 10px 0;
     padding-top: max(8px, env(safe-area-inset-top, 0px));
     padding-bottom: 8px;
     padding-left: max(14px, env(safe-area-inset-left, 0px));
@@ -1945,9 +2032,12 @@ body[data-device="tv"] .movie-detail-play-btn:focus {
 
   /* Hero Section on Mobile */
   .home-hero-carousel {
-    width: calc(100% + 28px);
+    width: 100%;
+    max-width: 100vw;
     height: 380px;
-    margin: 0 -14px 16px;
+    margin: 0 0 16px 0;
+    overflow: hidden !important;
+    contain: paint;
   }
 
   .hero-slide {
@@ -2011,19 +2101,26 @@ body[data-device="tv"] .movie-detail-play-btn:focus {
   }
 
   .catalog-heading {
-    margin: 8px 0 4px;
+    margin: 8px 14px 4px !important;
     font-size: 20px;
   }
 
   .catalog-message {
-    margin-bottom: 14px;
+    margin: 0 14px 14px !important;
     font-size: 12px;
   }
 
   .catalog-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    margin-bottom: 24px;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+    padding: 0 14px !important;
+    margin-bottom: 24px !important;
+  }
+
+  .catalog-poster {
+    height: 240px !important;
+    min-height: 240px !important;
+    max-height: 240px !important;
   }
 
   .catalog-card-details {
@@ -2046,7 +2143,15 @@ body[data-device="tv"] .movie-detail-play-btn:focus {
     border-radius: 6px;
   }
 
+  .movie-detail-modal {
+    width: 94vw;
+    max-height: 90vh;
+    border-radius: 16px;
+    overflow-x: hidden !important;
+  }
+
   .movie-detail-body {
+    padding: 16px 16px 24px;
     flex-direction: column;
     align-items: center;
   }
@@ -2062,6 +2167,24 @@ body[data-device="tv"] .movie-detail-play-btn:focus {
     height: 240px !important;
   }
 
+  .movie-episodes-container {
+    max-height: 220px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  .movie-detail-episodes-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .movie-episode-btn {
+    height: 38px !important;
+    min-height: 38px !important;
+    font-size: 13px !important;
+    border-radius: 6px !important;
+  }
+
   .home-remote-hint {
     display: none;
   }
@@ -2072,12 +2195,18 @@ body[data-device="tv"] .movie-detail-play-btn:focus {
 }
 
 [data-device="mobile"] .catalog-grid {
-  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   gap: 12px;
+  padding: 0 14px !important;
 }
 
 @media (max-width: 480px) {
+  .movie-detail-episodes-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
   [data-device="mobile"] .catalog-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }

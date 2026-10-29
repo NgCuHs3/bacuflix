@@ -2445,6 +2445,29 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
       const favBtn = modal.querySelector(".movie-detail-fav-btn");
       const serverTabs = Array.from(modal.querySelectorAll(".movie-server-tab"));
       const episodeBtns = Array.from(modal.querySelectorAll(".movie-episode-btn"));
+      const epContainer = modal.querySelector(".movie-episodes-container");
+
+      function ensureEpVisible(btn) {
+        if (!btn || !epContainer) return;
+        const cRect = epContainer.getBoundingClientRect();
+        const bRect = btn.getBoundingClientRect();
+        if (bRect.top < cRect.top) {
+          epContainer.scrollTop -= (cRect.top - bRect.top + 10);
+        } else if (bRect.bottom > cRect.bottom) {
+          epContainer.scrollTop += (bRect.bottom - cRect.bottom + 10);
+        }
+      }
+
+      function getGridCols() {
+        if (episodeBtns.length < 2) return 1;
+        const firstTop = episodeBtns[0].offsetTop;
+        for (let i = 1; i < episodeBtns.length; i++) {
+          if (episodeBtns[i].offsetTop > firstTop) {
+            return i;
+          }
+        }
+        return episodeBtns.length;
+      }
 
       if (key.direction === "down") {
         if (activeEl === closeBtn || activeEl === favBtn) {
@@ -2452,30 +2475,40 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
             serverTabs[0].focus();
           } else if (episodeBtns.length > 0) {
             episodeBtns[0].focus();
+            ensureEpVisible(episodeBtns[0]);
           }
           return true;
         } else if (serverTabs.includes(activeEl)) {
           if (episodeBtns.length > 0) {
             episodeBtns[0].focus();
+            ensureEpVisible(episodeBtns[0]);
           }
           return true;
         } else if (episodeBtns.includes(activeEl)) {
-          // move down row in episodes
           const epIdx = episodeBtns.indexOf(activeEl);
-          // estimate columns
-          let nextIdx = epIdx + 5;
+          const cols = getGridCols();
+          let nextIdx = epIdx + cols;
           if (nextIdx >= episodeBtns.length) {
-            nextIdx = episodeBtns.length - 1;
+            const currentRow = Math.floor(epIdx / cols);
+            const maxRow = Math.floor((episodeBtns.length - 1) / cols);
+            if (currentRow < maxRow) {
+              nextIdx = episodeBtns.length - 1;
+            } else {
+              return true;
+            }
           }
           episodeBtns[nextIdx].focus();
+          ensureEpVisible(episodeBtns[nextIdx]);
           return true;
         }
       } else if (key.direction === "up") {
         if (episodeBtns.includes(activeEl)) {
           const epIdx = episodeBtns.indexOf(activeEl);
-          const nextIdx = epIdx - 5;
+          const cols = getGridCols();
+          const nextIdx = epIdx - cols;
           if (nextIdx >= 0) {
             episodeBtns[nextIdx].focus();
+            ensureEpVisible(episodeBtns[nextIdx]);
           } else if (serverTabs.length > 0) {
             serverTabs[Math.min(activeServerIndex, serverTabs.length - 1)].focus();
           } else if (favBtn) {
@@ -2495,13 +2528,50 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
           }
           return true;
         }
-      } else if (key.direction === "left" || key.direction === "right") {
-        const delta = key.direction === "left" ? -1 : 1;
-        const nextIdx = currentIndex + delta;
-        if (nextIdx >= 0 && nextIdx < focusableElements.length) {
-          focusableElements[nextIdx].focus();
+      } else if (key.direction === "left") {
+        if (episodeBtns.includes(activeEl)) {
+          const epIdx = episodeBtns.indexOf(activeEl);
+          if (epIdx > 0) {
+            episodeBtns[epIdx - 1].focus();
+            ensureEpVisible(episodeBtns[epIdx - 1]);
+          }
+          return true;
+        } else if (serverTabs.includes(activeEl)) {
+          const sIdx = serverTabs.indexOf(activeEl);
+          if (sIdx > 0) {
+            serverTabs[sIdx - 1].focus();
+          }
+          return true;
+        } else {
+          const delta = -1;
+          const nextIdx = currentIndex + delta;
+          if (nextIdx >= 0 && nextIdx < focusableElements.length) {
+            focusableElements[nextIdx].focus();
+          }
+          return true;
         }
-        return true;
+      } else if (key.direction === "right") {
+        if (episodeBtns.includes(activeEl)) {
+          const epIdx = episodeBtns.indexOf(activeEl);
+          if (epIdx < episodeBtns.length - 1) {
+            episodeBtns[epIdx + 1].focus();
+            ensureEpVisible(episodeBtns[epIdx + 1]);
+          }
+          return true;
+        } else if (serverTabs.includes(activeEl)) {
+          const sIdx = serverTabs.indexOf(activeEl);
+          if (sIdx < serverTabs.length - 1) {
+            serverTabs[sIdx + 1].focus();
+          }
+          return true;
+        } else {
+          const delta = 1;
+          const nextIdx = currentIndex + delta;
+          if (nextIdx >= 0 && nextIdx < focusableElements.length) {
+            focusableElements[nextIdx].focus();
+          }
+          return true;
+        }
       }
     }
 
