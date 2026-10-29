@@ -165,9 +165,15 @@ return {};
 });
 registerModule("js/home/home-screen.js", function (requireModule) {
 var activateFocusedElement = requireModule("js/navigation/remote-navigation.js")["activateFocusedElement"];
-var focusNext = requireModule("js/navigation/remote-navigation.js")["focusNext"];var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];var createKkphimApi = requireModule("js/services/kkphim-api.js")["createKkphimApi"];var isFavorite = requireModule("js/services/favorites-service.js")["isFavorite"];
+var focusNext = requireModule("js/navigation/remote-navigation.js")["focusNext"];
+var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
+var createKkphimApi = requireModule("js/services/kkphim-api.js")["createKkphimApi"];
+var isFavorite = requireModule("js/services/favorites-service.js")["isFavorite"];
 var toggleFavorite = requireModule("js/services/favorites-service.js")["toggleFavorite"];
-var getFavorites = requireModule("js/services/favorites-service.js")["getFavorites"];var createGoogleTrendingService = requireModule("js/services/google-trending-service.js")["createGoogleTrendingService"];var createMovieDetailModal = requireModule("js/home/movie-detail-modal.js")["createMovieDetailModal"];var createHeroCarousel = requireModule("js/home/hero-carousel.js")["createHeroCarousel"];
+var getFavorites = requireModule("js/services/favorites-service.js")["getFavorites"];
+var createGoogleTrendingService = requireModule("js/services/google-trending-service.js")["createGoogleTrendingService"];
+var createMovieDetailModal = requireModule("js/home/movie-detail-modal.js")["createMovieDetailModal"];
+var createHeroCarousel = requireModule("js/home/hero-carousel.js")["createHeroCarousel"];
 function makeButton(className, text, label) {
   const button = document.createElement("button");
   button.className = className;
@@ -1053,7 +1059,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
             }
           }
           if (cards.length) {
-            setSelectedCard(cards[activeCardIndex] || cards[0], true);
+            setSelectedCard(cards[activeCardIndex] || cards[0], false);
           }
         }
       }

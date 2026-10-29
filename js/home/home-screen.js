@@ -891,7 +891,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
             }
           }
           if (cards.length) {
-            setSelectedCard(cards[activeCardIndex] || cards[0], true);
+            setSelectedCard(cards[activeCardIndex] || cards[0], false);
           }
         }
       }

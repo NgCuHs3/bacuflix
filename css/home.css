@@ -554,34 +554,181 @@
 }
 
 /* ==========================================================================
-   Device Adaptations: Mobile Phone Screens (<= 640px)
+   Device Adaptations: Mobile Phone Screens (<= 768px)
    ========================================================================== */
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .home-screen {
     padding: 0 14px max(28px, env(safe-area-inset-bottom, 20px));
   }
 
   .home-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
     height: auto;
-    min-height: calc(54px + env(safe-area-inset-top, 0px));
-    margin: 0 -14px 16px;
-    padding-top: max(10px, env(safe-area-inset-top, 0px));
-    padding-bottom: 10px;
+    min-height: auto;
+    margin: 0 -14px 10px;
+    padding-top: max(8px, env(safe-area-inset-top, 0px));
+    padding-bottom: 8px;
     padding-left: max(14px, env(safe-area-inset-left, 0px));
     padding-right: max(14px, env(safe-area-inset-right, 0px));
+    background: rgba(8, 9, 14, 0.96);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    gap: 8px 10px;
   }
 
+  /* Row 1 Left: Brand Logo + Text */
   .home-brand {
-    gap: 8px;
-    margin-right: 10px;
-    font-size: 19px;
+    order: 1;
+    gap: 7px;
+    margin-right: 0;
+    font-size: 18px;
+    flex-shrink: 0;
   }
 
   .home-brand img {
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     border-radius: 22.37%;
+  }
+
+  /* Row 1 Right: Flexible Search Box */
+  .home-search-box {
+    order: 2;
+    flex: 1 1 180px;
+    min-width: 150px;
+    max-width: none;
+    margin: 0;
+  }
+
+  .home-search-input {
+    width: 100%;
+    height: 36px;
+    font-size: 13.5px;
+    padding: 0 32px 0 34px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  .home-search-input:focus {
+    background: rgba(0, 0, 0, 0.7);
+    border-color: var(--home-accent);
+    box-shadow: 0 0 0 2px rgba(229, 9, 36, 0.4);
+  }
+
+  .home-search-icon {
+    left: 10px;
+  }
+
+  .home-search-icon svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .home-search-clear {
+    right: 8px;
+    width: 20px;
+    height: 20px;
+    font-size: 13px;
+  }
+
+  /* Row 2: Category Navigation Tabs */
+  .home-nav-tabs {
+    order: 3;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 2px 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .home-nav-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .home-nav-tab {
+    height: 32px;
+    padding: 0 14px;
+    font-size: 12.5px;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Hero Section on Mobile */
+  .home-hero-carousel {
+    width: calc(100% + 28px);
+    height: 380px;
+    margin: 0 -14px 16px;
+  }
+
+  .hero-slide {
+    padding: 16px 14px 16px;
+  }
+
+  .hero-content {
+    max-width: 100%;
+    gap: 6px;
+  }
+
+  .hero-trending-tag {
+    font-size: 11px;
+    letter-spacing: 0.05em;
+  }
+
+  .hero-title {
+    font-size: 20px;
+    line-height: 1.2;
+    -webkit-line-clamp: 2;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .hero-badges {
+    gap: 6px;
+    margin: 2px 0;
+  }
+
+  .hero-overview {
+    font-size: 12px;
+    line-height: 1.4;
+    -webkit-line-clamp: 2;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .hero-actions {
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .hero-action-btn {
+    height: 36px;
+    padding: 0 16px;
+    font-size: 12.5px;
+    border-radius: 8px;
+  }
+
+  .hero-btn-play svg,
+  .hero-btn-detail svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .hero-indicators {
+    right: 14px;
+    bottom: 14px;
   }
 
   .home-nav-current {
@@ -604,12 +751,12 @@
 
   .catalog-heading {
     margin: 8px 0 4px;
-    font-size: 22px;
+    font-size: 20px;
   }
 
   .catalog-message {
-    margin-bottom: 16px;
-    font-size: 12.5px;
+    margin-bottom: 14px;
+    font-size: 12px;
   }
 
   /* Two clean, balanced columns on phone screens */
@@ -666,8 +813,7 @@
 
 /* Optimized TV & Large Resolution Screens (Full HD, 2K, 4K UHD, 55"+ TVs) */
 /* Compatible with older WebKit (Chromium 47-63+, Tizen 3-7, zero clamp/gap dependency) */
-[data-device="tv"] .home-screen,
-@media (min-width: 1400px) {
+@media (min-width: 1200px) {
   .home-screen {
     padding: 0 4vw 64px;
   }
@@ -1106,6 +1252,15 @@
   outline: none;
   box-sizing: border-box;
   transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.home-search-input::-webkit-search-cancel-button,
+.home-search-input::-webkit-search-decoration,
+.home-search-input::-webkit-search-results-button,
+.home-search-input::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
 }
 
 .home-search-input:focus {
@@ -1552,9 +1707,6 @@
   .movie-detail-poster-wrap {
     width: 160px;
   }
-  .home-search-box {
-    min-width: 140px;
-  }
 }
 
 
@@ -1850,17 +2002,4 @@
   border-radius: 999px;
   background: var(--home-accent);
   box-shadow: 0 0 12px var(--home-accent-glow);
-}
-
-@media (max-width: 768px) {
-  .home-hero-carousel {
-    height: 450px;
-  }
-  .hero-slide {
-    padding: 80px 20px 24px;
-  }
-  .hero-indicators {
-    right: 20px;
-    bottom: 20px;
-  }
 }
