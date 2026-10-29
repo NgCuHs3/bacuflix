@@ -274,7 +274,36 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
   const catalogLabel = document.createElement("span");
   catalogLabel.className = "home-nav-current";
   catalogLabel.textContent = "MOVIES";
-  const refreshButton = makeButton("home-action secondary-home-action catalog-refresh", "Refresh catalog");
+
+  const refreshButton = document.createElement("button");
+  refreshButton.className = "home-action secondary-home-action catalog-refresh";
+  refreshButton.type = "button";
+  refreshButton.setAttribute("aria-label", "Refresh catalog");
+
+  const refreshIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  refreshIcon.setAttribute("class", "catalog-refresh-icon");
+  refreshIcon.setAttribute("viewBox", "0 0 24 24");
+  refreshIcon.setAttribute("width", "15");
+  refreshIcon.setAttribute("height", "15");
+  refreshIcon.setAttribute("fill", "none");
+  refreshIcon.setAttribute("stroke", "currentColor");
+  refreshIcon.setAttribute("stroke-width", "2.3");
+  refreshIcon.setAttribute("stroke-linecap", "round");
+  refreshIcon.setAttribute("stroke-linejoin", "round");
+  refreshIcon.setAttribute("aria-hidden", "true");
+  const path1 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path1.setAttribute("d", "M21 12a9 9 0 1 1-2.63-6.36L21 8");
+  const path2 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path2.setAttribute("d", "M21 3v5h-5");
+  refreshIcon.appendChild(path1);
+  refreshIcon.appendChild(path2);
+
+  const refreshLabel = document.createElement("span");
+  refreshLabel.className = "catalog-refresh-label";
+  refreshLabel.textContent = "Refresh catalog";
+
+  refreshButton.appendChild(refreshIcon);
+  refreshButton.appendChild(refreshLabel);
   refreshButton.addEventListener("click", function () {
     refresh(true);
   });
@@ -386,6 +415,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     }
     refreshing = true;
     refreshButton.disabled = true;
+    refreshButton.classList.add("is-refreshing");
     message.classList.remove("is-error");
     if (!currentResult || !currentResult.movies.length) {
       message.textContent = force ? "Refreshing movie catalog..." : "Loading movie catalog...";
@@ -410,6 +440,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       refreshing = false;
       if (!destroyed) {
         refreshButton.disabled = false;
+        refreshButton.classList.remove("is-refreshing");
         if (!screen.contains(document.activeElement)) {
           if (options && options.selectedMovieId) {
             const matchIndex = currentResult && currentResult.movies ?

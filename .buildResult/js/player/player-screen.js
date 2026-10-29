@@ -53,7 +53,7 @@ function playerMarkup(movie) {
     '<span class="play-icon" aria-hidden="true"></span><span>Play with sound</span></button>' +
     '<div id="controls" class="control-panel ui-overlay" aria-label="Playback controls">' +
     '<label class="timeline"><span id="current-time" class="time-label">0:00</span>' +
-    '<input id="seek-bar" type="range" min="0" max="1000" value="0" aria-label="Seek">' +
+    '<input id="seek-bar" type="range" min="0" max="1000" value="0" aria-label="Seek" style="background-image: linear-gradient(to right, #e50924 0%, #e50924 0%, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.35) 100%);">' +
     '<span id="duration" class="time-label">0:00</span></label>' +
     '<div class="control-row">' +
     '<button id="rewind-button" class="control-button" type="button" aria-label="Rewind 10 seconds">' +
@@ -74,7 +74,7 @@ function playerMarkup(movie) {
     '<span id="subtitle-symbol" class="control-symbol subtitle-symbol" aria-hidden="true">CC</span><span id="subtitle-label" class="control-caption">Subs</span></button>' +
     '<button id="fullscreen-button" class="control-button compact-control" type="button" aria-label="Enter fullscreen">' +
     '<span id="fullscreen-symbol" class="control-symbol fullscreen-symbol" aria-hidden="true">' +
-    '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>' +
+    '<svg class="control-icon" viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>' +
     '</span><span id="fullscreen-label" class="control-caption">Full screen</span></button>' +
     '</div><p class="remote-hint">' + hintText + '</p>' +
     '</div></section>';
@@ -104,8 +104,8 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   const fullscreenButton = root.querySelector("#fullscreen-button");
   const fullscreenLabel = root.querySelector("#fullscreen-label");
   const fullscreenSymbol = root.querySelector("#fullscreen-symbol");
-  const FULLSCREEN_ENTER_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
-  const FULLSCREEN_EXIT_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
+  const FULLSCREEN_ENTER_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+  const FULLSCREEN_EXIT_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
   const subtitlesContainer = root.querySelector("#subtitles");
   const tapZoneLeft = root.querySelector("#tap-zone-left");
   const tapZoneRight = root.querySelector("#tap-zone-right");
@@ -463,6 +463,8 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       seekBar.disabled = true;
       seekBar.value = "0";
       seekBar.style.setProperty("--seek-progress", "0%");
+      seekBar.style.backgroundImage =
+        "linear-gradient(to right, #e50924 0%, #e50924 0%, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.35) 100%)";
       currentTimeLabel.textContent = formatTime(playback.getCurrentTime());
       durationLabel.textContent = formatTime(video.duration);
       return;
@@ -473,7 +475,10 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       ? Math.max(0, Math.min(1, previewProgress))
       : Math.max(0, Math.min(1, (playback.getCurrentTime() - range.start) / (range.end - range.start)));
     const percentage = progress * 100;
-    seekBar.style.setProperty("--seek-progress", percentage + "%");
+    const pctString = percentage.toFixed(2) + "%";
+    seekBar.style.setProperty("--seek-progress", pctString);
+    seekBar.style.backgroundImage =
+      "linear-gradient(to right, #e50924 0%, #e50924 " + pctString + ", rgba(255, 255, 255, 0.35) " + pctString + ", rgba(255, 255, 255, 0.35) 100%)";
     seekBar.value = String(Math.round(percentage * 10));
     currentTimeLabel.textContent = formatTime(progress * (range.end - range.start));
     durationLabel.textContent = formatTime(range.end - range.start);
