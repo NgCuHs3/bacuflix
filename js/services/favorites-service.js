@@ -1,25 +1,51 @@
 const STORAGE_KEY = "kkphim_favorites";
 
-export function getFavorites() {
+let cachedFavorites = null;
+let cachedFavoritesSet = null;
+
+function ensureCache() {
+  if (cachedFavorites !== null && cachedFavoritesSet !== null) {
+    return;
+  }
   if (typeof window === "undefined" || !window.localStorage) {
-    return [];
+    cachedFavorites = [];
+    cachedFavoritesSet = new Set();
+    return;
   }
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    cachedFavorites = Array.isArray(parsed) ? parsed : [];
   } catch (error) {
     console.warn("Không thể đọc danh sách phim yêu thích:", error.message);
-    return [];
+    cachedFavorites = [];
+  }
+  cachedFavoritesSet = new Set();
+  for (let i = 0; i < cachedFavorites.length; i += 1) {
+    if (cachedFavorites[i] && cachedFavorites[i].slug) {
+      cachedFavoritesSet.add(cachedFavorites[i].slug);
+    }
   }
 }
 
+export function getFavorites() {
+  ensureCache();
+  return cachedFavorites;
+}
+
 export function saveFavorites(list) {
+  cachedFavorites = Array.isArray(list) ? list : [];
+  cachedFavoritesSet = new Set();
+  for (let i = 0; i < cachedFavorites.length; i += 1) {
+    if (cachedFavorites[i] && cachedFavorites[i].slug) {
+      cachedFavoritesSet.add(cachedFavorites[i].slug);
+    }
+  }
   if (typeof window === "undefined" || !window.localStorage) {
     return;
   }
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cachedFavorites));
   } catch (error) {
     console.warn("Không thể lưu danh sách phim yêu thích:", error.message);
   }
@@ -29,10 +55,8 @@ export function isFavorite(slug) {
   if (!slug) {
     return false;
   }
-  const list = getFavorites();
-  return list.some(function (item) {
-    return item.slug === slug;
-  });
+  ensureCache();
+  return cachedFavoritesSet.has(slug);
 }
 
 export function addFavorite(movie) {

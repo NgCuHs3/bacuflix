@@ -10,7 +10,17 @@ function requireModule(id) {
   return exports;
 }
 registerModule("js/app.js", function (requireModule) {
-var createHomeScreen = requireModule("js/home/home-screen.js")["createHomeScreen"];var createDoubleBack = requireModule("js/navigation/double-back.js")["createDoubleBack"];var createRemoteNavigation = requireModule("js/navigation/remote-navigation.js")["createRemoteNavigation"];var createPlayerScreen = requireModule("js/player/player-screen.js")["createPlayerScreen"];var createCatalogService = requireModule("js/services/catalog-service.js")["createCatalogService"];var currentDevice = requireModule("js/utils/device.js")["currentDevice"];
+var createHomeScreen = requireModule("js/home/home-screen.js")["createHomeScreen"];
+var createDoubleBack = requireModule("js/navigation/double-back.js")["createDoubleBack"];
+var createRemoteNavigation = requireModule("js/navigation/remote-navigation.js")["createRemoteNavigation"];
+var createPlayerScreen = requireModule("js/player/player-screen.js")["createPlayerScreen"];
+var createCatalogService = requireModule("js/services/catalog-service.js")["createCatalogService"];
+var createKkphimApi = requireModule("js/services/kkphim-api.js")["createKkphimApi"];
+var currentDevice = requireModule("js/utils/device.js")["currentDevice"];
+var parseRoute = requireModule("js/utils/url.js")["parseRoute"];
+var buildMovieUrl = requireModule("js/utils/url.js")["buildMovieUrl"];
+var buildEpisodeUrl = requireModule("js/utils/url.js")["buildEpisodeUrl"];
+var buildHomeUrl = requireModule("js/utils/url.js")["buildHomeUrl"];
 const root = document.getElementById("app");
 if (document.documentElement) {
   document.documentElement.setAttribute("data-device", currentDevice);
@@ -24,6 +34,7 @@ if (root) {
 const remoteNavigation = createRemoteNavigation();
 const doubleBack = createDoubleBack(2200);
 const catalogService = createCatalogService();
+const kkphimApi = createKkphimApi();
 
 const NavigationState = {
   activeScreenName: "catalog",
@@ -64,6 +75,16 @@ function showHome(options) {
     onSelect: function (movie) {
       showPlayer(movie, true);
     },
+    onOpenDetail: function (movie) {
+      if (typeof window !== "undefined" && window.history && window.history.pushState) {
+        window.history.pushState({ screen: "movie-detail", movieSlug: movie.slug }, "", buildMovieUrl(movie.slug));
+      }
+    },
+    onCloseDetail: function () {
+      if (typeof window !== "undefined" && window.history && window.history.pushState) {
+        window.history.pushState({ screen: "catalog" }, "", buildHomeUrl());
+      }
+    },
     onPlaybackUnavailable: function () {
       if (NavigationState.screenInstance && NavigationState.screenInstance.showBackPrompt) {
         NavigationState.screenInstance.showBackPrompt("Playback is disabled until an authorized stream is configured.");
@@ -81,21 +102,25 @@ function showHome(options) {
       });
     }
   }, {
-    selectedMovieId: options && options.selectedMovieId ? options.selectedMovieId : (previousMovie ? previousMovie.id : null)
+    selectedMovieId: options && options.selectedMovieId ? options.selectedMovieId : (previousMovie ? previousMovie.id : null),
+    autoOpenSlug: options && options.autoOpenSlug ? options.autoOpenSlug : null
   });
 
   setActiveScreen("catalog", homeScreen);
 
-  if (typeof window !== "undefined" && window.history && window.history.state) {
-    if (window.history.state.screen === "player") {
-      window.history.replaceState({ screen: "catalog" }, "", window.location.pathname + window.location.search);
+  if (typeof window !== "undefined" && window.history && window.history.replaceState) {
+    if (options && options.autoOpenSlug) {
+      window.history.replaceState({ screen: "movie-detail", movieSlug: options.autoOpenSlug }, "", buildMovieUrl(options.autoOpenSlug));
+    } else {
+      window.history.replaceState({ screen: "catalog" }, "", buildHomeUrl());
     }
   }
 }
 
 function handlePlayerBack() {
-  if (typeof window !== "undefined" && window.history && window.history.state && window.history.state.screen === "player") {
-    window.history.back();
+  const prevMovie = NavigationState.selectedMovie;
+  if (prevMovie && prevMovie.slug) {
+    showHome({ autoOpenSlug: prevMovie.slug });
   } else {
     showHome();
   }
@@ -112,29 +137,99 @@ function showPlayer(movie, pushHistory) {
   const playerScreen = createPlayerScreen(root, movie, handlePlayerBack);
   setActiveScreen("player", playerScreen);
 
-  if (pushHistory && typeof window !== "undefined" && window.history) {
-    window.history.pushState({ screen: "player", movieId: movie.id }, "", "#player");
+  if (pushHistory && typeof window !== "undefined" && window.history && window.history.pushState) {
+    const epNum = (typeof movie.currentEpisodeIndex === "number") ? (movie.currentEpisodeIndex + 1) : 1;
+    const slug = movie.slug || movie.id;
+    window.history.pushState({ screen: "player", movieSlug: slug, ep: epNum }, "", buildEpisodeUrl(slug, epNum));
   }
 }
 
-function onPopState(event) {
+function playEpisodeFromData(movie, episodes, epParam) {
+  const currentServer = episodes && episodes[0];
+  const serverData = (currentServer && Array.isArray(currentServer.server_data)) ? currentServer.server_data : [];
+  if (!serverData.length) {
+    showHome({ autoOpenSlug: movie.slug });
+    return;
+  }
+
+  let targetIndex = 0;
+  if (epParam) {
+    const epNum = parseInt(epParam, 10);
+    if (!isNaN(epNum) && epNum >= 1 && epNum <= serverData.length) {
+      targetIndex = epNum - 1;
+    } else {
+      const foundIdx = serverData.findIndex(function (item) {
+        return item.slug === epParam || item.name === epParam || String(item.name).toLowerCase() === String(epParam).toLowerCase();
+      });
+      if (foundIdx !== -1) {
+        targetIndex = foundIdx;
+      }
+    }
+  }
+
+  const epObj = serverData[targetIndex];
+  const streamUrl = epObj.link_m3u8 || epObj.link_embed;
+  const serverName = currentServer ? currentServer.server_name : "Vietsub";
+  const playbackMovie = {
+    id: movie.slug + "-" + (epObj.slug || targetIndex),
+    slug: movie.slug,
+    seriesTitle: movie.title,
+    episodeName: epObj.name,
+    title: movie.title + " - " + epObj.name,
+    poster: movie.poster,
+    m3u8: streamUrl,
+    fallbackEmbed: epObj.link_embed || "",
+    playbackEnabled: true,
+    source: "KKPhim · " + serverName,
+    episodesList: serverData.map(function (item, idx) {
+      return {
+        index: idx,
+        name: item.name,
+        slug: item.slug || String(idx),
+        m3u8: item.link_m3u8 || item.link_embed,
+        fallbackEmbed: item.link_embed || ""
+      };
+    }),
+    currentEpisodeIndex: targetIndex,
+    serverName: serverName
+  };
+
+  showPlayer(playbackMovie, false);
+}
+
+function handleDeepLink(movieSlug, epParam) {
+  kkphimApi.getMovieDetail(movieSlug).then(function (data) {
+    if (NavigationState.disposed) {
+      return;
+    }
+    if (epParam) {
+      playEpisodeFromData(data.movie, data.episodes, epParam);
+    } else {
+      showHome({ autoOpenSlug: movieSlug });
+    }
+  }).catch(function (error) {
+    console.warn("Failed to load deep link:", error);
+    showHome();
+  });
+}
+
+function onPopState() {
   if (NavigationState.disposed) {
     return;
   }
-  const state = event.state;
-  if (state && state.screen === "player") {
-    if (NavigationState.activeScreenName !== "player") {
-      const lastResult = catalogService.getLastResult();
-      const movie = (lastResult && lastResult.movies) ?
-        lastResult.movies.find(function (m) { return m.id === state.movieId; }) : null;
-      if (movie) {
-        showPlayer(movie, false);
-      } else {
-        showHome();
-      }
+  const route = parseRoute(window.location.search, window.location.hash);
+  if (route.movieSlug && route.ep) {
+    handleDeepLink(route.movieSlug, route.ep);
+  } else if (route.movieSlug) {
+    if (NavigationState.activeScreenName === "catalog" && NavigationState.screenInstance && NavigationState.screenInstance.openMovie) {
+      NavigationState.screenInstance.openMovie(route.movieSlug);
+    } else {
+      showHome({ autoOpenSlug: route.movieSlug });
     }
   } else {
-    if (NavigationState.activeScreenName !== "catalog") {
+    if (NavigationState.activeScreenName === "catalog" && NavigationState.screenInstance && NavigationState.screenInstance.isDetailOpen && NavigationState.screenInstance.isDetailOpen()) {
+      NavigationState.screenInstance.closeDetail();
+    } else if (NavigationState.activeScreenName !== "catalog") {
       showHome();
     }
   }
@@ -156,13 +251,16 @@ function onPageHide() {
 
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", onPopState);
-  if (window.history) {
-    window.history.replaceState({ screen: "catalog" }, "", window.location.pathname + window.location.search);
+  window.addEventListener("pagehide", onPageHide);
+  const initialRoute = parseRoute(window.location.search, window.location.hash);
+  if (initialRoute.movieSlug) {
+    handleDeepLink(initialRoute.movieSlug, initialRoute.ep);
+  } else {
+    showHome();
   }
+} else {
+  showHome();
 }
-
-window.addEventListener("pagehide", onPageHide);
-showHome();
 
 return {};
 });
@@ -200,6 +298,8 @@ function makeMovieCard(movie, actionsHandler) {
   image.alt = "";
   image.decoding = "async";
   image.loading = "lazy";
+  image.width = 200;
+  image.height = 300;
   let usingFallback = !movie.poster || movie.poster === fallbackPoster;
   image.addEventListener("error", function onPosterError() {
     if (usingFallback) {
@@ -362,6 +462,12 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   let isProgrammaticFocus = false;
   let cachedColumnsCount = 1;
 
+  // Virtual Scrolling State: only elements in the visible window are mounted in the DOM
+  const mountedIndices = new Set();
+  let currentStartRow = -1;
+  let currentEndRow = -1;
+  let virtualScrollRaf = 0;
+
   // Pagination / Infinite scroll state
   let currentPage = 1;
   let isLoadingMore = false;
@@ -381,12 +487,24 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         updateCardFavStates();
       }
     },
+    onOpen: function (movie) {
+      if (typeof actionsHandler.onOpenDetail === "function") {
+        actionsHandler.onOpenDetail(movie);
+      }
+    },
     onClose: function () {
       if (selectedCardEntry) {
         setSelectedCard(selectedCardEntry, true);
       }
+      if (typeof actionsHandler.onCloseDetail === "function") {
+        actionsHandler.onCloseDetail();
+      }
     }
   });
+
+  if (options && options.autoOpenSlug) {
+    detailModal.open({ slug: options.autoOpenSlug, title: "" });
+  }
 
   // Hero Section Carousel (Netflix-style)
   const heroCarousel = createHeroCarousel(screen, {
@@ -430,19 +548,16 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       cachedColumnsCount = 5;
       return;
     }
-    if (cards.length < 2) {
-      cachedColumnsCount = 1;
-      return;
+    const width = (typeof window !== "undefined" ? window.innerWidth : 0) || (root && root.clientWidth) || 1280;
+    if (width <= 540) {
+      cachedColumnsCount = 2;
+    } else if (width <= 840) {
+      cachedColumnsCount = 3;
+    } else if (width <= 1200) {
+      cachedColumnsCount = 4;
+    } else {
+      cachedColumnsCount = 5;
     }
-    const firstTop = cards[0].element.offsetTop;
-    let count = cards.length;
-    for (let i = 1; i < cards.length; i += 1) {
-      if (cards[i].element.offsetTop > firstTop) {
-        count = i;
-        break;
-      }
-    }
-    cachedColumnsCount = count > 1 ? count : 4;
   }
 
   function ensureCardVisible(cardElement) {
@@ -496,6 +611,10 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       return;
     }
 
+    if (typeof targetEntry.index === "number") {
+      ensureCardInWindow(targetEntry.index);
+    }
+
     clearActionFocus();
 
     if (selectedCardEntry !== targetEntry) {
@@ -504,9 +623,13 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       }
       selectedCardEntry = targetEntry;
       targetEntry.element.classList.add("is-selected", "movie-card--selected");
-      const foundIdx = cards.indexOf(targetEntry);
-      if (foundIdx !== -1) {
-        activeCardIndex = foundIdx;
+      if (typeof targetEntry.index === "number") {
+        activeCardIndex = targetEntry.index;
+      } else {
+        const foundIdx = cards.indexOf(targetEntry);
+        if (foundIdx !== -1) {
+          activeCardIndex = foundIdx;
+        }
       }
     } else if (!targetEntry.element.classList.contains("is-selected")) {
       targetEntry.element.classList.add("is-selected", "movie-card--selected");
@@ -554,6 +677,17 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     const active = document.activeElement;
     if (selectedCardEntry && (selectedCardEntry.element === active || selectedCardEntry.playButton === active || selectedCardEntry.element.contains(active))) {
       return activeCardIndex;
+    }
+    if (active) {
+      const cardEl = active.closest ? active.closest(".catalog-card") : null;
+      if (cardEl && cardEl.dataset.cardIndex !== undefined) {
+        const idx = parseInt(cardEl.dataset.cardIndex, 10);
+        if (!isNaN(idx) && idx >= 0 && idx < cards.length) {
+          selectedCardEntry = cards[idx];
+          activeCardIndex = idx;
+          return idx;
+        }
+      }
     }
     for (let i = 0; i < cards.length; i += 1) {
       if (cards[i].element === active || cards[i].playButton === active || cards[i].element.contains(active)) {
@@ -622,7 +756,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
 
   const searchIcon = document.createElement("span");
   searchIcon.className = "home-search-icon";
-  searchIcon.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 11.99 14 9.5 14z"/></svg>';
+  searchIcon.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>';
 
   const searchInput = document.createElement("input");
   searchInput.type = "search";
@@ -693,6 +827,216 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   const grid = document.createElement("div");
   grid.className = "catalog-grid";
   grid.setAttribute("aria-label", "Danh sách phim");
+
+  const topSpacer = document.createElement("div");
+  topSpacer.className = "catalog-grid-spacer catalog-grid-spacer-top";
+  topSpacer.setAttribute("aria-hidden", "true");
+  topSpacer.style.display = "none";
+
+  const bottomSpacer = document.createElement("div");
+  bottomSpacer.className = "catalog-grid-spacer catalog-grid-spacer-bottom";
+  bottomSpacer.setAttribute("aria-hidden", "true");
+  bottomSpacer.style.display = "none";
+
+  grid.appendChild(topSpacer);
+  grid.appendChild(bottomSpacer);
+
+  let cachedMeasuredCardHeight = 0;
+  let cachedMeasuredWidth = 0;
+
+  function measureLayout() {
+    if (isTv()) {
+      return {
+        cardHeight: 600,
+        gap: 28,
+        rowHeight: 628,
+        cols: 5
+      };
+    }
+    const width = (typeof window !== "undefined" ? window.innerWidth : 0) || (root && root.clientWidth) || 1280;
+    let cols = 5;
+    let gap = 24;
+    let baseCardHeight = 390;
+
+    if (width <= 540) {
+      cols = 2;
+      gap = 12;
+      const cardWidth = Math.max(140, (width - 28 - gap) / 2);
+      baseCardHeight = Math.round(cardWidth * 1.5 + 75);
+    } else if (width <= 840) {
+      cols = 3;
+      gap = 16;
+      const cardWidth = Math.max(160, (width - 48 - gap * 2) / 3);
+      baseCardHeight = Math.round(cardWidth * 1.5 + 85);
+    } else if (width <= 1200) {
+      cols = 4;
+      gap = 20;
+      const cardWidth = Math.max(180, (width - 64 - gap * 3) / 4);
+      baseCardHeight = Math.round(cardWidth * 1.5 + 90);
+    } else {
+      cols = 5;
+      gap = 24;
+      const cardWidth = Math.max(180, (width - width * 0.08 - gap * 4) / 5);
+      baseCardHeight = Math.round(cardWidth * 1.5 + 90);
+    }
+
+    if (width !== cachedMeasuredWidth || !cachedMeasuredCardHeight) {
+      cachedMeasuredWidth = width;
+      cachedMeasuredCardHeight = baseCardHeight;
+      if (cards.length > 0) {
+        for (let i = 0; i < cards.length; i += 1) {
+          if (cards[i] && cards[i].element && cards[i].element.isConnected) {
+            const rect = cards[i].element.getBoundingClientRect();
+            if (rect.height > 100) {
+              cachedMeasuredCardHeight = Math.round(rect.height);
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      cardHeight: cachedMeasuredCardHeight,
+      gap: gap,
+      rowHeight: cachedMeasuredCardHeight + gap,
+      cols: cols
+    };
+  }
+
+  function mountRange(startIndex, endIndex) {
+    const toRemove = [];
+    mountedIndices.forEach(function (idx) {
+      if (idx < startIndex || idx > endIndex) {
+        toRemove.push(idx);
+      }
+    });
+    for (let k = 0; k < toRemove.length; k += 1) {
+      const idx = toRemove[k];
+      const entry = cards[idx];
+      if (entry && entry.element && entry.element.parentNode === grid) {
+        grid.removeChild(entry.element);
+      }
+      mountedIndices.delete(idx);
+    }
+
+    // Insert from endIndex down to startIndex so anchor is always the next card
+    for (let i = endIndex; i >= startIndex; i -= 1) {
+      if (!mountedIndices.has(i) && cards[i] && cards[i].element) {
+        let anchor = bottomSpacer;
+        if (cards[i + 1] && cards[i + 1].element && cards[i + 1].element.parentNode === grid) {
+          anchor = cards[i + 1].element;
+        } else {
+          for (let j = i + 1; j <= endIndex; j += 1) {
+            if (mountedIndices.has(j) && cards[j] && cards[j].element && cards[j].element.parentNode === grid) {
+              anchor = cards[j].element;
+              break;
+            }
+          }
+        }
+        grid.insertBefore(cards[i].element, anchor);
+        mountedIndices.add(i);
+      }
+    }
+  }
+
+  function updateVirtualWindow(forceTargetRow) {
+    if (!cards.length || destroyed) {
+      topSpacer.style.display = "none";
+      bottomSpacer.style.display = "none";
+      return;
+    }
+    const layout = measureLayout();
+    cachedColumnsCount = layout.cols;
+    const totalRows = Math.ceil(cards.length / layout.cols);
+
+    if (cards.length <= 25) {
+      topSpacer.style.display = "none";
+      bottomSpacer.style.display = "none";
+      mountRange(0, cards.length - 1);
+      currentStartRow = 0;
+      currentEndRow = totalRows - 1;
+      return;
+    }
+
+    const gridTop = grid.offsetTop || 0;
+    const viewportHeight = screen.clientHeight || window.innerHeight || 800;
+    const scrollTop = screen.scrollTop || 0;
+    const relativeScroll = Math.max(0, scrollTop - gridTop);
+
+    const bufferRows = 6;
+    let startRow = Math.max(0, Math.floor(relativeScroll / layout.rowHeight) - bufferRows);
+    let endRow = Math.min(totalRows - 1, Math.ceil((relativeScroll + viewportHeight) / layout.rowHeight) + bufferRows);
+
+    if (typeof forceTargetRow === "number") {
+      if (forceTargetRow < startRow) {
+        startRow = Math.max(0, forceTargetRow - 1);
+      }
+      if (forceTargetRow > endRow) {
+        endRow = Math.min(totalRows - 1, forceTargetRow + 1);
+      }
+    }
+
+    if (startRow === currentStartRow && endRow === currentEndRow && typeof forceTargetRow !== "number") {
+      return;
+    }
+
+    currentStartRow = startRow;
+    currentEndRow = endRow;
+
+    if (startRow > 0) {
+      topSpacer.style.display = "block";
+      topSpacer.style.height = Math.max(0, startRow * layout.rowHeight - layout.gap) + "px";
+    } else {
+      topSpacer.style.display = "none";
+    }
+
+    const remainingRows = totalRows - 1 - endRow;
+    if (remainingRows > 0) {
+      bottomSpacer.style.display = "block";
+      bottomSpacer.style.height = Math.max(0, remainingRows * layout.rowHeight - layout.gap) + "px";
+    } else {
+      bottomSpacer.style.display = "none";
+    }
+
+    const startIndex = startRow * layout.cols;
+    const endIndex = Math.min(cards.length - 1, (endRow + 1) * layout.cols - 1);
+    mountRange(startIndex, endIndex);
+  }
+
+  function scheduleVirtualUpdate() {
+    if (virtualScrollRaf) {
+      return;
+    }
+    virtualScrollRaf = window.requestAnimationFrame(function () {
+      virtualScrollRaf = 0;
+      updateVirtualWindow();
+    });
+  }
+
+  function ensureCardInWindow(targetIdx) {
+    if (typeof targetIdx !== "number" || targetIdx < 0 || targetIdx >= cards.length) {
+      return;
+    }
+    const layout = measureLayout();
+    const targetRow = Math.floor(targetIdx / layout.cols);
+    if (targetRow < currentStartRow || targetRow > currentEndRow) {
+      updateVirtualWindow(targetRow);
+    }
+  }
+
+  function clearGrid() {
+    mountedIndices.clear();
+    currentStartRow = -1;
+    currentEndRow = -1;
+    while (grid.firstChild) {
+      grid.removeChild(grid.firstChild);
+    }
+    grid.appendChild(topSpacer);
+    grid.appendChild(bottomSpacer);
+    topSpacer.style.display = "none";
+    bottomSpacer.style.display = "none";
+  }
 
   const notice = document.createElement("p");
   notice.className = "catalog-notice";
@@ -766,9 +1110,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
 
   function render(result) {
     currentResult = result;
-    while (grid.firstChild) {
-      grid.removeChild(grid.firstChild);
-    }
+    clearGrid();
     cards = [];
     notice.textContent = "";
     notice.hidden = true;
@@ -798,6 +1140,8 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
 
     result.movies.forEach(function (movie, idx) {
       const cardEntry = makeMovieCard(movie, cardActions);
+      cardEntry.index = idx;
+      cardEntry.element.dataset.cardIndex = idx;
 
       cardEntry.element.addEventListener("focus", function () {
         if (isProgrammaticFocus) {
@@ -808,7 +1152,6 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         }
       });
 
-      grid.appendChild(cardEntry.element);
       cards.push(cardEntry);
 
       if (options && options.selectedMovieId && movie.id === options.selectedMovieId) {
@@ -816,6 +1159,8 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         activeCardIndex = idx;
       }
     });
+
+    updateVirtualWindow();
 
     if (result.notice) {
       notice.textContent = result.notice;
@@ -855,6 +1200,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     }
     const cardActions = createCardActions();
     let appendedCount = 0;
+    let startIndex = cards.length;
 
     newMovies.forEach(function (movie) {
       // Deduplicate by slug or id
@@ -866,6 +1212,10 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       }
 
       const cardEntry = makeMovieCard(movie, cardActions);
+      cardEntry.index = startIndex;
+      cardEntry.element.dataset.cardIndex = startIndex;
+      startIndex += 1;
+
       cardEntry.element.addEventListener("focus", function () {
         if (isProgrammaticFocus) {
           return;
@@ -875,13 +1225,12 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         }
       });
 
-      grid.appendChild(cardEntry.element);
       cards.push(cardEntry);
       appendedCount += 1;
     });
 
     if (appendedCount > 0) {
-      updateColumnsCount();
+      updateVirtualWindow();
       message.textContent = cards.length + " phim";
     }
   }
@@ -934,19 +1283,48 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     });
   }
 
-  function onScreenScroll() {
-    if (isLoadingMore || !hasMore || destroyed) {
-      return;
-    }
-    if (activeTab === "favorites") {
-      return;
-    }
-    const scrollBottom = screen.scrollHeight - screen.scrollTop - screen.clientHeight;
-    if (scrollBottom < 380) {
-      loadMore();
-    }
+  // IntersectionObserver for smooth off-main-thread infinite scroll detection
+  let sentinelObserver = null;
+  if (typeof IntersectionObserver !== "undefined") {
+    sentinelObserver = new IntersectionObserver(function (entries) {
+      if (entries[0] && entries[0].isIntersecting) {
+        if (!isLoadingMore && hasMore && !destroyed && activeTab !== "favorites") {
+          loadMore();
+        }
+      }
+    }, {
+      root: screen,
+      rootMargin: "600px 0px"
+    });
+    sentinelObserver.observe(loadingMoreEl);
   }
-  screen.addEventListener("scroll", onScreenScroll);
+
+  // Throttled scroll listener using requestAnimationFrame for zero layout thrashing
+  let scrollRafId = 0;
+  let lastVirtualScrollTop = 0;
+  function onScreenScroll() {
+    const st = screen.scrollTop || 0;
+    if (Math.abs(st - lastVirtualScrollTop) > 300) {
+      lastVirtualScrollTop = st;
+      updateVirtualWindow();
+    } else {
+      scheduleVirtualUpdate();
+    }
+    if (sentinelObserver || scrollRafId || isLoadingMore || !hasMore || destroyed || activeTab === "favorites") {
+      return;
+    }
+    scrollRafId = window.requestAnimationFrame(function () {
+      scrollRafId = 0;
+      if (isLoadingMore || !hasMore || destroyed || activeTab === "favorites") {
+        return;
+      }
+      const scrollBottom = screen.scrollHeight - screen.scrollTop - screen.clientHeight;
+      if (scrollBottom < 400) {
+        loadMore();
+      }
+    });
+  }
+  screen.addEventListener("scroll", onScreenScroll, { passive: true });
 
   function updateTabButtonsUI() {
     tabButtons.forEach(function (btn) {
@@ -1122,6 +1500,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
 
   function onWindowResize() {
     updateColumnsCount();
+    updateVirtualWindow();
   }
   window.addEventListener("resize", onWindowResize);
 
@@ -1414,8 +1793,36 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     getResult() {
       return currentResult;
     },
+    openMovie(movieOrSlug) {
+      if (typeof movieOrSlug === "string") {
+        detailModal.open({ slug: movieOrSlug, title: "" });
+      } else if (movieOrSlug && movieOrSlug.slug) {
+        detailModal.open(movieOrSlug);
+      }
+    },
+    closeDetail() {
+      if (detailModal.isOpen()) {
+        detailModal.close();
+      }
+    },
+    isDetailOpen() {
+      return detailModal.isOpen();
+    },
     destroy() {
       destroyed = true;
+      if (sentinelObserver) {
+        sentinelObserver.disconnect();
+        sentinelObserver = null;
+      }
+      if (scrollRafId) {
+        window.cancelAnimationFrame(scrollRafId);
+        scrollRafId = 0;
+      }
+      if (virtualScrollRaf) {
+        window.cancelAnimationFrame(virtualScrollRaf);
+        virtualScrollRaf = 0;
+      }
+      clearGrid();
       window.removeEventListener("resize", onWindowResize);
       screen.removeEventListener("scroll", onScreenScroll);
       window.clearTimeout(toastTimer);
@@ -1819,26 +2226,52 @@ return {buildImageUrl: buildImageUrl, normalizeMovie: normalizeMovie, createKkph
 registerModule("js/services/favorites-service.js", function (requireModule) {
 const STORAGE_KEY = "kkphim_favorites";
 
-function getFavorites() {
+let cachedFavorites = null;
+let cachedFavoritesSet = null;
+
+function ensureCache() {
+  if (cachedFavorites !== null && cachedFavoritesSet !== null) {
+    return;
+  }
   if (typeof window === "undefined" || !window.localStorage) {
-    return [];
+    cachedFavorites = [];
+    cachedFavoritesSet = new Set();
+    return;
   }
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    cachedFavorites = Array.isArray(parsed) ? parsed : [];
   } catch (error) {
     console.warn("Không thể đọc danh sách phim yêu thích:", error.message);
-    return [];
+    cachedFavorites = [];
+  }
+  cachedFavoritesSet = new Set();
+  for (let i = 0; i < cachedFavorites.length; i += 1) {
+    if (cachedFavorites[i] && cachedFavorites[i].slug) {
+      cachedFavoritesSet.add(cachedFavorites[i].slug);
+    }
   }
 }
 
+function getFavorites() {
+  ensureCache();
+  return cachedFavorites;
+}
+
 function saveFavorites(list) {
+  cachedFavorites = Array.isArray(list) ? list : [];
+  cachedFavoritesSet = new Set();
+  for (let i = 0; i < cachedFavorites.length; i += 1) {
+    if (cachedFavorites[i] && cachedFavorites[i].slug) {
+      cachedFavoritesSet.add(cachedFavorites[i].slug);
+    }
+  }
   if (typeof window === "undefined" || !window.localStorage) {
     return;
   }
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cachedFavorites));
   } catch (error) {
     console.warn("Không thể lưu danh sách phim yêu thích:", error.message);
   }
@@ -1848,10 +2281,8 @@ function isFavorite(slug) {
   if (!slug) {
     return false;
   }
-  const list = getFavorites();
-  return list.some(function (item) {
-    return item.slug === slug;
-  });
+  ensureCache();
+  return cachedFavoritesSet.has(slug);
 }
 
 function addFavorite(movie) {
@@ -2223,6 +2654,8 @@ registerModule("js/home/movie-detail-modal.js", function (requireModule) {
 var isFavorite = requireModule("js/services/favorites-service.js")["isFavorite"];
 var toggleFavorite = requireModule("js/services/favorites-service.js")["toggleFavorite"];
 var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
+var buildMovieUrl = requireModule("js/utils/url.js")["buildMovieUrl"];
+var copyTextToClipboard = requireModule("js/utils/url.js")["copyTextToClipboard"];
 function cleanHtmlContent(html) {
   if (!html) {
     return "Chưa có mô tả nội dung cho phim này.";
@@ -2250,12 +2683,38 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
   let focusableElements = [];
   let currentFocusIndex = 0;
 
+  let cachedCloseBtn = null;
+  let cachedFavBtn = null;
+  let cachedShareBtn = null;
+  let cachedServerTabs = [];
+  let cachedEpisodeBtns = [];
+  let cachedEpContainer = null;
+  let cachedGridCols = 5;
+
+  function getGridCols() {
+    return cachedGridCols || 5;
+  }
+
   function updateFocusables() {
     focusableElements = Array.from(modal.querySelectorAll('button:not([disabled]), [tabindex="0"]'));
   }
 
-  function setFocus(index) {
+  function updateModalLayoutCache() {
+    cachedCloseBtn = modal.querySelector(".movie-detail-close");
+    cachedFavBtn = modal.querySelector(".movie-detail-fav-btn");
+    cachedShareBtn = modal.querySelector(".movie-detail-share-btn");
+    cachedServerTabs = Array.from(modal.querySelectorAll(".movie-server-tab"));
+    cachedEpisodeBtns = Array.from(modal.querySelectorAll(".movie-episode-btn"));
+    cachedEpContainer = modal.querySelector(".movie-episodes-container");
+    const width = (typeof window !== "undefined" ? window.innerWidth : 0) || 1280;
+    cachedGridCols = width <= 480 ? 3 : (width <= 768 ? 4 : 5);
     updateFocusables();
+  }
+
+  function setFocus(index) {
+    if (!focusableElements.length) {
+      updateFocusables();
+    }
     if (!focusableElements.length) {
       return;
     }
@@ -2374,6 +2833,10 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
               '<span class="fav-icon">' + (favActive ? '♥' : '♡') + '</span> ' +
               '<span class="fav-label">' + (favActive ? 'Đã yêu thích' : 'Thêm vào yêu thích') + '</span>' +
             '</button>' +
+            '<button type="button" class="movie-detail-btn movie-detail-share-btn" aria-label="Chia sẻ phim">' +
+              '<span class="share-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span> ' +
+              '<span class="share-label">Chia sẻ</span>' +
+            '</button>' +
           '</div>' +
           '<div class="movie-detail-section-title">Chọn tập phim:</div>' +
           serverTabsHtml +
@@ -2385,6 +2848,33 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
     const closeBtn = modal.querySelector(".movie-detail-close");
     if (closeBtn) {
       closeBtn.addEventListener("click", close);
+    }
+
+    // Modal Toast
+    function showModalToast(message) {
+      let toastEl = modal.querySelector(".movie-detail-toast");
+      if (!toastEl) {
+        toastEl = document.createElement("div");
+        toastEl.className = "movie-detail-toast";
+        modal.appendChild(toastEl);
+      }
+      toastEl.textContent = message;
+      toastEl.classList.add("is-visible");
+      window.clearTimeout(toastEl._timer);
+      toastEl._timer = window.setTimeout(function () {
+        toastEl.classList.remove("is-visible");
+      }, 2400);
+    }
+
+    // Bind Share button
+    const shareBtn = modal.querySelector(".movie-detail-share-btn");
+    if (shareBtn) {
+      shareBtn.addEventListener("click", function () {
+        const shareUrl = buildMovieUrl(movie.slug);
+        copyTextToClipboard(shareUrl).then(function (success) {
+          showModalToast(success ? "Đã sao chép liên kết phim!" : "Không thể sao chép liên kết.");
+        });
+      });
     }
 
     // Bind Favorite toggle
@@ -2468,7 +2958,8 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
     });
 
     // Set initial focus: first episode button, or favorite button if no episodes
-    const firstEp = modal.querySelector(".movie-episode-btn");
+    updateModalLayoutCache();
+    const firstEp = cachedEpisodeBtns.length ? cachedEpisodeBtns[0] : null;
     if (firstEp) {
       firstEp.focus();
     } else if (favBtn) {
@@ -2498,6 +2989,9 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
     activeServerIndex = 0;
     detailData = null;
     parentContainer.appendChild(overlay);
+    if (options && typeof options.onOpen === "function") {
+      options.onOpen(movie);
+    }
     loadDetail(movie.slug);
   }
 
@@ -2517,7 +3011,9 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
     }
 
     if (key.direction === "left" || key.direction === "right" || key.direction === "up" || key.direction === "down") {
-      updateFocusables();
+      if (!focusableElements.length) {
+        updateFocusables();
+      }
       if (!focusableElements.length) {
         return true;
       }
@@ -2528,37 +3024,45 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
         return true;
       }
 
-      // If on close button
-      const closeBtn = modal.querySelector(".movie-detail-close");
-      const favBtn = modal.querySelector(".movie-detail-fav-btn");
-      const serverTabs = Array.from(modal.querySelectorAll(".movie-server-tab"));
-      const episodeBtns = Array.from(modal.querySelectorAll(".movie-episode-btn"));
-      const epContainer = modal.querySelector(".movie-episodes-container");
+      // Use cached elements to avoid repeated DOM queries & layout thrashing on every key press
+      const closeBtn = cachedCloseBtn;
+      const favBtn = cachedFavBtn;
+      const shareBtn = cachedShareBtn;
+      const serverTabs = cachedServerTabs;
+      const episodeBtns = cachedEpisodeBtns;
+      const epContainer = cachedEpContainer;
 
       function ensureEpVisible(btn) {
-        if (!btn || !epContainer) return;
-        const cRect = epContainer.getBoundingClientRect();
-        const bRect = btn.getBoundingClientRect();
-        if (bRect.top < cRect.top) {
-          epContainer.scrollTop -= (cRect.top - bRect.top + 10);
-        } else if (bRect.bottom > cRect.bottom) {
-          epContainer.scrollTop += (bRect.bottom - cRect.bottom + 10);
-        }
-      }
-
-      function getGridCols() {
-        if (episodeBtns.length < 2) return 1;
-        const firstTop = episodeBtns[0].offsetTop;
-        for (let i = 1; i < episodeBtns.length; i++) {
-          if (episodeBtns[i].offsetTop > firstTop) {
-            return i;
+        if (!btn) return;
+        if (typeof btn.scrollIntoView === "function") {
+          btn.scrollIntoView({ block: "nearest", inline: "nearest" });
+        } else if (epContainer) {
+          const cRect = epContainer.getBoundingClientRect();
+          const bRect = btn.getBoundingClientRect();
+          if (bRect.top < cRect.top) {
+            epContainer.scrollTop -= (cRect.top - bRect.top + 10);
+          } else if (bRect.bottom > cRect.bottom) {
+            epContainer.scrollTop += (bRect.bottom - cRect.bottom + 10);
           }
         }
-        return episodeBtns.length;
       }
 
+      const cols = cachedGridCols || (episodeBtns.length < 2 ? 1 : 5);
+
       if (key.direction === "down") {
-        if (activeEl === closeBtn || activeEl === favBtn) {
+        if (activeEl === closeBtn) {
+          if (favBtn) {
+            favBtn.focus();
+          } else if (shareBtn) {
+            shareBtn.focus();
+          } else if (serverTabs.length > 0) {
+            serverTabs[0].focus();
+          } else if (episodeBtns.length > 0) {
+            episodeBtns[0].focus();
+            ensureEpVisible(episodeBtns[0]);
+          }
+          return true;
+        } else if (activeEl === favBtn || activeEl === shareBtn) {
           if (serverTabs.length > 0) {
             serverTabs[0].focus();
           } else if (episodeBtns.length > 0) {
@@ -2599,25 +3103,34 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
             ensureEpVisible(episodeBtns[nextIdx]);
           } else if (serverTabs.length > 0) {
             serverTabs[Math.min(activeServerIndex, serverTabs.length - 1)].focus();
+          } else if (shareBtn && focusableElements.indexOf(shareBtn) !== -1) {
+            shareBtn.focus();
           } else if (favBtn) {
             favBtn.focus();
           }
           return true;
         } else if (serverTabs.includes(activeEl)) {
-          if (favBtn) {
+          if (shareBtn && focusableElements.indexOf(shareBtn) !== -1) {
+            shareBtn.focus();
+          } else if (favBtn) {
             favBtn.focus();
           } else if (closeBtn) {
             closeBtn.focus();
           }
           return true;
-        } else if (activeEl === favBtn) {
+        } else if (activeEl === favBtn || activeEl === shareBtn) {
           if (closeBtn) {
             closeBtn.focus();
           }
           return true;
         }
       } else if (key.direction === "left") {
-        if (episodeBtns.includes(activeEl)) {
+        if (activeEl === shareBtn) {
+          if (favBtn) {
+            favBtn.focus();
+          }
+          return true;
+        } else if (episodeBtns.includes(activeEl)) {
           const epIdx = episodeBtns.indexOf(activeEl);
           if (epIdx > 0) {
             episodeBtns[epIdx - 1].focus();
@@ -2639,7 +3152,12 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
           return true;
         }
       } else if (key.direction === "right") {
-        if (episodeBtns.includes(activeEl)) {
+        if (activeEl === favBtn) {
+          if (shareBtn) {
+            shareBtn.focus();
+          }
+          return true;
+        } else if (episodeBtns.includes(activeEl)) {
           const epIdx = episodeBtns.indexOf(activeEl);
           if (epIdx < episodeBtns.length - 1) {
             episodeBtns[epIdx + 1].focus();
@@ -2691,6 +3209,108 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
 }
 
 return {createMovieDetailModal: createMovieDetailModal};
+});
+registerModule("js/utils/url.js", function (requireModule) {
+function parseRoute(search, hash) {
+  let movieSlug = null;
+  let ep = null;
+
+  if (search) {
+    try {
+      const params = new URLSearchParams(search);
+      if (params.has("movie")) {
+        movieSlug = params.get("movie");
+      }
+      if (params.has("ep")) {
+        ep = params.get("ep");
+      }
+    } catch (_) {}
+  }
+
+  if (!movieSlug && hash) {
+    const cleanHash = hash.replace(/^[#/]+/, "");
+    if (cleanHash.includes("movie=")) {
+      try {
+        const queryStr = cleanHash.includes("?") ? cleanHash.split("?")[1] : cleanHash;
+        const hashParams = new URLSearchParams(queryStr);
+        if (hashParams.has("movie")) {
+          movieSlug = hashParams.get("movie");
+        }
+        if (hashParams.has("ep")) {
+          ep = hashParams.get("ep");
+        }
+      } catch (_) {}
+    } else {
+      const parts = cleanHash.split("/");
+      const movieIdx = parts.indexOf("movie");
+      if (movieIdx !== -1 && parts[movieIdx + 1]) {
+        movieSlug = parts[movieIdx + 1];
+        const epIdx = parts.indexOf("ep");
+        if (epIdx !== -1 && parts[epIdx + 1]) {
+          ep = parts[epIdx + 1];
+        }
+      }
+    }
+  }
+
+  return {
+    movieSlug: movieSlug ? decodeURIComponent(movieSlug).trim() : null,
+    ep: ep ? decodeURIComponent(ep).trim() : null
+  };
+}
+
+function buildMovieUrl(slug) {
+  const base = (typeof window !== "undefined" && window.location) ?
+    (window.location.origin + window.location.pathname) : "";
+  return base + "?movie=" + encodeURIComponent(slug);
+}
+
+function buildEpisodeUrl(slug, ep) {
+  const base = (typeof window !== "undefined" && window.location) ?
+    (window.location.origin + window.location.pathname) : "";
+  return base + "?movie=" + encodeURIComponent(slug) + "&ep=" + encodeURIComponent(ep);
+}
+
+function buildHomeUrl() {
+  return (typeof window !== "undefined" && window.location) ?
+    (window.location.origin + window.location.pathname) : "";
+}
+
+function copyTextToClipboard(text) {
+  if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    return navigator.clipboard.writeText(text).then(function () {
+      return true;
+    }).catch(function () {
+      return fallbackCopy(text);
+    });
+  }
+  return Promise.resolve(fallbackCopy(text));
+}
+
+function fallbackCopy(text) {
+  if (typeof document === "undefined") {
+    return false;
+  }
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "-9999px";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const successful = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return Boolean(successful);
+  } catch (_) {
+    return false;
+  }
+}
+
+return {parseRoute: parseRoute, buildMovieUrl: buildMovieUrl, buildEpisodeUrl: buildEpisodeUrl, buildHomeUrl: buildHomeUrl, copyTextToClipboard: copyTextToClipboard};
 });
 registerModule("js/home/hero-carousel.js", function (requireModule) {
 var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
@@ -3008,8 +3628,16 @@ function createDoubleBack(timeout, onReset) {
 return {createDoubleBack: createDoubleBack};
 });
 registerModule("js/player/player-screen.js", function (requireModule) {
-var createPlaybackService = requireModule("js/player/playback-service.js")["createPlaybackService"];var createSeekController = requireModule("js/player/seek-controller.js")["createSeekController"];var createSubtitleService = requireModule("js/player/subtitle-service.js")["createSubtitleService"];var getActiveSubtitleText = requireModule("js/player/subtitle-parser.js")["getActiveSubtitleText"];var activateFocusedElement = requireModule("js/navigation/remote-navigation.js")["activateFocusedElement"];
-var focusNext = requireModule("js/navigation/remote-navigation.js")["focusNext"];var formatTime = requireModule("js/utils/format-time.js")["formatTime"];var currentDevice = requireModule("js/utils/device.js")["currentDevice"];
+var createPlaybackService = requireModule("js/player/playback-service.js")["createPlaybackService"];
+var createSeekController = requireModule("js/player/seek-controller.js")["createSeekController"];
+var createSubtitleService = requireModule("js/player/subtitle-service.js")["createSubtitleService"];
+var getActiveSubtitleText = requireModule("js/player/subtitle-parser.js")["getActiveSubtitleText"];
+var activateFocusedElement = requireModule("js/navigation/remote-navigation.js")["activateFocusedElement"];
+var focusNext = requireModule("js/navigation/remote-navigation.js")["focusNext"];
+var formatTime = requireModule("js/utils/format-time.js")["formatTime"];
+var currentDevice = requireModule("js/utils/device.js")["currentDevice"];
+var buildEpisodeUrl = requireModule("js/utils/url.js")["buildEpisodeUrl"];
+var copyTextToClipboard = requireModule("js/utils/url.js")["copyTextToClipboard"];
 const PLAY_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>';
 const PAUSE_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 5.5A1.5 1.5 0 0 1 7.5 4h1A1.5 1.5 0 0 1 10 5.5v13A1.5 1.5 0 0 1 8.5 20h-1A1.5 1.5 0 0 1 6 18.5v-13zm8 0A1.5 1.5 0 0 1 15.5 4h1a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v-13z"/></svg>';
 
@@ -3075,6 +3703,9 @@ function playerMarkup(movie) {
     '<button id="next-episode-button" class="control-button" type="button" aria-label="Tập tiếp theo">' +
     '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></span>' +
     '<span class="control-caption">Tập tiếp</span></button>' +
+    '<button id="share-button" class="control-button compact-control" type="button" aria-label="Chia sẻ tập phim">' +
+    '<span class="control-symbol share-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span>' +
+    '<span class="control-caption">Chia sẻ</span></button>' +
     '<span class="control-divider" aria-hidden="true"></span>' +
     '<button id="volume-down-button" class="control-button compact-control" type="button" aria-label="Volume down">' +
     '<span class="control-symbol volume-symbol" aria-hidden="true">−</span><span class="control-caption">Vol −</span></button>' +
@@ -3420,7 +4051,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
     } catch (_) {}
   }
 
-  function showSeekFeedback(side, seconds) {
+  function showSeekFeedback(side, percentageOrSeconds, deltaSeconds, targetTime) {
     if (disposed) {
       return;
     }
@@ -3429,7 +4060,21 @@ function createPlayerScreen(root, movie, onBackRequest) {
     const textEl = overlay.querySelector(".seek-feedback-text");
 
     otherOverlay.classList.remove("is-active");
-    textEl.textContent = Math.abs(seconds) + " seconds";
+
+    let text = "";
+    if (typeof percentageOrSeconds === "number" && typeof deltaSeconds === "number") {
+      const pct = Math.round(percentageOrSeconds);
+      const sign = deltaSeconds >= 0 ? "+" : "";
+      if (typeof targetTime === "number" && Number.isFinite(targetTime)) {
+        text = pct + "% · " + formatTime(targetTime) + " (" + sign + deltaSeconds + "s)";
+      } else {
+        text = pct + "% (" + sign + deltaSeconds + "s)";
+      }
+    } else {
+      text = Math.abs(percentageOrSeconds) + " seconds";
+    }
+
+    textEl.textContent = text;
 
     overlay.classList.remove("is-active");
     void overlay.offsetWidth;
@@ -3440,7 +4085,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
       overlay.classList.remove("is-active");
       cumulativeSeconds = 0;
       lastTapSide = null;
-    }, 750);
+    }, 850);
   }
 
   function handleStageTap(side) {
@@ -3638,6 +4283,13 @@ function createPlayerScreen(root, movie, onBackRequest) {
     showLoader("Đang tải " + ep.name + "...");
     showStatus("Đang phát " + ep.name);
     updateNextButtonState();
+    if (typeof window !== "undefined" && window.history && window.history.replaceState) {
+      const epNum = index + 1;
+      const movieSlug = currentMovie.slug || currentMovie.id;
+      if (movieSlug) {
+        window.history.replaceState({ screen: "player", movieSlug: movieSlug, ep: epNum }, "", buildEpisodeUrl(movieSlug, epNum));
+      }
+    }
     playback.start(streamUrl);
     scheduleHide(3000);
   }
@@ -3723,16 +4375,22 @@ function createPlayerScreen(root, movie, onBackRequest) {
     const target = document.activeElement;
     const inControls = controls.contains(target);
 
-    if (target === seekBar && (key.direction === "left" || key.direction === "right")) {
-      seekController.pressKey(key.direction === "left" ? -1 : 1, key.direction);
-      return true;
-    }
     if (key.direction === "left" || key.direction === "right") {
-      if (inControls) {
+      const secondaryButtons = [
+        root.querySelector("#volume-down-button"),
+        root.querySelector("#volume-up-button"),
+        root.querySelector("#subtitle-button"),
+        root.querySelector("#fullscreen-button"),
+        root.querySelector("#next-episode-button"),
+        root.querySelector("#share-button")
+      ];
+      if (inControls && secondaryButtons.includes(target)) {
         focusControl(key.direction);
-      } else {
-        togglePlayButton.focus();
+        return true;
       }
+      seekController.pressKey(key.direction === "left" ? -1 : 1, key.direction);
+      showControls(false);
+      scheduleHide();
       return true;
     }
     if (key.direction === "up" || key.direction === "down") {
@@ -3746,6 +4404,8 @@ function createPlayerScreen(root, movie, onBackRequest) {
 
     if (key.isFastForward || key.isRewind) {
       seekController.pressKey(key.isRewind ? -1 : 1, key.isRewind ? "rewind" : "forward");
+      showControls(false);
+      scheduleHide();
       return true;
     }
     if (key.isVolumeUp || key.isVolumeDown) {
@@ -3781,7 +4441,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
         return true;
       } else if (target === root.querySelector("#rewind-button") || target === root.querySelector("#forward-button")) {
         selectedHoldSource = target;
-        seekController.startHold(target.id === "rewind-button" ? -1 : 1, target, 220);
+        seekController.pressKey(target.id === "rewind-button" ? -1 : 1, target.id);
       } else if (inControls) {
         activateFocusedElement(target);
       } else {
@@ -3804,11 +4464,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
     if (key.isSelect && selectedHoldSource) {
       const source = selectedHoldSource;
       selectedHoldSource = null;
-      if (seekController.releaseHold(source)) {
-        return true;
-      } else {
-        source.click();
-      }
+      seekController.releaseKey(source.id);
       return true;
     }
     return false;
@@ -3836,7 +4492,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
       updateSoundControl(muted, volume);
     },
     onTimelineChange() {
-      if (!seeking) {
+      if (!seeking && !video.seeking) {
         updateTimeline();
       }
       updateSubtitleDisplay();
@@ -3880,18 +4536,30 @@ function createPlayerScreen(root, movie, onBackRequest) {
   const seekController = createSeekController({
     getRange: playback.getRange,
     getCurrentTime: playback.getCurrentTime,
-    onPreview(progress) {
+    onPreview(progress, time, meta) {
       updateTimeline(progress);
       const range = playback.getRange();
       if (range && Number.isFinite(progress)) {
         const previewTime = range.start + Math.max(0, Math.min(1, progress)) * (range.end - range.start);
         updateSubtitleDisplay(previewTime);
       }
+      if (meta && meta.direction) {
+        const side = meta.direction < 0 ? "left" : "right";
+        showSeekFeedback(side, meta.percentage, meta.deltaSeconds, time);
+      }
     },
-    onCommit(time) {
+    onCommit(time, meta) {
       playback.seek(time);
-      updateTimeline();
+      const range = playback.getRange();
+      const progress = (range && range.end > range.start)
+        ? Math.max(0, Math.min(1, (time - range.start) / (range.end - range.start)))
+        : (meta && Number.isFinite(meta.percentage) ? meta.percentage / 100 : undefined);
+      updateTimeline(progress);
       updateSubtitleDisplay(time);
+      if (meta && meta.direction && !meta.isDirect) {
+        const side = meta.direction < 0 ? "left" : "right";
+        showSeekFeedback(side, meta.percentage, meta.deltaSeconds, time);
+      }
     }
   });
 
@@ -3909,11 +4577,12 @@ function createPlayerScreen(root, movie, onBackRequest) {
         window.clearTimeout(suppressClickTimer);
         return;
       }
-      seekController.seekBy(item.direction * 10);
+      seekController.pressKey(item.direction, item.element.id);
+      seekController.releaseKey(item.element.id);
     });
     listen(item.element, "pointerdown", function () {
       pointerSeekSource = item.element;
-      seekController.startHold(item.direction, item.element, 220);
+      seekController.pressKey(item.direction, item.element.id);
     });
   });
   listen(document, "pointerup", function () {
@@ -3922,10 +4591,21 @@ function createPlayerScreen(root, movie, onBackRequest) {
     }
     const source = pointerSeekSource;
     pointerSeekSource = null;
-    if (seekController.releaseHold(source)) {
-      suppressNextClick(source);
-    }
+    seekController.releaseKey(source.id);
+    suppressNextClick(source);
   });
+
+  const shareButton = root.querySelector("#share-button");
+  if (shareButton) {
+    listen(shareButton, "click", function () {
+      const epNum = currentEpisodeIndex + 1;
+      const movieSlug = currentMovie.slug || currentMovie.id;
+      const shareUrl = buildEpisodeUrl(movieSlug, epNum);
+      copyTextToClipboard(shareUrl).then(function (success) {
+        showStatus(success ? "Đã sao chép link tập " + epNum + "!" : "Không thể sao chép liên kết.");
+      });
+    });
+  }
 
   listen(togglePlayButton, "click", function () {
     playback.toggle();
@@ -3960,6 +4640,15 @@ function createPlayerScreen(root, movie, onBackRequest) {
   listen(root.querySelector("#volume-up-button"), "click", function () {
     changeVolume(0.1);
   });
+  function commitSeekBarValue() {
+    seeking = false;
+    const range = playback.getRange();
+    if (range) {
+      seekController.setPreview(Number(seekBar.value) / 1000);
+    }
+    seekController.commitPreview();
+  }
+
   listen(seekBar, "input", function () {
     seeking = true;
     const range = playback.getRange();
@@ -3968,17 +4657,31 @@ function createPlayerScreen(root, movie, onBackRequest) {
     }
   });
   listen(seekBar, "change", function () {
-    seeking = false;
-    seekController.commitPreview();
-    updateTimeline();
+    commitSeekBarValue();
   });
   listen(seekBar, "pointerdown", function () {
     seeking = true;
   });
   listen(seekBar, "pointerup", function () {
-    seeking = false;
-    seekController.commitPreview();
+    commitSeekBarValue();
   });
+  listen(seekBar, "click", function () {
+    commitSeekBarValue();
+  });
+  const timeline = root.querySelector(".timeline");
+  if (timeline) {
+    listen(timeline, "click", function (event) {
+      if (event.target === currentTimeLabel || event.target === durationLabel || event.target === seekBar) {
+        return;
+      }
+      const rect = seekBar.getBoundingClientRect();
+      if (rect.width > 0) {
+        const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+        seekBar.value = String(Math.round(ratio * 1000));
+        commitSeekBarValue();
+      }
+    });
+  }
   listen(controls, "focusin", function () {
     showControls(false);
     scheduleHide();
@@ -4640,9 +5343,9 @@ return {inspectSegment: inspectSegment};
 });
 registerModule("js/player/seek-controller.js", function (requireModule) {
 const DEFAULT_SPEED = {
-  initialProgressPerSecond: 0.02,
-  accelerationPerSecondSquared: 0.425,
-  maximumProgressPerSecond: 1.1
+  initialProgressPerSecond: 0.015,
+  accelerationPerSecondSquared: 0.035,
+  maximumProgressPerSecond: 0.16
 };
 
 function createSeekController(options) {
@@ -4656,9 +5359,12 @@ function createSeekController(options) {
   let startProgress = 0;
   let scrubbing = false;
   let moved = false;
+  let isDirectScrub = false;
   let heldSource = null;
   let pressedKeys = [];
   let disposed = false;
+  let lastTapTimestamp = 0;
+  let tapCount = 0;
 
   function cancelFrame() {
     if (frame) {
@@ -4667,38 +5373,53 @@ function createSeekController(options) {
     }
   }
 
+  function progressToTime(progress) {
+    const range = options.getRange();
+    if (!range) {
+      return 0;
+    }
+    return range.start + progress * (range.end - range.start);
+  }
+
   function animate(timestamp) {
     frame = 0;
     if (!scrubbing || !direction || disposed) {
       return;
     }
 
-    const frameDuration = lastFrame ? Math.max(0, (timestamp - lastFrame) / 1000) : 0;
+    const frameDuration = lastFrame ? Math.min(0.2, Math.max(0, (timestamp - lastFrame) / 1000)) : 0.016;
     lastFrame = timestamp;
-    const elapsedBeforeFrame = elapsed;
     elapsed += frameDuration;
-    const timeToMaximum = Math.max(0, (speed.maximumProgressPerSecond - speed.initialProgressPerSecond) /
-      speed.accelerationPerSecondSquared);
-    const acceleratedDuration = Math.max(0,
-      Math.min(elapsed, timeToMaximum) - Math.min(elapsedBeforeFrame, timeToMaximum));
-    const cappedDuration = Math.max(0, frameDuration - acceleratedDuration);
-    const distance = speed.initialProgressPerSecond * frameDuration +
-      speed.accelerationPerSecondSquared * acceleratedDuration *
-      (elapsedBeforeFrame + elapsedBeforeFrame + acceleratedDuration) / 2 +
-      speed.maximumProgressPerSecond * cappedDuration;
+
+    const currentSpeed = Math.min(
+      speed.maximumProgressPerSecond,
+      speed.initialProgressPerSecond + speed.accelerationPerSecondSquared * elapsed
+    );
+    const distance = currentSpeed * frameDuration;
 
     previewProgress = Math.max(0, Math.min(1, previewProgress + direction * distance));
     moved = moved || previewProgress !== startProgress;
-    options.onPreview(previewProgress, progressToTime(previewProgress));
 
-    if (previewProgress > 0 && previewProgress < 1) {
+    const range = options.getRange();
+    const rangeDuration = (range && Number.isFinite(range.end) && Number.isFinite(range.start)) ?
+      Math.max(1, range.end - range.start) : 1;
+    const baseStartTime = range ? (range.start + startProgress * rangeDuration) : 0;
+    const time = progressToTime(previewProgress);
+
+    const meta = {
+      direction: direction,
+      isHolding: true,
+      elapsed: elapsed,
+      percentage: previewProgress * 100,
+      deltaSeconds: Math.round(time - baseStartTime),
+      targetTime: time
+    };
+    options.onPreview(previewProgress, time, meta);
+
+    const canContinue = direction > 0 ? previewProgress < 1 : previewProgress > 0;
+    if (canContinue) {
       frame = window.requestAnimationFrame(animate);
     }
-  }
-
-  function progressToTime(progress) {
-    const range = options.getRange();
-    return range.start + progress * (range.end - range.start);
   }
 
   function begin(nextDirection, source) {
@@ -4712,6 +5433,7 @@ function createSeekController(options) {
 
     if (!scrubbing) {
       scrubbing = true;
+      isDirectScrub = false;
       previewProgress = Math.max(0, Math.min(1, (options.getCurrentTime() - range.start) / (range.end - range.start)));
       startProgress = previewProgress;
       elapsed = 0;
@@ -4723,7 +5445,8 @@ function createSeekController(options) {
     }
 
     direction = nextDirection < 0 ? -1 : 1;
-    if (!frame && previewProgress > 0 && previewProgress < 1) {
+    const canMove = direction > 0 ? previewProgress < 1 : previewProgress > 0;
+    if (!frame && canMove) {
       frame = window.requestAnimationFrame(animate);
     }
   }
@@ -4738,18 +5461,66 @@ function createSeekController(options) {
       return false;
     }
 
-    const finalTime = progressToTime(previewProgress);
-    const shouldCommit = commit && moved;
+    const range = options.getRange();
+    const rangeDuration = (range && Number.isFinite(range.end) && Number.isFinite(range.start)) ?
+      Math.max(1, range.end - range.start) : 1;
+    const baseStartTime = range ? (range.start + startProgress * rangeDuration) : options.getCurrentTime();
+
+    let shouldCommit = commit;
+    let finalTime = progressToTime(previewProgress);
+    let isTapAction = false;
+
+    if (commit) {
+      if (!isDirectScrub && direction !== 0 && (!moved || elapsed < 0.18)) {
+        isTapAction = true;
+        const now = Date.now();
+        if (now - lastTapTimestamp < 650) {
+          tapCount = Math.min(5, tapCount + 1);
+        } else {
+          tapCount = 1;
+        }
+        lastTapTimestamp = now;
+
+        const stepMultipliers = [0.01, 0.02, 0.04, 0.06, 0.08];
+        const stepPct = stepMultipliers[Math.min(tapCount - 1, stepMultipliers.length - 1)];
+        const minStepSeconds = 10 * tapCount;
+        const effectiveSeconds = Math.max(minStepSeconds, rangeDuration * stepPct);
+
+        const deltaProgress = effectiveSeconds / rangeDuration;
+        previewProgress = Math.max(0, Math.min(1, startProgress + direction * deltaProgress));
+        finalTime = progressToTime(previewProgress);
+        moved = true;
+      } else {
+        tapCount = 0;
+      }
+    }
+
+    const wasDirect = isDirectScrub;
+    isDirectScrub = false;
     scrubbing = false;
+    const finishedDirection = direction;
     direction = 0;
     heldSource = null;
     pressedKeys = [];
-    if (shouldCommit) {
-      options.onCommit(finalTime);
+
+    const meta = {
+      direction: finishedDirection,
+      isTap: isTapAction,
+      tapCount: tapCount,
+      percentage: previewProgress * 100,
+      deltaSeconds: Math.round(finalTime - baseStartTime),
+      targetTime: finalTime,
+      isDirect: wasDirect
+    };
+
+    if (shouldCommit && (moved || wasDirect)) {
+      options.onPreview(previewProgress, finalTime, meta);
+      options.onCommit(finalTime, meta);
+      return true;
     } else {
-      options.onPreview(previewProgress, finalTime);
+      options.onPreview(previewProgress, finalTime, meta);
+      return false;
     }
-    return shouldCommit;
   }
 
   return {
@@ -4800,29 +5571,57 @@ function createSeekController(options) {
       if (!range || range.end <= range.start) {
         return;
       }
-      options.onCommit(Math.max(range.start, Math.min(range.end, options.getCurrentTime() + seconds)));
+      const rangeDuration = range.end - range.start;
+      const currentTime = options.getCurrentTime();
+      const targetTime = Math.max(range.start, Math.min(range.end, currentTime + seconds));
+      const progress = (targetTime - range.start) / rangeDuration;
+      const meta = {
+        direction: seconds < 0 ? -1 : 1,
+        isTap: true,
+        percentage: progress * 100,
+        deltaSeconds: Math.round(targetTime - currentTime),
+        targetTime: targetTime
+      };
+      if (typeof options.onPreview === "function") {
+        options.onPreview(progress, targetTime, meta);
+      }
+      options.onCommit(targetTime, meta);
     },
     setPreview(progress) {
-      if (scrubbing) {
+      if (scrubbing && !isDirectScrub) {
         finish(false);
       }
       const range = options.getRange();
       if (!range || !Number.isFinite(range.start) || !Number.isFinite(range.end) || range.end <= range.start) {
         return;
       }
+      const wasDirect = isDirectScrub;
       scrubbing = true;
+      isDirectScrub = true;
       previewProgress = Math.max(0, Math.min(1, progress));
-      startProgress = Math.max(0, Math.min(1,
-        (options.getCurrentTime() - range.start) / (range.end - range.start)));
-      moved = previewProgress !== startProgress;
-      direction = 0;
+      if (!wasDirect) {
+        startProgress = Math.max(0, Math.min(1,
+          (options.getCurrentTime() - range.start) / (range.end - range.start)));
+      }
+      moved = true;
+      direction = previewProgress >= startProgress ? 1 : -1;
+      elapsed = 0;
       heldSource = null;
-      options.onPreview(previewProgress, progressToTime(previewProgress));
+      const finalTime = progressToTime(previewProgress);
+      const meta = {
+        direction: direction,
+        percentage: previewProgress * 100,
+        deltaSeconds: Math.round(finalTime - (range.start + startProgress * (range.end - range.start))),
+        targetTime: finalTime,
+        isDirect: true
+      };
+      options.onPreview(previewProgress, finalTime, meta);
     },
     commitPreview() {
       finish(true);
     },
     cancel() {
+      isDirectScrub = false;
       finish(false);
     },
     isHolding(source) {

@@ -5,6 +5,7 @@ import { getActiveSubtitleText } from "./subtitle-parser.js";
 import { activateFocusedElement, focusNext } from "../navigation/remote-navigation.js";
 import { formatTime } from "../utils/format-time.js";
 import { currentDevice } from "../utils/device.js";
+import { buildEpisodeUrl, copyTextToClipboard } from "../utils/url.js";
 
 const PLAY_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>';
 const PAUSE_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 5.5A1.5 1.5 0 0 1 7.5 4h1A1.5 1.5 0 0 1 10 5.5v13A1.5 1.5 0 0 1 8.5 20h-1A1.5 1.5 0 0 1 6 18.5v-13zm8 0A1.5 1.5 0 0 1 15.5 4h1a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v-13z"/></svg>';
@@ -71,6 +72,9 @@ function playerMarkup(movie) {
     '<button id="next-episode-button" class="control-button" type="button" aria-label="Tập tiếp theo">' +
     '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></span>' +
     '<span class="control-caption">Tập tiếp</span></button>' +
+    '<button id="share-button" class="control-button compact-control" type="button" aria-label="Chia sẻ tập phim">' +
+    '<span class="control-symbol share-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span>' +
+    '<span class="control-caption">Chia sẻ</span></button>' +
     '<span class="control-divider" aria-hidden="true"></span>' +
     '<button id="volume-down-button" class="control-button compact-control" type="button" aria-label="Volume down">' +
     '<span class="control-symbol volume-symbol" aria-hidden="true">−</span><span class="control-caption">Vol −</span></button>' +
@@ -416,7 +420,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     } catch (_) {}
   }
 
-  function showSeekFeedback(side, seconds) {
+  function showSeekFeedback(side, percentageOrSeconds, deltaSeconds, targetTime) {
     if (disposed) {
       return;
     }
@@ -425,7 +429,21 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     const textEl = overlay.querySelector(".seek-feedback-text");
 
     otherOverlay.classList.remove("is-active");
-    textEl.textContent = Math.abs(seconds) + " seconds";
+
+    let text = "";
+    if (typeof percentageOrSeconds === "number" && typeof deltaSeconds === "number") {
+      const pct = Math.round(percentageOrSeconds);
+      const sign = deltaSeconds >= 0 ? "+" : "";
+      if (typeof targetTime === "number" && Number.isFinite(targetTime)) {
+        text = pct + "% · " + formatTime(targetTime) + " (" + sign + deltaSeconds + "s)";
+      } else {
+        text = pct + "% (" + sign + deltaSeconds + "s)";
+      }
+    } else {
+      text = Math.abs(percentageOrSeconds) + " seconds";
+    }
+
+    textEl.textContent = text;
 
     overlay.classList.remove("is-active");
     void overlay.offsetWidth;
@@ -436,7 +454,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       overlay.classList.remove("is-active");
       cumulativeSeconds = 0;
       lastTapSide = null;
-    }, 750);
+    }, 850);
   }
 
   function handleStageTap(side) {
@@ -634,6 +652,13 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     showLoader("Đang tải " + ep.name + "...");
     showStatus("Đang phát " + ep.name);
     updateNextButtonState();
+    if (typeof window !== "undefined" && window.history && window.history.replaceState) {
+      const epNum = index + 1;
+      const movieSlug = currentMovie.slug || currentMovie.id;
+      if (movieSlug) {
+        window.history.replaceState({ screen: "player", movieSlug: movieSlug, ep: epNum }, "", buildEpisodeUrl(movieSlug, epNum));
+      }
+    }
     playback.start(streamUrl);
     scheduleHide(3000);
   }
@@ -719,16 +744,22 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     const target = document.activeElement;
     const inControls = controls.contains(target);
 
-    if (target === seekBar && (key.direction === "left" || key.direction === "right")) {
-      seekController.pressKey(key.direction === "left" ? -1 : 1, key.direction);
-      return true;
-    }
     if (key.direction === "left" || key.direction === "right") {
-      if (inControls) {
+      const secondaryButtons = [
+        root.querySelector("#volume-down-button"),
+        root.querySelector("#volume-up-button"),
+        root.querySelector("#subtitle-button"),
+        root.querySelector("#fullscreen-button"),
+        root.querySelector("#next-episode-button"),
+        root.querySelector("#share-button")
+      ];
+      if (inControls && secondaryButtons.includes(target)) {
         focusControl(key.direction);
-      } else {
-        togglePlayButton.focus();
+        return true;
       }
+      seekController.pressKey(key.direction === "left" ? -1 : 1, key.direction);
+      showControls(false);
+      scheduleHide();
       return true;
     }
     if (key.direction === "up" || key.direction === "down") {
@@ -742,6 +773,8 @@ export function createPlayerScreen(root, movie, onBackRequest) {
 
     if (key.isFastForward || key.isRewind) {
       seekController.pressKey(key.isRewind ? -1 : 1, key.isRewind ? "rewind" : "forward");
+      showControls(false);
+      scheduleHide();
       return true;
     }
     if (key.isVolumeUp || key.isVolumeDown) {
@@ -777,7 +810,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
         return true;
       } else if (target === root.querySelector("#rewind-button") || target === root.querySelector("#forward-button")) {
         selectedHoldSource = target;
-        seekController.startHold(target.id === "rewind-button" ? -1 : 1, target, 220);
+        seekController.pressKey(target.id === "rewind-button" ? -1 : 1, target.id);
       } else if (inControls) {
         activateFocusedElement(target);
       } else {
@@ -800,11 +833,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     if (key.isSelect && selectedHoldSource) {
       const source = selectedHoldSource;
       selectedHoldSource = null;
-      if (seekController.releaseHold(source)) {
-        return true;
-      } else {
-        source.click();
-      }
+      seekController.releaseKey(source.id);
       return true;
     }
     return false;
@@ -832,7 +861,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       updateSoundControl(muted, volume);
     },
     onTimelineChange() {
-      if (!seeking) {
+      if (!seeking && !video.seeking) {
         updateTimeline();
       }
       updateSubtitleDisplay();
@@ -876,18 +905,30 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   const seekController = createSeekController({
     getRange: playback.getRange,
     getCurrentTime: playback.getCurrentTime,
-    onPreview(progress) {
+    onPreview(progress, time, meta) {
       updateTimeline(progress);
       const range = playback.getRange();
       if (range && Number.isFinite(progress)) {
         const previewTime = range.start + Math.max(0, Math.min(1, progress)) * (range.end - range.start);
         updateSubtitleDisplay(previewTime);
       }
+      if (meta && meta.direction) {
+        const side = meta.direction < 0 ? "left" : "right";
+        showSeekFeedback(side, meta.percentage, meta.deltaSeconds, time);
+      }
     },
-    onCommit(time) {
+    onCommit(time, meta) {
       playback.seek(time);
-      updateTimeline();
+      const range = playback.getRange();
+      const progress = (range && range.end > range.start)
+        ? Math.max(0, Math.min(1, (time - range.start) / (range.end - range.start)))
+        : (meta && Number.isFinite(meta.percentage) ? meta.percentage / 100 : undefined);
+      updateTimeline(progress);
       updateSubtitleDisplay(time);
+      if (meta && meta.direction && !meta.isDirect) {
+        const side = meta.direction < 0 ? "left" : "right";
+        showSeekFeedback(side, meta.percentage, meta.deltaSeconds, time);
+      }
     }
   });
 
@@ -905,11 +946,12 @@ export function createPlayerScreen(root, movie, onBackRequest) {
         window.clearTimeout(suppressClickTimer);
         return;
       }
-      seekController.seekBy(item.direction * 10);
+      seekController.pressKey(item.direction, item.element.id);
+      seekController.releaseKey(item.element.id);
     });
     listen(item.element, "pointerdown", function () {
       pointerSeekSource = item.element;
-      seekController.startHold(item.direction, item.element, 220);
+      seekController.pressKey(item.direction, item.element.id);
     });
   });
   listen(document, "pointerup", function () {
@@ -918,10 +960,21 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     }
     const source = pointerSeekSource;
     pointerSeekSource = null;
-    if (seekController.releaseHold(source)) {
-      suppressNextClick(source);
-    }
+    seekController.releaseKey(source.id);
+    suppressNextClick(source);
   });
+
+  const shareButton = root.querySelector("#share-button");
+  if (shareButton) {
+    listen(shareButton, "click", function () {
+      const epNum = currentEpisodeIndex + 1;
+      const movieSlug = currentMovie.slug || currentMovie.id;
+      const shareUrl = buildEpisodeUrl(movieSlug, epNum);
+      copyTextToClipboard(shareUrl).then(function (success) {
+        showStatus(success ? "Đã sao chép link tập " + epNum + "!" : "Không thể sao chép liên kết.");
+      });
+    });
+  }
 
   listen(togglePlayButton, "click", function () {
     playback.toggle();
@@ -956,6 +1009,15 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   listen(root.querySelector("#volume-up-button"), "click", function () {
     changeVolume(0.1);
   });
+  function commitSeekBarValue() {
+    seeking = false;
+    const range = playback.getRange();
+    if (range) {
+      seekController.setPreview(Number(seekBar.value) / 1000);
+    }
+    seekController.commitPreview();
+  }
+
   listen(seekBar, "input", function () {
     seeking = true;
     const range = playback.getRange();
@@ -964,17 +1026,31 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     }
   });
   listen(seekBar, "change", function () {
-    seeking = false;
-    seekController.commitPreview();
-    updateTimeline();
+    commitSeekBarValue();
   });
   listen(seekBar, "pointerdown", function () {
     seeking = true;
   });
   listen(seekBar, "pointerup", function () {
-    seeking = false;
-    seekController.commitPreview();
+    commitSeekBarValue();
   });
+  listen(seekBar, "click", function () {
+    commitSeekBarValue();
+  });
+  const timeline = root.querySelector(".timeline");
+  if (timeline) {
+    listen(timeline, "click", function (event) {
+      if (event.target === currentTimeLabel || event.target === durationLabel || event.target === seekBar) {
+        return;
+      }
+      const rect = seekBar.getBoundingClientRect();
+      if (rect.width > 0) {
+        const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+        seekBar.value = String(Math.round(ratio * 1000));
+        commitSeekBarValue();
+      }
+    });
+  }
   listen(controls, "focusin", function () {
     showControls(false);
     scheduleHide();

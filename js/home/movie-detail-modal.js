@@ -1,5 +1,6 @@
 import { isFavorite, toggleFavorite } from "../services/favorites-service.js";
 import { fallbackPoster } from "../config/catalog-sources.js";
+import { buildMovieUrl, copyTextToClipboard } from "../utils/url.js";
 
 function cleanHtmlContent(html) {
   if (!html) {
@@ -28,12 +29,38 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
   let focusableElements = [];
   let currentFocusIndex = 0;
 
+  let cachedCloseBtn = null;
+  let cachedFavBtn = null;
+  let cachedShareBtn = null;
+  let cachedServerTabs = [];
+  let cachedEpisodeBtns = [];
+  let cachedEpContainer = null;
+  let cachedGridCols = 5;
+
+  function getGridCols() {
+    return cachedGridCols || 5;
+  }
+
   function updateFocusables() {
     focusableElements = Array.from(modal.querySelectorAll('button:not([disabled]), [tabindex="0"]'));
   }
 
-  function setFocus(index) {
+  function updateModalLayoutCache() {
+    cachedCloseBtn = modal.querySelector(".movie-detail-close");
+    cachedFavBtn = modal.querySelector(".movie-detail-fav-btn");
+    cachedShareBtn = modal.querySelector(".movie-detail-share-btn");
+    cachedServerTabs = Array.from(modal.querySelectorAll(".movie-server-tab"));
+    cachedEpisodeBtns = Array.from(modal.querySelectorAll(".movie-episode-btn"));
+    cachedEpContainer = modal.querySelector(".movie-episodes-container");
+    const width = (typeof window !== "undefined" ? window.innerWidth : 0) || 1280;
+    cachedGridCols = width <= 480 ? 3 : (width <= 768 ? 4 : 5);
     updateFocusables();
+  }
+
+  function setFocus(index) {
+    if (!focusableElements.length) {
+      updateFocusables();
+    }
     if (!focusableElements.length) {
       return;
     }
@@ -152,6 +179,10 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
               '<span class="fav-icon">' + (favActive ? '♥' : '♡') + '</span> ' +
               '<span class="fav-label">' + (favActive ? 'Đã yêu thích' : 'Thêm vào yêu thích') + '</span>' +
             '</button>' +
+            '<button type="button" class="movie-detail-btn movie-detail-share-btn" aria-label="Chia sẻ phim">' +
+              '<span class="share-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span> ' +
+              '<span class="share-label">Chia sẻ</span>' +
+            '</button>' +
           '</div>' +
           '<div class="movie-detail-section-title">Chọn tập phim:</div>' +
           serverTabsHtml +
@@ -163,6 +194,33 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
     const closeBtn = modal.querySelector(".movie-detail-close");
     if (closeBtn) {
       closeBtn.addEventListener("click", close);
+    }
+
+    // Modal Toast
+    function showModalToast(message) {
+      let toastEl = modal.querySelector(".movie-detail-toast");
+      if (!toastEl) {
+        toastEl = document.createElement("div");
+        toastEl.className = "movie-detail-toast";
+        modal.appendChild(toastEl);
+      }
+      toastEl.textContent = message;
+      toastEl.classList.add("is-visible");
+      window.clearTimeout(toastEl._timer);
+      toastEl._timer = window.setTimeout(function () {
+        toastEl.classList.remove("is-visible");
+      }, 2400);
+    }
+
+    // Bind Share button
+    const shareBtn = modal.querySelector(".movie-detail-share-btn");
+    if (shareBtn) {
+      shareBtn.addEventListener("click", function () {
+        const shareUrl = buildMovieUrl(movie.slug);
+        copyTextToClipboard(shareUrl).then(function (success) {
+          showModalToast(success ? "Đã sao chép liên kết phim!" : "Không thể sao chép liên kết.");
+        });
+      });
     }
 
     // Bind Favorite toggle
@@ -246,7 +304,8 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
     });
 
     // Set initial focus: first episode button, or favorite button if no episodes
-    const firstEp = modal.querySelector(".movie-episode-btn");
+    updateModalLayoutCache();
+    const firstEp = cachedEpisodeBtns.length ? cachedEpisodeBtns[0] : null;
     if (firstEp) {
       firstEp.focus();
     } else if (favBtn) {
@@ -276,6 +335,9 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
     activeServerIndex = 0;
     detailData = null;
     parentContainer.appendChild(overlay);
+    if (options && typeof options.onOpen === "function") {
+      options.onOpen(movie);
+    }
     loadDetail(movie.slug);
   }
 
@@ -295,7 +357,9 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
     }
 
     if (key.direction === "left" || key.direction === "right" || key.direction === "up" || key.direction === "down") {
-      updateFocusables();
+      if (!focusableElements.length) {
+        updateFocusables();
+      }
       if (!focusableElements.length) {
         return true;
       }
@@ -306,37 +370,45 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
         return true;
       }
 
-      // If on close button
-      const closeBtn = modal.querySelector(".movie-detail-close");
-      const favBtn = modal.querySelector(".movie-detail-fav-btn");
-      const serverTabs = Array.from(modal.querySelectorAll(".movie-server-tab"));
-      const episodeBtns = Array.from(modal.querySelectorAll(".movie-episode-btn"));
-      const epContainer = modal.querySelector(".movie-episodes-container");
+      // Use cached elements to avoid repeated DOM queries & layout thrashing on every key press
+      const closeBtn = cachedCloseBtn;
+      const favBtn = cachedFavBtn;
+      const shareBtn = cachedShareBtn;
+      const serverTabs = cachedServerTabs;
+      const episodeBtns = cachedEpisodeBtns;
+      const epContainer = cachedEpContainer;
 
       function ensureEpVisible(btn) {
-        if (!btn || !epContainer) return;
-        const cRect = epContainer.getBoundingClientRect();
-        const bRect = btn.getBoundingClientRect();
-        if (bRect.top < cRect.top) {
-          epContainer.scrollTop -= (cRect.top - bRect.top + 10);
-        } else if (bRect.bottom > cRect.bottom) {
-          epContainer.scrollTop += (bRect.bottom - cRect.bottom + 10);
-        }
-      }
-
-      function getGridCols() {
-        if (episodeBtns.length < 2) return 1;
-        const firstTop = episodeBtns[0].offsetTop;
-        for (let i = 1; i < episodeBtns.length; i++) {
-          if (episodeBtns[i].offsetTop > firstTop) {
-            return i;
+        if (!btn) return;
+        if (typeof btn.scrollIntoView === "function") {
+          btn.scrollIntoView({ block: "nearest", inline: "nearest" });
+        } else if (epContainer) {
+          const cRect = epContainer.getBoundingClientRect();
+          const bRect = btn.getBoundingClientRect();
+          if (bRect.top < cRect.top) {
+            epContainer.scrollTop -= (cRect.top - bRect.top + 10);
+          } else if (bRect.bottom > cRect.bottom) {
+            epContainer.scrollTop += (bRect.bottom - cRect.bottom + 10);
           }
         }
-        return episodeBtns.length;
       }
 
+      const cols = cachedGridCols || (episodeBtns.length < 2 ? 1 : 5);
+
       if (key.direction === "down") {
-        if (activeEl === closeBtn || activeEl === favBtn) {
+        if (activeEl === closeBtn) {
+          if (favBtn) {
+            favBtn.focus();
+          } else if (shareBtn) {
+            shareBtn.focus();
+          } else if (serverTabs.length > 0) {
+            serverTabs[0].focus();
+          } else if (episodeBtns.length > 0) {
+            episodeBtns[0].focus();
+            ensureEpVisible(episodeBtns[0]);
+          }
+          return true;
+        } else if (activeEl === favBtn || activeEl === shareBtn) {
           if (serverTabs.length > 0) {
             serverTabs[0].focus();
           } else if (episodeBtns.length > 0) {
@@ -377,25 +449,34 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
             ensureEpVisible(episodeBtns[nextIdx]);
           } else if (serverTabs.length > 0) {
             serverTabs[Math.min(activeServerIndex, serverTabs.length - 1)].focus();
+          } else if (shareBtn && focusableElements.indexOf(shareBtn) !== -1) {
+            shareBtn.focus();
           } else if (favBtn) {
             favBtn.focus();
           }
           return true;
         } else if (serverTabs.includes(activeEl)) {
-          if (favBtn) {
+          if (shareBtn && focusableElements.indexOf(shareBtn) !== -1) {
+            shareBtn.focus();
+          } else if (favBtn) {
             favBtn.focus();
           } else if (closeBtn) {
             closeBtn.focus();
           }
           return true;
-        } else if (activeEl === favBtn) {
+        } else if (activeEl === favBtn || activeEl === shareBtn) {
           if (closeBtn) {
             closeBtn.focus();
           }
           return true;
         }
       } else if (key.direction === "left") {
-        if (episodeBtns.includes(activeEl)) {
+        if (activeEl === shareBtn) {
+          if (favBtn) {
+            favBtn.focus();
+          }
+          return true;
+        } else if (episodeBtns.includes(activeEl)) {
           const epIdx = episodeBtns.indexOf(activeEl);
           if (epIdx > 0) {
             episodeBtns[epIdx - 1].focus();
@@ -417,7 +498,12 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
           return true;
         }
       } else if (key.direction === "right") {
-        if (episodeBtns.includes(activeEl)) {
+        if (activeEl === favBtn) {
+          if (shareBtn) {
+            shareBtn.focus();
+          }
+          return true;
+        } else if (episodeBtns.includes(activeEl)) {
           const epIdx = episodeBtns.indexOf(activeEl);
           if (epIdx < episodeBtns.length - 1) {
             episodeBtns[epIdx + 1].focus();

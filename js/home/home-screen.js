@@ -29,6 +29,8 @@ function makeMovieCard(movie, actionsHandler) {
   image.alt = "";
   image.decoding = "async";
   image.loading = "lazy";
+  image.width = 200;
+  image.height = 300;
   let usingFallback = !movie.poster || movie.poster === fallbackPoster;
   image.addEventListener("error", function onPosterError() {
     if (usingFallback) {
@@ -191,6 +193,12 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
   let isProgrammaticFocus = false;
   let cachedColumnsCount = 1;
 
+  // Virtual Scrolling State: only elements in the visible window are mounted in the DOM
+  const mountedIndices = new Set();
+  let currentStartRow = -1;
+  let currentEndRow = -1;
+  let virtualScrollRaf = 0;
+
   // Pagination / Infinite scroll state
   let currentPage = 1;
   let isLoadingMore = false;
@@ -210,12 +218,24 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
         updateCardFavStates();
       }
     },
+    onOpen: function (movie) {
+      if (typeof actionsHandler.onOpenDetail === "function") {
+        actionsHandler.onOpenDetail(movie);
+      }
+    },
     onClose: function () {
       if (selectedCardEntry) {
         setSelectedCard(selectedCardEntry, true);
       }
+      if (typeof actionsHandler.onCloseDetail === "function") {
+        actionsHandler.onCloseDetail();
+      }
     }
   });
+
+  if (options && options.autoOpenSlug) {
+    detailModal.open({ slug: options.autoOpenSlug, title: "" });
+  }
 
   // Hero Section Carousel (Netflix-style)
   const heroCarousel = createHeroCarousel(screen, {
@@ -259,19 +279,16 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       cachedColumnsCount = 5;
       return;
     }
-    if (cards.length < 2) {
-      cachedColumnsCount = 1;
-      return;
+    const width = (typeof window !== "undefined" ? window.innerWidth : 0) || (root && root.clientWidth) || 1280;
+    if (width <= 540) {
+      cachedColumnsCount = 2;
+    } else if (width <= 840) {
+      cachedColumnsCount = 3;
+    } else if (width <= 1200) {
+      cachedColumnsCount = 4;
+    } else {
+      cachedColumnsCount = 5;
     }
-    const firstTop = cards[0].element.offsetTop;
-    let count = cards.length;
-    for (let i = 1; i < cards.length; i += 1) {
-      if (cards[i].element.offsetTop > firstTop) {
-        count = i;
-        break;
-      }
-    }
-    cachedColumnsCount = count > 1 ? count : 4;
   }
 
   function ensureCardVisible(cardElement) {
@@ -325,6 +342,10 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       return;
     }
 
+    if (typeof targetEntry.index === "number") {
+      ensureCardInWindow(targetEntry.index);
+    }
+
     clearActionFocus();
 
     if (selectedCardEntry !== targetEntry) {
@@ -333,9 +354,13 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       }
       selectedCardEntry = targetEntry;
       targetEntry.element.classList.add("is-selected", "movie-card--selected");
-      const foundIdx = cards.indexOf(targetEntry);
-      if (foundIdx !== -1) {
-        activeCardIndex = foundIdx;
+      if (typeof targetEntry.index === "number") {
+        activeCardIndex = targetEntry.index;
+      } else {
+        const foundIdx = cards.indexOf(targetEntry);
+        if (foundIdx !== -1) {
+          activeCardIndex = foundIdx;
+        }
       }
     } else if (!targetEntry.element.classList.contains("is-selected")) {
       targetEntry.element.classList.add("is-selected", "movie-card--selected");
@@ -383,6 +408,17 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     const active = document.activeElement;
     if (selectedCardEntry && (selectedCardEntry.element === active || selectedCardEntry.playButton === active || selectedCardEntry.element.contains(active))) {
       return activeCardIndex;
+    }
+    if (active) {
+      const cardEl = active.closest ? active.closest(".catalog-card") : null;
+      if (cardEl && cardEl.dataset.cardIndex !== undefined) {
+        const idx = parseInt(cardEl.dataset.cardIndex, 10);
+        if (!isNaN(idx) && idx >= 0 && idx < cards.length) {
+          selectedCardEntry = cards[idx];
+          activeCardIndex = idx;
+          return idx;
+        }
+      }
     }
     for (let i = 0; i < cards.length; i += 1) {
       if (cards[i].element === active || cards[i].playButton === active || cards[i].element.contains(active)) {
@@ -451,7 +487,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
 
   const searchIcon = document.createElement("span");
   searchIcon.className = "home-search-icon";
-  searchIcon.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 11.99 14 9.5 14z"/></svg>';
+  searchIcon.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>';
 
   const searchInput = document.createElement("input");
   searchInput.type = "search";
@@ -522,6 +558,216 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
   const grid = document.createElement("div");
   grid.className = "catalog-grid";
   grid.setAttribute("aria-label", "Danh sách phim");
+
+  const topSpacer = document.createElement("div");
+  topSpacer.className = "catalog-grid-spacer catalog-grid-spacer-top";
+  topSpacer.setAttribute("aria-hidden", "true");
+  topSpacer.style.display = "none";
+
+  const bottomSpacer = document.createElement("div");
+  bottomSpacer.className = "catalog-grid-spacer catalog-grid-spacer-bottom";
+  bottomSpacer.setAttribute("aria-hidden", "true");
+  bottomSpacer.style.display = "none";
+
+  grid.appendChild(topSpacer);
+  grid.appendChild(bottomSpacer);
+
+  let cachedMeasuredCardHeight = 0;
+  let cachedMeasuredWidth = 0;
+
+  function measureLayout() {
+    if (isTv()) {
+      return {
+        cardHeight: 600,
+        gap: 28,
+        rowHeight: 628,
+        cols: 5
+      };
+    }
+    const width = (typeof window !== "undefined" ? window.innerWidth : 0) || (root && root.clientWidth) || 1280;
+    let cols = 5;
+    let gap = 24;
+    let baseCardHeight = 390;
+
+    if (width <= 540) {
+      cols = 2;
+      gap = 12;
+      const cardWidth = Math.max(140, (width - 28 - gap) / 2);
+      baseCardHeight = Math.round(cardWidth * 1.5 + 75);
+    } else if (width <= 840) {
+      cols = 3;
+      gap = 16;
+      const cardWidth = Math.max(160, (width - 48 - gap * 2) / 3);
+      baseCardHeight = Math.round(cardWidth * 1.5 + 85);
+    } else if (width <= 1200) {
+      cols = 4;
+      gap = 20;
+      const cardWidth = Math.max(180, (width - 64 - gap * 3) / 4);
+      baseCardHeight = Math.round(cardWidth * 1.5 + 90);
+    } else {
+      cols = 5;
+      gap = 24;
+      const cardWidth = Math.max(180, (width - width * 0.08 - gap * 4) / 5);
+      baseCardHeight = Math.round(cardWidth * 1.5 + 90);
+    }
+
+    if (width !== cachedMeasuredWidth || !cachedMeasuredCardHeight) {
+      cachedMeasuredWidth = width;
+      cachedMeasuredCardHeight = baseCardHeight;
+      if (cards.length > 0) {
+        for (let i = 0; i < cards.length; i += 1) {
+          if (cards[i] && cards[i].element && cards[i].element.isConnected) {
+            const rect = cards[i].element.getBoundingClientRect();
+            if (rect.height > 100) {
+              cachedMeasuredCardHeight = Math.round(rect.height);
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      cardHeight: cachedMeasuredCardHeight,
+      gap: gap,
+      rowHeight: cachedMeasuredCardHeight + gap,
+      cols: cols
+    };
+  }
+
+  function mountRange(startIndex, endIndex) {
+    const toRemove = [];
+    mountedIndices.forEach(function (idx) {
+      if (idx < startIndex || idx > endIndex) {
+        toRemove.push(idx);
+      }
+    });
+    for (let k = 0; k < toRemove.length; k += 1) {
+      const idx = toRemove[k];
+      const entry = cards[idx];
+      if (entry && entry.element && entry.element.parentNode === grid) {
+        grid.removeChild(entry.element);
+      }
+      mountedIndices.delete(idx);
+    }
+
+    // Insert from endIndex down to startIndex so anchor is always the next card
+    for (let i = endIndex; i >= startIndex; i -= 1) {
+      if (!mountedIndices.has(i) && cards[i] && cards[i].element) {
+        let anchor = bottomSpacer;
+        if (cards[i + 1] && cards[i + 1].element && cards[i + 1].element.parentNode === grid) {
+          anchor = cards[i + 1].element;
+        } else {
+          for (let j = i + 1; j <= endIndex; j += 1) {
+            if (mountedIndices.has(j) && cards[j] && cards[j].element && cards[j].element.parentNode === grid) {
+              anchor = cards[j].element;
+              break;
+            }
+          }
+        }
+        grid.insertBefore(cards[i].element, anchor);
+        mountedIndices.add(i);
+      }
+    }
+  }
+
+  function updateVirtualWindow(forceTargetRow) {
+    if (!cards.length || destroyed) {
+      topSpacer.style.display = "none";
+      bottomSpacer.style.display = "none";
+      return;
+    }
+    const layout = measureLayout();
+    cachedColumnsCount = layout.cols;
+    const totalRows = Math.ceil(cards.length / layout.cols);
+
+    if (cards.length <= 25) {
+      topSpacer.style.display = "none";
+      bottomSpacer.style.display = "none";
+      mountRange(0, cards.length - 1);
+      currentStartRow = 0;
+      currentEndRow = totalRows - 1;
+      return;
+    }
+
+    const gridTop = grid.offsetTop || 0;
+    const viewportHeight = screen.clientHeight || window.innerHeight || 800;
+    const scrollTop = screen.scrollTop || 0;
+    const relativeScroll = Math.max(0, scrollTop - gridTop);
+
+    const bufferRows = 6;
+    let startRow = Math.max(0, Math.floor(relativeScroll / layout.rowHeight) - bufferRows);
+    let endRow = Math.min(totalRows - 1, Math.ceil((relativeScroll + viewportHeight) / layout.rowHeight) + bufferRows);
+
+    if (typeof forceTargetRow === "number") {
+      if (forceTargetRow < startRow) {
+        startRow = Math.max(0, forceTargetRow - 1);
+      }
+      if (forceTargetRow > endRow) {
+        endRow = Math.min(totalRows - 1, forceTargetRow + 1);
+      }
+    }
+
+    if (startRow === currentStartRow && endRow === currentEndRow && typeof forceTargetRow !== "number") {
+      return;
+    }
+
+    currentStartRow = startRow;
+    currentEndRow = endRow;
+
+    if (startRow > 0) {
+      topSpacer.style.display = "block";
+      topSpacer.style.height = Math.max(0, startRow * layout.rowHeight - layout.gap) + "px";
+    } else {
+      topSpacer.style.display = "none";
+    }
+
+    const remainingRows = totalRows - 1 - endRow;
+    if (remainingRows > 0) {
+      bottomSpacer.style.display = "block";
+      bottomSpacer.style.height = Math.max(0, remainingRows * layout.rowHeight - layout.gap) + "px";
+    } else {
+      bottomSpacer.style.display = "none";
+    }
+
+    const startIndex = startRow * layout.cols;
+    const endIndex = Math.min(cards.length - 1, (endRow + 1) * layout.cols - 1);
+    mountRange(startIndex, endIndex);
+  }
+
+  function scheduleVirtualUpdate() {
+    if (virtualScrollRaf) {
+      return;
+    }
+    virtualScrollRaf = window.requestAnimationFrame(function () {
+      virtualScrollRaf = 0;
+      updateVirtualWindow();
+    });
+  }
+
+  function ensureCardInWindow(targetIdx) {
+    if (typeof targetIdx !== "number" || targetIdx < 0 || targetIdx >= cards.length) {
+      return;
+    }
+    const layout = measureLayout();
+    const targetRow = Math.floor(targetIdx / layout.cols);
+    if (targetRow < currentStartRow || targetRow > currentEndRow) {
+      updateVirtualWindow(targetRow);
+    }
+  }
+
+  function clearGrid() {
+    mountedIndices.clear();
+    currentStartRow = -1;
+    currentEndRow = -1;
+    while (grid.firstChild) {
+      grid.removeChild(grid.firstChild);
+    }
+    grid.appendChild(topSpacer);
+    grid.appendChild(bottomSpacer);
+    topSpacer.style.display = "none";
+    bottomSpacer.style.display = "none";
+  }
 
   const notice = document.createElement("p");
   notice.className = "catalog-notice";
@@ -595,9 +841,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
 
   function render(result) {
     currentResult = result;
-    while (grid.firstChild) {
-      grid.removeChild(grid.firstChild);
-    }
+    clearGrid();
     cards = [];
     notice.textContent = "";
     notice.hidden = true;
@@ -627,6 +871,8 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
 
     result.movies.forEach(function (movie, idx) {
       const cardEntry = makeMovieCard(movie, cardActions);
+      cardEntry.index = idx;
+      cardEntry.element.dataset.cardIndex = idx;
 
       cardEntry.element.addEventListener("focus", function () {
         if (isProgrammaticFocus) {
@@ -637,7 +883,6 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
         }
       });
 
-      grid.appendChild(cardEntry.element);
       cards.push(cardEntry);
 
       if (options && options.selectedMovieId && movie.id === options.selectedMovieId) {
@@ -645,6 +890,8 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
         activeCardIndex = idx;
       }
     });
+
+    updateVirtualWindow();
 
     if (result.notice) {
       notice.textContent = result.notice;
@@ -684,6 +931,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     }
     const cardActions = createCardActions();
     let appendedCount = 0;
+    let startIndex = cards.length;
 
     newMovies.forEach(function (movie) {
       // Deduplicate by slug or id
@@ -695,6 +943,10 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       }
 
       const cardEntry = makeMovieCard(movie, cardActions);
+      cardEntry.index = startIndex;
+      cardEntry.element.dataset.cardIndex = startIndex;
+      startIndex += 1;
+
       cardEntry.element.addEventListener("focus", function () {
         if (isProgrammaticFocus) {
           return;
@@ -704,13 +956,12 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
         }
       });
 
-      grid.appendChild(cardEntry.element);
       cards.push(cardEntry);
       appendedCount += 1;
     });
 
     if (appendedCount > 0) {
-      updateColumnsCount();
+      updateVirtualWindow();
       message.textContent = cards.length + " phim";
     }
   }
@@ -763,19 +1014,48 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     });
   }
 
-  function onScreenScroll() {
-    if (isLoadingMore || !hasMore || destroyed) {
-      return;
-    }
-    if (activeTab === "favorites") {
-      return;
-    }
-    const scrollBottom = screen.scrollHeight - screen.scrollTop - screen.clientHeight;
-    if (scrollBottom < 380) {
-      loadMore();
-    }
+  // IntersectionObserver for smooth off-main-thread infinite scroll detection
+  let sentinelObserver = null;
+  if (typeof IntersectionObserver !== "undefined") {
+    sentinelObserver = new IntersectionObserver(function (entries) {
+      if (entries[0] && entries[0].isIntersecting) {
+        if (!isLoadingMore && hasMore && !destroyed && activeTab !== "favorites") {
+          loadMore();
+        }
+      }
+    }, {
+      root: screen,
+      rootMargin: "600px 0px"
+    });
+    sentinelObserver.observe(loadingMoreEl);
   }
-  screen.addEventListener("scroll", onScreenScroll);
+
+  // Throttled scroll listener using requestAnimationFrame for zero layout thrashing
+  let scrollRafId = 0;
+  let lastVirtualScrollTop = 0;
+  function onScreenScroll() {
+    const st = screen.scrollTop || 0;
+    if (Math.abs(st - lastVirtualScrollTop) > 300) {
+      lastVirtualScrollTop = st;
+      updateVirtualWindow();
+    } else {
+      scheduleVirtualUpdate();
+    }
+    if (sentinelObserver || scrollRafId || isLoadingMore || !hasMore || destroyed || activeTab === "favorites") {
+      return;
+    }
+    scrollRafId = window.requestAnimationFrame(function () {
+      scrollRafId = 0;
+      if (isLoadingMore || !hasMore || destroyed || activeTab === "favorites") {
+        return;
+      }
+      const scrollBottom = screen.scrollHeight - screen.scrollTop - screen.clientHeight;
+      if (scrollBottom < 400) {
+        loadMore();
+      }
+    });
+  }
+  screen.addEventListener("scroll", onScreenScroll, { passive: true });
 
   function updateTabButtonsUI() {
     tabButtons.forEach(function (btn) {
@@ -951,6 +1231,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
 
   function onWindowResize() {
     updateColumnsCount();
+    updateVirtualWindow();
   }
   window.addEventListener("resize", onWindowResize);
 
@@ -1243,8 +1524,36 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     getResult() {
       return currentResult;
     },
+    openMovie(movieOrSlug) {
+      if (typeof movieOrSlug === "string") {
+        detailModal.open({ slug: movieOrSlug, title: "" });
+      } else if (movieOrSlug && movieOrSlug.slug) {
+        detailModal.open(movieOrSlug);
+      }
+    },
+    closeDetail() {
+      if (detailModal.isOpen()) {
+        detailModal.close();
+      }
+    },
+    isDetailOpen() {
+      return detailModal.isOpen();
+    },
     destroy() {
       destroyed = true;
+      if (sentinelObserver) {
+        sentinelObserver.disconnect();
+        sentinelObserver = null;
+      }
+      if (scrollRafId) {
+        window.cancelAnimationFrame(scrollRafId);
+        scrollRafId = 0;
+      }
+      if (virtualScrollRaf) {
+        window.cancelAnimationFrame(virtualScrollRaf);
+        virtualScrollRaf = 0;
+      }
+      clearGrid();
       window.removeEventListener("resize", onWindowResize);
       screen.removeEventListener("scroll", onScreenScroll);
       window.clearTimeout(toastTimer);

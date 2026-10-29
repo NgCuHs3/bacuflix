@@ -3,7 +3,9 @@ import { createDoubleBack } from "./navigation/double-back.js";
 import { createRemoteNavigation } from "./navigation/remote-navigation.js";
 import { createPlayerScreen } from "./player/player-screen.js";
 import { createCatalogService } from "./services/catalog-service.js";
+import { createKkphimApi } from "./services/kkphim-api.js";
 import { currentDevice } from "./utils/device.js";
+import { parseRoute, buildMovieUrl, buildEpisodeUrl, buildHomeUrl } from "./utils/url.js";
 
 const root = document.getElementById("app");
 if (document.documentElement) {
@@ -18,6 +20,7 @@ if (root) {
 const remoteNavigation = createRemoteNavigation();
 const doubleBack = createDoubleBack(2200);
 const catalogService = createCatalogService();
+const kkphimApi = createKkphimApi();
 
 const NavigationState = {
   activeScreenName: "catalog",
@@ -58,6 +61,16 @@ function showHome(options) {
     onSelect: function (movie) {
       showPlayer(movie, true);
     },
+    onOpenDetail: function (movie) {
+      if (typeof window !== "undefined" && window.history && window.history.pushState) {
+        window.history.pushState({ screen: "movie-detail", movieSlug: movie.slug }, "", buildMovieUrl(movie.slug));
+      }
+    },
+    onCloseDetail: function () {
+      if (typeof window !== "undefined" && window.history && window.history.pushState) {
+        window.history.pushState({ screen: "catalog" }, "", buildHomeUrl());
+      }
+    },
     onPlaybackUnavailable: function () {
       if (NavigationState.screenInstance && NavigationState.screenInstance.showBackPrompt) {
         NavigationState.screenInstance.showBackPrompt("Playback is disabled until an authorized stream is configured.");
@@ -75,21 +88,25 @@ function showHome(options) {
       });
     }
   }, {
-    selectedMovieId: options && options.selectedMovieId ? options.selectedMovieId : (previousMovie ? previousMovie.id : null)
+    selectedMovieId: options && options.selectedMovieId ? options.selectedMovieId : (previousMovie ? previousMovie.id : null),
+    autoOpenSlug: options && options.autoOpenSlug ? options.autoOpenSlug : null
   });
 
   setActiveScreen("catalog", homeScreen);
 
-  if (typeof window !== "undefined" && window.history && window.history.state) {
-    if (window.history.state.screen === "player") {
-      window.history.replaceState({ screen: "catalog" }, "", window.location.pathname + window.location.search);
+  if (typeof window !== "undefined" && window.history && window.history.replaceState) {
+    if (options && options.autoOpenSlug) {
+      window.history.replaceState({ screen: "movie-detail", movieSlug: options.autoOpenSlug }, "", buildMovieUrl(options.autoOpenSlug));
+    } else {
+      window.history.replaceState({ screen: "catalog" }, "", buildHomeUrl());
     }
   }
 }
 
 function handlePlayerBack() {
-  if (typeof window !== "undefined" && window.history && window.history.state && window.history.state.screen === "player") {
-    window.history.back();
+  const prevMovie = NavigationState.selectedMovie;
+  if (prevMovie && prevMovie.slug) {
+    showHome({ autoOpenSlug: prevMovie.slug });
   } else {
     showHome();
   }
@@ -106,29 +123,99 @@ function showPlayer(movie, pushHistory) {
   const playerScreen = createPlayerScreen(root, movie, handlePlayerBack);
   setActiveScreen("player", playerScreen);
 
-  if (pushHistory && typeof window !== "undefined" && window.history) {
-    window.history.pushState({ screen: "player", movieId: movie.id }, "", "#player");
+  if (pushHistory && typeof window !== "undefined" && window.history && window.history.pushState) {
+    const epNum = (typeof movie.currentEpisodeIndex === "number") ? (movie.currentEpisodeIndex + 1) : 1;
+    const slug = movie.slug || movie.id;
+    window.history.pushState({ screen: "player", movieSlug: slug, ep: epNum }, "", buildEpisodeUrl(slug, epNum));
   }
 }
 
-function onPopState(event) {
+function playEpisodeFromData(movie, episodes, epParam) {
+  const currentServer = episodes && episodes[0];
+  const serverData = (currentServer && Array.isArray(currentServer.server_data)) ? currentServer.server_data : [];
+  if (!serverData.length) {
+    showHome({ autoOpenSlug: movie.slug });
+    return;
+  }
+
+  let targetIndex = 0;
+  if (epParam) {
+    const epNum = parseInt(epParam, 10);
+    if (!isNaN(epNum) && epNum >= 1 && epNum <= serverData.length) {
+      targetIndex = epNum - 1;
+    } else {
+      const foundIdx = serverData.findIndex(function (item) {
+        return item.slug === epParam || item.name === epParam || String(item.name).toLowerCase() === String(epParam).toLowerCase();
+      });
+      if (foundIdx !== -1) {
+        targetIndex = foundIdx;
+      }
+    }
+  }
+
+  const epObj = serverData[targetIndex];
+  const streamUrl = epObj.link_m3u8 || epObj.link_embed;
+  const serverName = currentServer ? currentServer.server_name : "Vietsub";
+  const playbackMovie = {
+    id: movie.slug + "-" + (epObj.slug || targetIndex),
+    slug: movie.slug,
+    seriesTitle: movie.title,
+    episodeName: epObj.name,
+    title: movie.title + " - " + epObj.name,
+    poster: movie.poster,
+    m3u8: streamUrl,
+    fallbackEmbed: epObj.link_embed || "",
+    playbackEnabled: true,
+    source: "KKPhim · " + serverName,
+    episodesList: serverData.map(function (item, idx) {
+      return {
+        index: idx,
+        name: item.name,
+        slug: item.slug || String(idx),
+        m3u8: item.link_m3u8 || item.link_embed,
+        fallbackEmbed: item.link_embed || ""
+      };
+    }),
+    currentEpisodeIndex: targetIndex,
+    serverName: serverName
+  };
+
+  showPlayer(playbackMovie, false);
+}
+
+function handleDeepLink(movieSlug, epParam) {
+  kkphimApi.getMovieDetail(movieSlug).then(function (data) {
+    if (NavigationState.disposed) {
+      return;
+    }
+    if (epParam) {
+      playEpisodeFromData(data.movie, data.episodes, epParam);
+    } else {
+      showHome({ autoOpenSlug: movieSlug });
+    }
+  }).catch(function (error) {
+    console.warn("Failed to load deep link:", error);
+    showHome();
+  });
+}
+
+function onPopState() {
   if (NavigationState.disposed) {
     return;
   }
-  const state = event.state;
-  if (state && state.screen === "player") {
-    if (NavigationState.activeScreenName !== "player") {
-      const lastResult = catalogService.getLastResult();
-      const movie = (lastResult && lastResult.movies) ?
-        lastResult.movies.find(function (m) { return m.id === state.movieId; }) : null;
-      if (movie) {
-        showPlayer(movie, false);
-      } else {
-        showHome();
-      }
+  const route = parseRoute(window.location.search, window.location.hash);
+  if (route.movieSlug && route.ep) {
+    handleDeepLink(route.movieSlug, route.ep);
+  } else if (route.movieSlug) {
+    if (NavigationState.activeScreenName === "catalog" && NavigationState.screenInstance && NavigationState.screenInstance.openMovie) {
+      NavigationState.screenInstance.openMovie(route.movieSlug);
+    } else {
+      showHome({ autoOpenSlug: route.movieSlug });
     }
   } else {
-    if (NavigationState.activeScreenName !== "catalog") {
+    if (NavigationState.activeScreenName === "catalog" && NavigationState.screenInstance && NavigationState.screenInstance.isDetailOpen && NavigationState.screenInstance.isDetailOpen()) {
+      NavigationState.screenInstance.closeDetail();
+    } else if (NavigationState.activeScreenName !== "catalog") {
       showHome();
     }
   }
@@ -150,10 +237,13 @@ function onPageHide() {
 
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", onPopState);
-  if (window.history) {
-    window.history.replaceState({ screen: "catalog" }, "", window.location.pathname + window.location.search);
+  window.addEventListener("pagehide", onPageHide);
+  const initialRoute = parseRoute(window.location.search, window.location.hash);
+  if (initialRoute.movieSlug) {
+    handleDeepLink(initialRoute.movieSlug, initialRoute.ep);
+  } else {
+    showHome();
   }
+} else {
+  showHome();
 }
-
-window.addEventListener("pagehide", onPageHide);
-showHome();
