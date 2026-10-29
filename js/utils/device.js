@@ -1,5 +1,5 @@
 export function detectDevice() {
-  if (typeof window === "undefined" || !navigator) {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
     return "desktop";
   }
   const ua = navigator.userAgent || "";

@@ -10,12 +10,7 @@ function requireModule(id) {
   return exports;
 }
 registerModule("js/app.js", function (requireModule) {
-var createHomeScreen = requireModule("js/home/home-screen.js")["createHomeScreen"];
-var createDoubleBack = requireModule("js/navigation/double-back.js")["createDoubleBack"];
-var createRemoteNavigation = requireModule("js/navigation/remote-navigation.js")["createRemoteNavigation"];
-var createPlayerScreen = requireModule("js/player/player-screen.js")["createPlayerScreen"];
-var createCatalogService = requireModule("js/services/catalog-service.js")["createCatalogService"];
-var currentDevice = requireModule("js/utils/device.js")["currentDevice"];
+var createHomeScreen = requireModule("js/home/home-screen.js")["createHomeScreen"];var createDoubleBack = requireModule("js/navigation/double-back.js")["createDoubleBack"];var createRemoteNavigation = requireModule("js/navigation/remote-navigation.js")["createRemoteNavigation"];var createPlayerScreen = requireModule("js/player/player-screen.js")["createPlayerScreen"];var createCatalogService = requireModule("js/services/catalog-service.js")["createCatalogService"];var currentDevice = requireModule("js/utils/device.js")["currentDevice"];
 const root = document.getElementById("app");
 if (document.documentElement) {
   document.documentElement.setAttribute("data-device", currentDevice);
@@ -172,6 +167,13 @@ registerModule("js/home/home-screen.js", function (requireModule) {
 var activateFocusedElement = requireModule("js/navigation/remote-navigation.js")["activateFocusedElement"];
 var focusNext = requireModule("js/navigation/remote-navigation.js")["focusNext"];
 var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
+var createKkphimApi = requireModule("js/services/kkphim-api.js")["createKkphimApi"];
+var isFavorite = requireModule("js/services/favorites-service.js")["isFavorite"];
+var toggleFavorite = requireModule("js/services/favorites-service.js")["toggleFavorite"];
+var getFavorites = requireModule("js/services/favorites-service.js")["getFavorites"];
+var createGoogleTrendingService = requireModule("js/services/google-trending-service.js")["createGoogleTrendingService"];
+var createMovieDetailModal = requireModule("js/home/movie-detail-modal.js")["createMovieDetailModal"];
+var createHeroCarousel = requireModule("js/home/hero-carousel.js")["createHeroCarousel"];
 function makeButton(className, text, label) {
   const button = document.createElement("button");
   button.className = className;
@@ -211,6 +213,50 @@ function makeMovieCard(movie, actionsHandler) {
   });
   image.src = usingFallback ? fallbackPoster : movie.poster;
 
+  // Badges container
+  const badges = document.createElement("div");
+  badges.className = "catalog-card-badges";
+
+  if (movie.quality) {
+    const qBadge = document.createElement("span");
+    qBadge.className = "catalog-badge catalog-badge-quality";
+    qBadge.textContent = movie.quality;
+    badges.appendChild(qBadge);
+  }
+  if (movie.lang) {
+    const lBadge = document.createElement("span");
+    lBadge.className = "catalog-badge catalog-badge-lang";
+    lBadge.textContent = movie.lang;
+    badges.appendChild(lBadge);
+  }
+  if (movie.episodeCurrent) {
+    const eBadge = document.createElement("span");
+    eBadge.className = "catalog-badge catalog-badge-episode";
+    eBadge.textContent = movie.episodeCurrent;
+    badges.appendChild(eBadge);
+  }
+
+  // Quick favorite button
+  const favBtn = document.createElement("button");
+  favBtn.type = "button";
+  favBtn.className = "catalog-card-fav" + (isFavorite(movie.slug || movie.id) ? " is-favorite" : "");
+  favBtn.setAttribute("aria-label", isFavorite(movie.slug || movie.id) ? "Bỏ yêu thích" : "Thêm yêu thích");
+  favBtn.tabIndex = -1;
+  favBtn.innerHTML = '<span class="card-fav-icon">' + (isFavorite(movie.slug || movie.id) ? "♥" : "♡") + '</span>';
+  favBtn.addEventListener("click", function (event) {
+    event.stopPropagation();
+    const isNowFav = toggleFavorite(movie);
+    favBtn.classList.toggle("is-favorite", isNowFav);
+    favBtn.setAttribute("aria-label", isNowFav ? "Bỏ yêu thích" : "Thêm yêu thích");
+    const icon = favBtn.querySelector(".card-fav-icon");
+    if (icon) {
+      icon.textContent = isNowFav ? "♥" : "♡";
+    }
+    if (typeof actionsHandler.onFavoriteToggle === "function") {
+      actionsHandler.onFavoriteToggle(movie, isNowFav);
+    }
+  });
+
   const details = document.createElement("div");
   details.className = "catalog-card-details";
   const title = document.createElement("h2");
@@ -218,13 +264,13 @@ function makeMovieCard(movie, actionsHandler) {
   title.textContent = movie.title;
   const source = document.createElement("p");
   source.className = "catalog-card-source";
-  source.textContent = movie.source;
+  source.textContent = movie.year ? (movie.source + " · " + movie.year) : (movie.source || "KKPhim");
 
   const play = document.createElement("button");
   play.type = "button";
   play.className = "home-action primary-home-action catalog-play" + (movie.playbackEnabled ? "" : " is-unavailable");
   play.tabIndex = -1;
-  play.setAttribute("aria-label", (movie.playbackEnabled ? "Play " : "Playback unavailable for ") + movie.title);
+  play.setAttribute("aria-label", (movie.playbackEnabled ? "Chi tiết / Xem " : "Playback unavailable for ") + movie.title);
 
   const playIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   playIcon.setAttribute("class", "catalog-play-icon");
@@ -239,17 +285,21 @@ function makeMovieCard(movie, actionsHandler) {
 
   const playText = document.createElement("span");
   playText.className = "catalog-play-label";
-  playText.textContent = movie.playbackEnabled ? "Play" : "Unavailable";
+  playText.textContent = movie.playbackEnabled ? "Chi tiết" : "Unavailable";
 
   play.appendChild(playIcon);
   play.appendChild(playText);
 
-  const cardEntry = { element: card, playButton: play, movie: movie };
+  const cardEntry = { element: card, playButton: play, favButton: favBtn, movie: movie };
 
   if (movie.playbackEnabled) {
     play.addEventListener("click", function (event) {
       event.stopPropagation();
-      actionsHandler.onSelect(movie);
+      if (typeof actionsHandler.onOpenDetail === "function" && (movie.slug || !movie.m3u8)) {
+        actionsHandler.onOpenDetail(movie);
+      } else {
+        actionsHandler.onSelect(movie);
+      }
     });
   } else {
     play.title = "Playback is disabled until an authorized stream source is configured.";
@@ -260,7 +310,7 @@ function makeMovieCard(movie, actionsHandler) {
   }
 
   card.addEventListener("click", function (event) {
-    if (event.target === play || play.contains(event.target)) {
+    if (event.target === play || play.contains(event.target) || event.target === favBtn || favBtn.contains(event.target)) {
       return;
     }
     if (typeof actionsHandler.onCardClick === "function") {
@@ -272,6 +322,8 @@ function makeMovieCard(movie, actionsHandler) {
   details.appendChild(source);
   details.appendChild(play);
   card.appendChild(image);
+  card.appendChild(badges);
+  card.appendChild(favBtn);
   card.appendChild(details);
   return cardEntry;
 }
@@ -279,10 +331,18 @@ function makeMovieCard(movie, actionsHandler) {
 function createHomeScreen(root, catalogService, actionsHandler, options) {
   const screen = document.createElement("section");
   screen.className = "home-screen catalog-screen";
-  screen.setAttribute("aria-label", "BACUFlix movie catalog");
+  screen.setAttribute("aria-label", "BACUFlix KKPhim movie catalog");
+
+  const kkphimApi = createKkphimApi();
+  const googleTrendingService = createGoogleTrendingService(kkphimApi);
+
   let toastTimer = 0;
+  let searchDebounceTimer = 0;
   let destroyed = false;
   let refreshing = false;
+  let activeTab = "new"; // "new" | "trending" | "favorites" | "search"
+  let previousTab = "new";
+  let currentSearchQuery = "";
   let currentResult = null;
   let cards = [];
   let activeCardIndex = 0;
@@ -290,6 +350,69 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   let currentActionEntry = null;
   let isProgrammaticFocus = false;
   let cachedColumnsCount = 1;
+
+  // Pagination / Infinite scroll state
+  let currentPage = 1;
+  let isLoadingMore = false;
+  let hasMore = true;
+
+  // Detail Modal instance
+  const detailModal = createMovieDetailModal(screen, kkphimApi, {
+    onSelectEpisode: function (playbackMovie) {
+      if (typeof actionsHandler.onSelect === "function") {
+        actionsHandler.onSelect(playbackMovie);
+      }
+    },
+    onFavoritesChanged: function () {
+      if (activeTab === "favorites") {
+        loadTab("favorites", true);
+      } else {
+        updateCardFavStates();
+      }
+    },
+    onClose: function () {
+      if (selectedCardEntry) {
+        setSelectedCard(selectedCardEntry, true);
+      }
+    }
+  });
+
+  // Hero Section Carousel (Netflix-style)
+  const heroCarousel = createHeroCarousel(screen, {
+    onPlayMovie: function (movie) {
+      if (movie.slug) {
+        detailModal.open(movie);
+      } else if (movie.playbackEnabled) {
+        actionsHandler.onSelect(movie);
+      }
+    },
+    onOpenDetail: function (movie) {
+      if (movie.slug) {
+        detailModal.open(movie);
+      } else {
+        actionsHandler.onSelect(movie);
+      }
+    },
+    onFavoriteToggle: function (_movie, _isFav) {
+      if (activeTab === "favorites") {
+        loadTab("favorites", true);
+      } else {
+        updateCardFavStates();
+      }
+    }
+  });
+
+  function updateCardFavStates() {
+    cards.forEach(function (cardEntry) {
+      const isFav = isFavorite(cardEntry.movie.slug || cardEntry.movie.id);
+      cardEntry.favButton.classList.toggle("is-favorite", isFav);
+      cardEntry.favButton.setAttribute("aria-label", isFav ? "Bỏ yêu thích" : "Thêm yêu thích");
+      const icon = cardEntry.favButton.querySelector(".card-fav-icon");
+      if (icon) {
+        icon.textContent = isFav ? "♥" : "♡";
+      }
+    });
+  }
 
   function updateColumnsCount() {
     if (cards.length < 2) {
@@ -427,8 +550,10 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     return -1;
   }
 
+  // Create Header UI
   const header = document.createElement("header");
   header.className = "home-header";
+
   const brand = document.createElement("div");
   brand.className = "home-brand";
   const logo = document.createElement("img");
@@ -442,48 +567,179 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   brand.appendChild(logo);
   brand.appendChild(brandText);
 
-  const catalogLabel = document.createElement("span");
-  catalogLabel.className = "home-nav-current";
-  catalogLabel.textContent = "MOVIES";
-  const refreshButton = makeButton("home-action secondary-home-action catalog-refresh", "Refresh catalog");
-  refreshButton.addEventListener("click", function () {
-    refresh(true);
+  // Tabs: Mới | Trending | Yêu thích | Của tôi
+  const navTabs = document.createElement("nav");
+  navTabs.className = "home-nav-tabs";
+  navTabs.setAttribute("aria-label", "Mục chính");
+
+  const tabConfigs = [
+    { id: "new", label: "Mới" },
+    { id: "trending", label: "Trending" },
+    { id: "favorites", label: "Yêu thích" }
+  ];
+  const tabButtons = [];
+
+  tabConfigs.forEach(function (tab) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "home-nav-tab" + (tab.id === activeTab ? " is-active" : "");
+    btn.textContent = tab.label;
+    btn.setAttribute("aria-label", tab.label);
+    btn.dataset.tabId = tab.id;
+    btn.addEventListener("click", function () {
+      switchTab(tab.id);
+    });
+    navTabs.appendChild(btn);
+    tabButtons.push(btn);
   });
+
+  // Search input & Clear
+  const searchBox = document.createElement("div");
+  searchBox.className = "home-search-box";
+
+  const searchIcon = document.createElement("span");
+  searchIcon.className = "home-search-icon";
+  searchIcon.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 11.99 14 9.5 14z"/></svg>';
+
+  const searchInput = document.createElement("input");
+  searchInput.type = "search";
+  searchInput.className = "home-search-input";
+  searchInput.placeholder = "Tìm kiếm phim...";
+  searchInput.setAttribute("aria-label", "Tìm kiếm phim");
+  searchInput.autocomplete = "off";
+  searchInput.spellcheck = false;
+
+  const searchClear = document.createElement("button");
+  searchClear.type = "button";
+  searchClear.className = "home-search-clear";
+  searchClear.textContent = "×";
+  searchClear.setAttribute("aria-label", "Xóa tìm kiếm");
+  searchClear.hidden = true;
+
+  searchBox.appendChild(searchIcon);
+  searchBox.appendChild(searchInput);
+  searchBox.appendChild(searchClear);
+
+  searchInput.addEventListener("input", function () {
+    const val = searchInput.value.trim();
+    searchClear.hidden = !val;
+    window.clearTimeout(searchDebounceTimer);
+    if (!val) {
+      if (activeTab === "search") {
+        switchTab(previousTab || "new");
+      }
+      return;
+    }
+    searchDebounceTimer = window.setTimeout(function () {
+      executeSearch(val);
+    }, 450);
+  });
+
+  searchInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      window.clearTimeout(searchDebounceTimer);
+      const val = searchInput.value.trim();
+      if (val) {
+        executeSearch(val);
+      }
+    } else if (e.key === "Escape") {
+      searchInput.blur();
+    }
+  });
+
+  searchClear.addEventListener("click", function () {
+    searchInput.value = "";
+    searchClear.hidden = true;
+    switchTab(previousTab || "new");
+    searchInput.focus();
+  });
+
   header.appendChild(brand);
-  header.appendChild(catalogLabel);
-  header.appendChild(refreshButton);
+  header.appendChild(navTabs);
+  header.appendChild(searchBox);
 
   const heading = document.createElement("h1");
   heading.className = "catalog-heading";
-  heading.textContent = "Discover movies";
+  heading.textContent = "Phim mới cập nhật";
+
   const message = document.createElement("p");
   message.className = "catalog-message";
   message.setAttribute("role", "status");
   message.setAttribute("aria-live", "polite");
+
   const grid = document.createElement("div");
   grid.className = "catalog-grid";
-  grid.setAttribute("aria-label", "Movies");
+  grid.setAttribute("aria-label", "Danh sách phim");
+
   const notice = document.createElement("p");
   notice.className = "catalog-notice";
+
+  // Loading more indicator (infinite scroll)
+  const loadingMoreEl = document.createElement("div");
+  loadingMoreEl.className = "catalog-loading-more";
+  loadingMoreEl.hidden = true;
+  loadingMoreEl.innerHTML = "" +
+    '<div class="loader-spinner" aria-hidden="true">' +
+      '<svg class="spinner-svg" viewBox="0 0 50 50">' +
+        '<circle class="spinner-track" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>' +
+        '<circle class="spinner-circle" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>' +
+      '</svg>' +
+    '</div>' +
+    '<span class="loading-more-text">Đang tải thêm phim...</span>';
+
   const toast = document.createElement("p");
   toast.className = "home-toast";
   toast.setAttribute("role", "status");
   toast.setAttribute("aria-live", "polite");
   toast.hidden = true;
+
   const hint = document.createElement("p");
   hint.className = "home-remote-hint";
-  hint.textContent = "Use the directional buttons to explore · Press OK to select";
+  hint.textContent = "Phím điều hướng để di chuyển · OK để xem chi tiết & chọn tập";
+
+  // Mount elements to screen in order: Header -> Hero Carousel -> Heading -> Grid
   screen.appendChild(header);
+  screen.appendChild(heroCarousel.element);
   screen.appendChild(heading);
   screen.appendChild(message);
   screen.appendChild(notice);
   screen.appendChild(grid);
+  screen.appendChild(loadingMoreEl);
   screen.appendChild(hint);
   screen.appendChild(toast);
+
   while (root.firstChild) {
     root.removeChild(root.firstChild);
   }
   root.appendChild(screen);
+
+  function createCardActions() {
+    return {
+      onSelect: actionsHandler.onSelect,
+      onPlaybackUnavailable: actionsHandler.onPlaybackUnavailable,
+      onOpenDetail: function (m) {
+        if (m.slug) {
+          detailModal.open(m);
+        } else {
+          actionsHandler.onSelect(m);
+        }
+      },
+      onFavoriteToggle: function (_m, _isFav) {
+        if (activeTab === "favorites") {
+          loadTab("favorites", true);
+        }
+      },
+      onCardClick: function (entry) {
+        if (entry.movie && entry.movie.slug) {
+          detailModal.open(entry.movie);
+        } else if (entry.movie && entry.movie.playbackEnabled) {
+          actionsHandler.onSelect(entry.movie);
+        } else {
+          activateStageB(entry);
+        }
+      }
+    };
+  }
 
   function render(result) {
     currentResult = result;
@@ -493,29 +749,33 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     cards = [];
     notice.textContent = "";
     notice.hidden = true;
+
     if (result.failedAll) {
-      const reason = result.errors.length ? " " + result.errors[0].message : "";
-      message.textContent = "Unable to load the movie catalog." + reason;
+      const reason = result.errors && result.errors.length ? " " + result.errors[0].message : "";
+      message.textContent = "Không thể tải danh sách phim." + reason;
       message.classList.add("is-error");
       return;
     }
 
     message.classList.remove("is-error");
-    if (!result.movies.length) {
-      message.textContent = "No movies are available in this catalog.";
+    if (!result.movies || !result.movies.length) {
+      if (activeTab === "favorites") {
+        message.textContent = "Chưa có phim nào trong danh sách Yêu thích. Hãy khám phá và chọn ♥ để thêm phim!";
+      } else if (activeTab === "search") {
+        message.textContent = 'Không tìm thấy phim phù hợp với từ khóa "' + currentSearchQuery + '".';
+      } else {
+        message.textContent = "Hiện không có phim nào trong mục này.";
+      }
       return;
     }
 
-    message.textContent = result.movies.length + (result.movies.length === 1 ? " movie" : " movies");
+    message.textContent = result.movies.length + (result.movies.length === 1 ? " phim" : " phim");
     let targetCard = null;
+    const cardActions = createCardActions();
+
     result.movies.forEach(function (movie, idx) {
-      const cardEntry = makeMovieCard(movie, {
-        onSelect: actionsHandler.onSelect,
-        onPlaybackUnavailable: actionsHandler.onPlaybackUnavailable,
-        onCardClick: function (entry) {
-          activateStageB(entry);
-        }
-      });
+      const cardEntry = makeMovieCard(movie, cardActions);
+
       cardEntry.element.addEventListener("focus", function () {
         if (isProgrammaticFocus) {
           return;
@@ -524,19 +784,18 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
           setSelectedCard(cardEntry, false);
         }
       });
+
       grid.appendChild(cardEntry.element);
       cards.push(cardEntry);
+
       if (options && options.selectedMovieId && movie.id === options.selectedMovieId) {
         targetCard = cardEntry;
         activeCardIndex = idx;
       }
     });
-    if (result.errors.length) {
-      notice.textContent = "Some catalogs could not be refreshed. Showing available saved movies.";
-      notice.hidden = false;
-    } else if (result.diagnostics.length) {
-      notice.textContent = result.diagnostics.length + " invalid catalog entr" +
-        (result.diagnostics.length === 1 ? "y was" : "ies were") + " skipped.";
+
+    if (result.notice) {
+      notice.textContent = result.notice;
       notice.hidden = false;
     }
 
@@ -546,25 +805,235 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     }
   }
 
-  function onWindowResize() {
-    updateColumnsCount();
-  }
-  window.addEventListener("resize", onWindowResize);
+  function appendMovies(newMovies) {
+    if (!newMovies || !newMovies.length) {
+      return;
+    }
+    const cardActions = createCardActions();
+    let appendedCount = 0;
 
-  function refresh(force) {
+    newMovies.forEach(function (movie) {
+      // Deduplicate by slug or id
+      const exists = cards.some(function (c) {
+        return (movie.slug && c.movie.slug === movie.slug) || (movie.id && c.movie.id === movie.id);
+      });
+      if (exists) {
+        return;
+      }
+
+      const cardEntry = makeMovieCard(movie, cardActions);
+      cardEntry.element.addEventListener("focus", function () {
+        if (isProgrammaticFocus) {
+          return;
+        }
+        if (document.activeElement === cardEntry.element) {
+          setSelectedCard(cardEntry, false);
+        }
+      });
+
+      grid.appendChild(cardEntry.element);
+      cards.push(cardEntry);
+      appendedCount += 1;
+    });
+
+    if (appendedCount > 0) {
+      updateColumnsCount();
+      message.textContent = cards.length + " phim";
+    }
+  }
+
+  function loadMore() {
+    if (isLoadingMore || !hasMore || destroyed) {
+      return;
+    }
+    if (activeTab === "favorites") {
+      return;
+    }
+
+    isLoadingMore = true;
+    loadingMoreEl.hidden = false;
+    const nextPage = currentPage + 1;
+
+    let promise;
+    if (activeTab === "new") {
+      promise = kkphimApi.getNewUpdated(nextPage);
+    } else if (activeTab === "trending") {
+      promise = kkphimApi.getTrending(nextPage);
+    } else if (activeTab === "search") {
+      promise = kkphimApi.searchMovies(currentSearchQuery, 24, nextPage);
+    }
+
+    if (!promise) {
+      isLoadingMore = false;
+      loadingMoreEl.hidden = true;
+      return;
+    }
+
+    promise.then(function (res) {
+      if (destroyed) {
+        return;
+      }
+      const newMovies = res && Array.isArray(res.movies) ? res.movies : [];
+      if (!newMovies.length) {
+        hasMore = false;
+        return;
+      }
+      currentPage = nextPage;
+      appendMovies(newMovies);
+    }).catch(function (err) {
+      console.warn("Không thể tải thêm phim:", err);
+    }).then(function () {
+      isLoadingMore = false;
+      if (!destroyed) {
+        loadingMoreEl.hidden = true;
+      }
+    });
+  }
+
+  function onScreenScroll() {
+    if (isLoadingMore || !hasMore || destroyed) {
+      return;
+    }
+    if (activeTab === "favorites") {
+      return;
+    }
+    const scrollBottom = screen.scrollHeight - screen.scrollTop - screen.clientHeight;
+    if (scrollBottom < 380) {
+      loadMore();
+    }
+  }
+  screen.addEventListener("scroll", onScreenScroll);
+
+  function updateTabButtonsUI() {
+    tabButtons.forEach(function (btn) {
+      const isAct = btn.dataset.tabId === activeTab;
+      btn.classList.toggle("is-active", isAct);
+      btn.setAttribute("aria-selected", isAct ? "true" : "false");
+    });
+  }
+
+  function switchTab(tabId) {
+    if (activeTab !== "search") {
+      previousTab = activeTab;
+    }
+    activeTab = tabId;
+    currentPage = 1;
+    hasMore = true;
+    isLoadingMore = false;
+    loadingMoreEl.hidden = true;
+    updateTabButtonsUI();
+
+    if (tabId !== "search") {
+      currentSearchQuery = "";
+      if (searchInput.value) {
+        searchInput.value = "";
+        searchClear.hidden = true;
+      }
+    }
+
+    // Show hero carousel only on "new" and "trending" tabs, hide on favorites and search
+    const showHero = (tabId === "new" || tabId === "trending");
+    heroCarousel.element.hidden = !showHero;
+    if (showHero) {
+      heroCarousel.startAutoSlide();
+    } else {
+      heroCarousel.stopAutoSlide();
+    }
+
+    if (tabId === "new") {
+      heading.textContent = "Phim mới cập nhật";
+    } else if (tabId === "trending") {
+      heading.textContent = "Phim đang thịnh hành (Google Trends)";
+    } else if (tabId === "favorites") {
+      heading.textContent = "Phim yêu thích của bạn";
+    }
+
+    loadTab(tabId, false);
+  }
+
+  function executeSearch(keyword) {
+    const kw = (keyword || "").trim();
+    if (!kw) {
+      return;
+    }
+    if (activeTab !== "search") {
+      previousTab = activeTab;
+    }
+    activeTab = "search";
+    currentPage = 1;
+    hasMore = true;
+    isLoadingMore = false;
+    loadingMoreEl.hidden = true;
+    currentSearchQuery = kw;
+
+    tabButtons.forEach(function (btn) {
+      btn.classList.remove("is-active");
+    });
+    heroCarousel.element.hidden = true;
+    heroCarousel.stopAutoSlide();
+    heading.textContent = 'Kết quả tìm kiếm cho: "' + kw + '"';
+    message.textContent = "Đang tìm kiếm phim...";
+    message.classList.remove("is-error");
+
+    kkphimApi.searchMovies(kw, 24, 1).then(function (res) {
+      if (destroyed || activeTab !== "search" || currentSearchQuery !== kw) {
+        return;
+      }
+      render({
+        movies: res.movies || [],
+        errors: [],
+        diagnostics: [],
+        failedAll: false
+      });
+    }).catch(function (error) {
+      if (destroyed || activeTab !== "search") {
+        return;
+      }
+      render({
+        movies: [],
+        errors: [{ message: error.message || "Lỗi khi tìm kiếm phim." }],
+        diagnostics: [],
+        failedAll: true
+      });
+    });
+  }
+
+  function loadTab(tabId, force) {
     if (refreshing || destroyed) {
       return;
     }
     refreshing = true;
-    refreshButton.disabled = true;
     message.classList.remove("is-error");
-    if (!currentResult || !currentResult.movies.length) {
-      message.textContent = force ? "Refreshing movie catalog..." : "Loading movie catalog...";
+
+    if (!currentResult || !currentResult.movies || !currentResult.movies.length) {
+      message.textContent = "Đang tải danh sách phim...";
     } else {
-      notice.textContent = "Refreshing movie catalog...";
+      notice.textContent = "Đang làm mới danh sách phim...";
       notice.hidden = false;
     }
-    catalogService.load(force).then(function (result) {
+
+    let promise;
+    if (tabId === "new") {
+      promise = kkphimApi.getNewUpdated(1).then(function (res) {
+        return { movies: res.movies || [], errors: [], diagnostics: [], failedAll: false };
+      });
+    } else if (tabId === "trending") {
+      promise = googleTrendingService.getTrending(force).then(function (res) {
+        return { movies: res.movies || [], errors: [], diagnostics: [], failedAll: false };
+      });
+    } else if (tabId === "favorites") {
+      const favs = getFavorites();
+      promise = Promise.resolve({
+        movies: favs.slice(),
+        errors: [],
+        diagnostics: [],
+        failedAll: false
+      });
+    } else {
+      promise = Promise.resolve({ movies: [], errors: [], diagnostics: [], failedAll: false });
+    }
+
+    promise.then(function (result) {
       if (!destroyed) {
         render(result);
       }
@@ -572,7 +1041,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       if (!destroyed) {
         render({
           movies: [],
-          errors: [{ message: error.message || "Catalog request failed." }],
+          errors: [{ message: error.message || "Không thể tải dữ liệu phim." }],
           diagnostics: [],
           failedAll: true
         });
@@ -580,35 +1049,74 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     }).then(function () {
       refreshing = false;
       if (!destroyed) {
-        refreshButton.disabled = false;
-        if (!screen.contains(document.activeElement)) {
-          if (options && options.selectedMovieId) {
-            const matchIndex = currentResult && currentResult.movies ?
-              currentResult.movies.findIndex(function (m) { return m.id === options.selectedMovieId; }) : -1;
-            if (matchIndex >= 0 && cards[matchIndex]) {
-              setSelectedCard(cards[matchIndex], true);
-              return;
-            }
-          }
-          if (cards.length) {
-            setSelectedCard(cards[activeCardIndex] || cards[0], true);
-          } else {
-            refreshButton.focus();
-          }
+        if (!screen.contains(document.activeElement) && cards.length) {
+          setSelectedCard(cards[0], true);
         }
       }
     });
   }
 
-  const existingResult = (options && options.initialResult) ||
-    (catalogService && typeof catalogService.getLastResult === "function" ? catalogService.getLastResult() : null);
-  if (existingResult && existingResult.movies && existingResult.movies.length) {
-    render(existingResult);
+  function refresh(_force) {
+    if (activeTab === "search") {
+      if (currentSearchQuery) {
+        executeSearch(currentSearchQuery);
+      }
+    } else {
+      loadTab(activeTab, true);
+    }
   }
-  refresh(false);
+
+  function onWindowResize() {
+    updateColumnsCount();
+  }
+  window.addEventListener("resize", onWindowResize);
+
+  // Initial load: Fetch trending for Hero Carousel & display "new" tab
+  googleTrendingService.getTrending(false).then(function (res) {
+    if (destroyed) {
+      return;
+    }
+    if (res && res.movies && res.movies.length) {
+      heroCarousel.setMovies(res.movies);
+    }
+  }).catch(function (err) {
+    console.warn("Lỗi tải hero banner:", err);
+  });
+
+  switchTab("new");
 
   return {
     onKeyDown(event, key) {
+      if (detailModal.isOpen()) {
+        return detailModal.onKeyDown(event, key);
+      }
+
+      const active = document.activeElement;
+      const isTyping = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA");
+
+      // While typing in search or any input: NEVER intercept characters, backspaces or spaces!
+      if (isTyping) {
+        if (key.isEscape) {
+          active.blur();
+          return true;
+        }
+        if (key.direction === "down") {
+          active.blur();
+          if (!heroCarousel.element.hidden) {
+            const heroBtns = heroCarousel.getFocusableElements();
+            if (heroBtns.length) {
+              heroBtns[0].focus();
+              return true;
+            }
+          }
+          if (cards.length > 0) {
+            setSelectedCard(cards[0], true);
+            return true;
+          }
+        }
+        return false;
+      }
+
       if (key.isBack) {
         if (currentActionEntry || (selectedCardEntry && selectedCardEntry.element.classList.contains("has-action-focus"))) {
           cancelStageB(currentActionEntry || selectedCardEntry);
@@ -622,6 +1130,12 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
             return true;
           }
         }
+        if (activeTab === "search" && searchInput.value) {
+          searchInput.value = "";
+          searchClear.hidden = true;
+          switchTab(previousTab || "new");
+          return true;
+        }
         if (!key.isRepeat) {
           actionsHandler.onBack();
         }
@@ -629,23 +1143,32 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       }
 
       if (key.isSelect) {
-        const active = document.activeElement;
-        if (active === refreshButton) {
-          refresh(true);
+        if (tabButtons.includes(active)) {
+          active.click();
+          return true;
+        }
+        if (active === searchClear) {
+          searchClear.click();
           return true;
         }
         const activeIdx = getActiveCardIndex();
         if (activeIdx !== -1) {
           const cardEntry = cards[activeIdx];
           if (active === cardEntry.playButton || currentActionEntry === cardEntry) {
-            if (cardEntry.movie.playbackEnabled) {
+            if (cardEntry.movie.slug) {
+              detailModal.open(cardEntry.movie);
+            } else if (cardEntry.movie.playbackEnabled) {
               actionsHandler.onSelect(cardEntry.movie);
             } else {
               actionsHandler.onPlaybackUnavailable(cardEntry.movie);
             }
             return true;
           } else {
-            activateStageB(cardEntry);
+            if (cardEntry.movie && cardEntry.movie.slug) {
+              detailModal.open(cardEntry.movie);
+            } else {
+              activateStageB(cardEntry);
+            }
             return true;
           }
         }
@@ -653,6 +1176,33 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       }
 
       if (key.direction === "left" || key.direction === "right") {
+        const topHeaderNav = tabButtons.concat([searchInput]);
+        const headerNavIndex = topHeaderNav.indexOf(active);
+
+        if (headerNavIndex !== -1) {
+          const delta = key.direction === "left" ? -1 : 1;
+          const nextNavIdx = headerNavIndex + delta;
+          if (nextNavIdx >= 0 && nextNavIdx < topHeaderNav.length) {
+            topHeaderNav[nextNavIdx].focus();
+            return true;
+          }
+          return true;
+        }
+
+        // Inside hero carousel
+        if (heroCarousel.element.contains(active)) {
+          const heroBtns = heroCarousel.getFocusableElements();
+          const currentHeroIdx = heroBtns.indexOf(active);
+          if (currentHeroIdx !== -1) {
+            const nextHeroIdx = currentHeroIdx + (key.direction === "left" ? -1 : 1);
+            if (nextHeroIdx >= 0 && nextHeroIdx < heroBtns.length) {
+              heroBtns[nextHeroIdx].focus();
+              return true;
+            }
+          }
+          return true;
+        }
+
         const activeIdx = getActiveCardIndex();
         if (activeIdx !== -1) {
           clearActionFocus();
@@ -664,19 +1214,23 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
             setSelectedCard(cards[activeIdx], true);
           }
           return true;
-        } else if (document.activeElement === refreshButton && key.direction === "right" && cards.length > 0) {
-          setSelectedCard(cards[0], true);
-          return true;
         }
         return false;
       }
 
       if (key.direction === "up" || key.direction === "down") {
-        const active = document.activeElement;
         const activeIdx = getActiveCardIndex();
         const cols = cachedColumnsCount || 1;
+        const topHeaderNav = tabButtons.concat([searchInput]);
 
         if (key.direction === "up") {
+          // Inside hero carousel -> go up to header nav
+          if (heroCarousel.element.contains(active)) {
+            const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
+            activeTabBtn.focus();
+            return true;
+          }
+
           if (activeIdx !== -1) {
             clearActionFocus();
             const targetIdx = activeIdx - cols;
@@ -684,19 +1238,47 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
               setSelectedCard(cards[targetIdx], true);
               return true;
             } else {
-              refreshButton.focus();
+              // Top row of cards: go to hero if visible, else to header
+              if (!heroCarousel.element.hidden) {
+                const heroBtns = heroCarousel.getFocusableElements();
+                if (heroBtns.length) {
+                  heroBtns[0].focus();
+                  return true;
+                }
+              }
+              const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
+              activeTabBtn.focus();
               return true;
             }
           }
         } else if (key.direction === "down") {
-          if (active === refreshButton && cards.length > 0) {
-            setSelectedCard(cards[activeCardIndex] || cards[0], true);
-            return true;
+          // From header nav -> down to hero or cards
+          if (topHeaderNav.includes(active)) {
+            if (!heroCarousel.element.hidden) {
+              const heroBtns = heroCarousel.getFocusableElements();
+              if (heroBtns.length) {
+                heroBtns[0].focus();
+                return true;
+              }
+            }
+            if (cards.length > 0) {
+              setSelectedCard(cards[activeCardIndex] || cards[0], true);
+              return true;
+            }
+          } else if (heroCarousel.element.contains(active)) {
+            // From hero -> down to cards
+            if (cards.length > 0) {
+              setSelectedCard(cards[activeCardIndex] || cards[0], true);
+              return true;
+            }
           } else if (activeIdx !== -1) {
             clearActionFocus();
             const targetIdx = activeIdx + cols;
             if (targetIdx < cards.length) {
               setSelectedCard(cards[targetIdx], true);
+              return true;
+            } else if (hasMore && !isLoadingMore && (activeTab === "new" || activeTab === "trending" || activeTab === "search")) {
+              loadMore();
               return true;
             }
             return true;
@@ -724,7 +1306,11 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     destroy() {
       destroyed = true;
       window.removeEventListener("resize", onWindowResize);
+      screen.removeEventListener("scroll", onScreenScroll);
       window.clearTimeout(toastTimer);
+      window.clearTimeout(searchDebounceTimer);
+      heroCarousel.destroy();
+      detailModal.destroy();
       cards = [];
       selectedCardEntry = null;
       currentActionEntry = null;
@@ -775,7 +1361,8 @@ function normalizeRemoteKey(event) {
     direction,
     isRepeat: event.repeat === true,
     isBack: key === "Back" || key === "BrowserBack" || key === "Escape" ||
-      key === "XF86Back" || code === 10009 || code === 27 || code === 8,
+      key === "XF86Back" || code === 10009 || code === 27 ||
+      (code === 8 && !(event && event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA"))),
     isEscape: key === "Escape" || code === 27,
     isSelect: key === "Enter" || key === " " || code === 13 || code === 32,
     isPlayPause: key === "MediaPlayPause" || code === 10252,
@@ -808,6 +1395,15 @@ function createRemoteNavigation() {
   let activeScreen = null;
 
   function onKeyDown(event) {
+    const isInput = event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA");
+    if (isInput) {
+      // In text input, allow normal typing, spaces, backspaces and text cursor navigation.
+      // Only delegate Escape, ArrowDown or Enter to the screen navigation handler.
+      const isExitOrSubmit = event.key === "Escape" || event.key === "ArrowDown" || event.keyCode === 40 || event.key === "Enter" || event.keyCode === 13;
+      if (!isExitOrSubmit) {
+        return;
+      }
+    }
     if (activeScreen && activeScreen.onKeyDown && activeScreen.onKeyDown(event, normalizeRemoteKey(event))) {
       event.preventDefault();
       event.stopPropagation();
@@ -871,6 +1467,1286 @@ const fallbackPoster = "icon.png";
 
 return {catalogSources: catalogSources, fallbackPoster: fallbackPoster};
 });
+registerModule("js/services/kkphim-api.js", function (requireModule) {
+var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
+const BASE_URL = "https://phimapi.com";
+const DEFAULT_CDN = "https://phimimg.com";
+const REQUEST_TIMEOUT_MS = 12000;
+
+function buildImageUrl(url, cdnDomain) {
+  if (!url || typeof url !== "string") {
+    return fallbackPoster;
+  }
+  const cleanUrl = url.trim();
+  if (!cleanUrl) {
+    return fallbackPoster;
+  }
+  if (cleanUrl.startsWith("http://") || cleanUrl.startsWith("https://")) {
+    return cleanUrl;
+  }
+  const domain = (cdnDomain || DEFAULT_CDN).replace(/\/+$/, "");
+  const path = cleanUrl.replace(/^\/+/, "");
+  return domain + "/" + path;
+}
+
+function normalizeMovie(item, cdnDomain) {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+  const slug = item.slug || (item._id ? String(item._id) : "");
+  const title = item.name || item.title || item.origin_name || "Phim không tên";
+  const poster = buildImageUrl(item.poster_url || item.thumb_url, cdnDomain);
+  const thumb = buildImageUrl(item.thumb_url || item.poster_url, cdnDomain);
+  const year = item.year ? String(item.year) : "";
+  const quality = item.quality || "";
+  const lang = item.lang || "";
+  const episodeCurrent = item.episode_current || "";
+  const time = item.time || "";
+  const type = item.type || "";
+
+  return {
+    id: slug,
+    slug: slug,
+    title: title,
+    originTitle: item.origin_name || "",
+    poster: poster,
+    thumb: thumb,
+    year: year,
+    quality: quality,
+    lang: lang,
+    episodeCurrent: episodeCurrent,
+    time: time,
+    type: type,
+    source: "KKPhim",
+    playbackEnabled: true
+  };
+}
+
+function fetchJson(url) {
+  const fetchFn = (typeof window !== "undefined" && typeof window.fetch === "function")
+    ? window.fetch.bind(window)
+    : (typeof fetch === "function" ? fetch : null);
+
+  if (fetchFn) {
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const options = controller ? { signal: controller.signal } : {};
+    let timer = 0;
+    const request = fetchFn(url, options).then(function (response) {
+      if (!response.ok) {
+        throw new Error("API trả về mã lỗi HTTP " + response.status);
+      }
+      return response.json();
+    });
+    const timeout = new Promise(function (_resolve, reject) {
+      timer = setTimeout(function () {
+        if (controller) {
+          controller.abort();
+        }
+        reject(new Error("Yêu cầu API đã hết thời gian chờ (timeout)."));
+      }, REQUEST_TIMEOUT_MS);
+    });
+    return Promise.race([request, timeout]).then(function (data) {
+      clearTimeout(timer);
+      return data;
+    }, function (error) {
+      clearTimeout(timer);
+      throw error;
+    });
+  }
+
+  return new Promise(function (resolve, reject) {
+    if (typeof XMLHttpRequest === "undefined") {
+      reject(new Error("Môi trường không hỗ trợ fetch hoặc XMLHttpRequest."));
+      return;
+    }
+    const request = new XMLHttpRequest();
+    request.open("GET", url, true);
+    request.timeout = REQUEST_TIMEOUT_MS;
+    request.onload = function () {
+      if (request.status >= 200 && request.status < 300) {
+        try {
+          resolve(JSON.parse(request.responseText));
+        } catch (parseError) {
+          reject(new Error("Không thể phân tích dữ liệu JSON từ API."));
+        }
+      } else {
+        reject(new Error("API trả về mã lỗi HTTP " + request.status));
+      }
+    };
+    request.onerror = function () {
+      reject(new Error("Lỗi kết nối mạng khi tải dữ liệu từ KKPhim API."));
+    };
+    request.ontimeout = function () {
+      reject(new Error("Yêu cầu API đã hết thời gian chờ (timeout)."));
+    };
+    request.send();
+  });
+}
+
+function createKkphimApi() {
+  return {
+    getHome() {
+      return fetchJson(BASE_URL + "/v1/api/home").then(function (res) {
+        const data = res && res.data ? res.data : {};
+        const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const movies = rawItems.map(function (item) {
+          return normalizeMovie(item, cdn);
+        }).filter(Boolean);
+        return {
+          movies: movies,
+          cdn: cdn,
+          title: "Trending / Nổi bật"
+        };
+      });
+    },
+
+    getTrending(page) {
+      const pageNum = page && page > 0 ? page : 1;
+      if (pageNum === 1) {
+        return this.getHome();
+      }
+      const category = (pageNum % 2 === 0) ? "phim-bo" : "phim-le";
+      return fetchJson(BASE_URL + "/v1/api/danh-sach/" + category + "?page=" + Math.floor(pageNum / 2 + 1)).then(function (res) {
+        const data = res && res.data ? res.data : {};
+        const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const movies = rawItems.map(function (item) {
+          return normalizeMovie(item, cdn);
+        }).filter(Boolean);
+        return {
+          movies: movies,
+          cdn: cdn,
+          title: "Trending / Nổi bật"
+        };
+      });
+    },
+
+    getNewUpdated(page) {
+      const pageNum = page && page > 0 ? page : 1;
+      return fetchJson(BASE_URL + "/v1/api/danh-sach/phim-moi-cap-nhat?page=" + pageNum).then(function (res) {
+        const data = res && res.data ? res.data : {};
+        const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const movies = rawItems.map(function (item) {
+          return normalizeMovie(item, cdn);
+        }).filter(Boolean);
+        return {
+          movies: movies,
+          cdn: cdn,
+          pagination: data.params ? data.params.pagination : null,
+          title: "Phim mới cập nhật"
+        };
+      });
+    },
+
+    searchMovies(keyword, limit, page) {
+      const kw = (keyword || "").trim();
+      if (!kw) {
+        return Promise.resolve({ movies: [], keyword: "", total: 0 });
+      }
+      const limitNum = limit && limit > 0 ? limit : 20;
+      const pageNum = page && page > 0 ? page : 1;
+      const url = BASE_URL + "/v1/api/tim-kiem?keyword=" + encodeURIComponent(kw) + "&limit=" + limitNum + "&page=" + pageNum;
+      return fetchJson(url).then(function (res) {
+        const data = res && res.data ? res.data : {};
+        const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const movies = rawItems.map(function (item) {
+          return normalizeMovie(item, cdn);
+        }).filter(Boolean);
+        const total = data.params && data.params.pagination ? data.params.pagination.totalItems : movies.length;
+        return {
+          movies: movies,
+          cdn: cdn,
+          keyword: kw,
+          total: total
+        };
+      });
+    },
+
+    getMovieDetail(slug) {
+      const cleanSlug = (slug || "").trim();
+      if (!cleanSlug) {
+        return Promise.reject(new Error("Slug phim không hợp lệ."));
+      }
+      const url = BASE_URL + "/phim/" + encodeURIComponent(cleanSlug);
+      return fetchJson(url).then(function (res) {
+        if (!res || (!res.status && res.status !== "success") || !res.movie) {
+          throw new Error("Không tìm thấy thông tin phim.");
+        }
+        const movie = res.movie;
+        const episodes = Array.isArray(res.episodes) ? res.episodes : [];
+        const cdn = DEFAULT_CDN;
+        const normalized = normalizeMovie(movie, cdn);
+        normalized.content = movie.content || "";
+        normalized.actors = Array.isArray(movie.actor) ? movie.actor : [];
+        normalized.categories = Array.isArray(movie.category) ? movie.category.map(function (c) { return c.name || c; }) : [];
+        normalized.countries = Array.isArray(movie.country) ? movie.country.map(function (c) { return c.name || c; }) : [];
+        normalized.episodeTotal = movie.episode_total || "";
+        normalized.status = movie.status || "";
+
+        return {
+          movie: normalized,
+          episodes: episodes
+        };
+      });
+    }
+  };
+}
+
+return {buildImageUrl: buildImageUrl, normalizeMovie: normalizeMovie, createKkphimApi: createKkphimApi};
+});
+registerModule("js/services/favorites-service.js", function (requireModule) {
+const STORAGE_KEY = "kkphim_favorites";
+
+function getFavorites() {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return [];
+  }
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("Không thể đọc danh sách phim yêu thích:", error.message);
+    return [];
+  }
+}
+
+function saveFavorites(list) {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  } catch (error) {
+    console.warn("Không thể lưu danh sách phim yêu thích:", error.message);
+  }
+}
+
+function isFavorite(slug) {
+  if (!slug) {
+    return false;
+  }
+  const list = getFavorites();
+  return list.some(function (item) {
+    return item.slug === slug;
+  });
+}
+
+function addFavorite(movie) {
+  if (!movie || !movie.slug) {
+    return false;
+  }
+  const list = getFavorites();
+  const existingIndex = list.findIndex(function (item) {
+    return item.slug === movie.slug;
+  });
+  const entry = {
+    slug: movie.slug,
+    name: movie.title || movie.name,
+    title: movie.title || movie.name,
+    poster_url: movie.poster || movie.poster_url,
+    poster: movie.poster || movie.poster_url,
+    thumb_url: movie.thumb || movie.thumb_url || movie.poster,
+    thumb: movie.thumb || movie.thumb_url || movie.poster,
+    year: movie.year || "",
+    quality: movie.quality || "",
+    lang: movie.lang || "",
+    episode_current: movie.episodeCurrent || movie.episode_current || "",
+    source: "KKPhim",
+    playbackEnabled: true,
+    addedAt: Date.now()
+  };
+  if (existingIndex >= 0) {
+    list.splice(existingIndex, 1);
+  }
+  list.unshift(entry);
+  if (list.length > 200) {
+    list.length = 200;
+  }
+  saveFavorites(list);
+  return true;
+}
+
+function removeFavorite(slug) {
+  if (!slug) {
+    return false;
+  }
+  const list = getFavorites();
+  const filtered = list.filter(function (item) {
+    return item.slug !== slug;
+  });
+  saveFavorites(filtered);
+  return true;
+}
+
+function toggleFavorite(movie) {
+  if (!movie || !movie.slug) {
+    return false;
+  }
+  if (isFavorite(movie.slug)) {
+    removeFavorite(movie.slug);
+    return false;
+  } else {
+    addFavorite(movie);
+    return true;
+  }
+}
+
+function createFavoritesService() {
+  return {
+    getAll: getFavorites,
+    has: isFavorite,
+    add: addFavorite,
+    remove: removeFavorite,
+    toggle: toggleFavorite
+  };
+}
+
+return {getFavorites: getFavorites, saveFavorites: saveFavorites, isFavorite: isFavorite, addFavorite: addFavorite, removeFavorite: removeFavorite, toggleFavorite: toggleFavorite, createFavoritesService: createFavoritesService};
+});
+registerModule("js/services/google-trending-service.js", function (requireModule) {
+const CACHE_KEY = "kkphim_google_trending_cache";
+const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+const IGNORE_PATTERNS = [
+  "chiếu rạp", "chieu rap", "quốc gia", "quoc gia", "hôm nay", "hom nay",
+  "mới nhất", "moi nhat", "trung quốc", "trung quoc", "hàn quốc", "han quoc",
+  "thái lan", "thai lan", "việt nam", "viet nam", "tvb", "hk", "cgv", "lotte",
+  "hoạt hình", "hoat hinh", "tổng tài", "tong tai", "2024", "2025", "2026", "2027",
+  "xem phim", "phim", "phim hay", "phim mới", "phim bộ", "phim lẻ", "thuyết minh", "lồng tiếng"
+];
+
+function getStorage() {
+  if (typeof window !== "undefined" && window.localStorage) {
+    return window.localStorage;
+  }
+  return null;
+}
+
+function getCachedTrending() {
+  const storage = getStorage();
+  if (!storage) {
+    return null;
+  }
+  try {
+    const raw = storage.getItem(CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.movies) || !data.timestamp) {
+      return null;
+    }
+    const age = Date.now() - Number(data.timestamp);
+    if (age >= CACHE_TTL_MS) {
+      return null;
+    }
+    return data.movies;
+  } catch (err) {
+    console.warn("Lỗi khi đọc cache Google Trending:", err);
+    return null;
+  }
+}
+
+function saveCachedTrending(movies) {
+  const storage = getStorage();
+  if (!storage || !Array.isArray(movies) || !movies.length) {
+    return;
+  }
+  try {
+    const record = {
+      timestamp: Date.now(),
+      movies: movies
+    };
+    storage.setItem(CACHE_KEY, JSON.stringify(record));
+  } catch (err) {
+    console.warn("Lỗi khi lưu cache Google Trending:", err);
+  }
+}
+
+function clearTrendingCache() {
+  const storage = getStorage();
+  if (storage) {
+    storage.removeItem(CACHE_KEY);
+  }
+}
+
+function extractKeywords(suggestions) {
+  if (!Array.isArray(suggestions)) {
+    return [];
+  }
+  const titles = [];
+  const seen = new Set();
+
+  for (let i = 0; i < suggestions.length; i += 1) {
+    let s = String(suggestions[i] || "").toLowerCase().trim();
+    s = s.replace(/^(xem\s+phim|phim)\s+/, "").trim();
+    s = s.replace(/\s+(tập\s+\d+|tap\s+\d+|vietsub|thuyết minh|thuyet minh|lồng tiếng|long tieng|full|hd|phần\s+\d+|phan\s+\d+|mới nhất|motphim).*$/, "").trim();
+
+    let isIgnored = false;
+    for (let j = 0; j < IGNORE_PATTERNS.length; j += 1) {
+      if (s === IGNORE_PATTERNS[j] || (s.length < 10 && s.includes(IGNORE_PATTERNS[j]))) {
+        isIgnored = true;
+        break;
+      }
+    }
+
+    if (!isIgnored && s.length >= 3 && !seen.has(s)) {
+      seen.add(s);
+      titles.push(s);
+    }
+  }
+
+  return titles;
+}
+
+function fetchGoogleSuggestions(seed) {
+  const query = encodeURIComponent(seed || "phim ");
+
+  // Browser environment: Use JSONP to guarantee bypass of CORS restrictions
+  if (typeof document !== "undefined" && typeof document.createElement === "function") {
+    return new Promise(function (resolve) {
+      const cbName = "__gSuggest_" + Math.random().toString(36).substring(2, 9);
+      let timer = 0;
+
+      function cleanup() {
+        if (timer) {
+          clearTimeout(timer);
+        }
+        try {
+          delete window[cbName];
+        } catch (_e) {
+          window[cbName] = undefined;
+        }
+        if (script.parentNode) {
+          script.parentNode.removeChild(script);
+        }
+      }
+
+      const script = document.createElement("script");
+      timer = setTimeout(function () {
+        cleanup();
+        resolve([]);
+      }, 5000);
+
+      window[cbName] = function (data) {
+        cleanup();
+        resolve(Array.isArray(data) && Array.isArray(data[1]) ? data[1] : []);
+      };
+
+      script.onerror = function () {
+        cleanup();
+        resolve([]);
+      };
+
+      script.src = "https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&q=" + query + "&callback=" + cbName;
+      (document.head || document.body || document.documentElement).appendChild(script);
+    });
+  }
+
+  // Node.js or non-DOM test environment: fallback to fetch
+  const fetchFn = (typeof window !== "undefined" && typeof window.fetch === "function")
+    ? window.fetch.bind(window)
+    : (typeof fetch === "function" ? fetch : null);
+
+  if (!fetchFn) {
+    return Promise.resolve([]);
+  }
+
+  return fetchFn("https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&q=" + query)
+    .then(function (res) {
+      if (!res.ok) {
+        return [];
+      }
+      return res.json();
+    })
+    .then(function (data) {
+      return Array.isArray(data) && Array.isArray(data[1]) ? data[1] : [];
+    })
+    .catch(function () {
+      return [];
+    });
+}
+
+function fetchGoogleTrending(kkphimApi, force) {
+  if (!force) {
+    const cached = getCachedTrending();
+    if (cached && cached.length) {
+      return Promise.resolve({
+        movies: cached,
+        isCached: true,
+        source: "google-cache"
+      });
+    }
+  }
+
+  const seeds = ["xem phim ", "phim ", "phim bo ", "phim chieu rap "];
+
+  return Promise.all(seeds.map(function (s) {
+    return fetchGoogleSuggestions(s);
+  })).then(function (results) {
+    const allSuggestions = [];
+    results.forEach(function (list) {
+      if (Array.isArray(list)) {
+        allSuggestions.push.apply(allSuggestions, list);
+      }
+    });
+
+    const keywords = extractKeywords(allSuggestions);
+    const topKeywords = keywords.slice(0, 15);
+
+    if (!topKeywords.length) {
+      return kkphimApi.getHome().then(function (res) {
+        return {
+          movies: res.movies || [],
+          isCached: false,
+          source: "kkphim-fallback"
+        };
+      });
+    }
+
+    return Promise.all(topKeywords.map(function (kw) {
+      return kkphimApi.searchMovies(kw, 3, 1).then(function (res) {
+        return res && Array.isArray(res.movies) ? res.movies : [];
+      }).catch(function () {
+        return [];
+      });
+    })).then(function (nestedMovies) {
+      const trendingMovies = [];
+      const seenSlugs = new Set();
+
+      nestedMovies.forEach(function (list) {
+        list.forEach(function (m) {
+          const key = m.slug || m.id;
+          if (key && !seenSlugs.has(key)) {
+            seenSlugs.add(key);
+            trendingMovies.push(m);
+          }
+        });
+      });
+
+      // If fewer than 24 movies, complement with KKPhim Home list so the grid is full
+      if (trendingMovies.length < 24) {
+        return kkphimApi.getHome().then(function (res) {
+          const homeMovies = res && Array.isArray(res.movies) ? res.movies : [];
+          homeMovies.forEach(function (hm) {
+            const hKey = hm.slug || hm.id;
+            if (hKey && !seenSlugs.has(hKey)) {
+              seenSlugs.add(hKey);
+              trendingMovies.push(hm);
+            }
+          });
+          if (trendingMovies.length) {
+            saveCachedTrending(trendingMovies);
+          }
+          return {
+            movies: trendingMovies,
+            isCached: false,
+            source: "google"
+          };
+        }).catch(function () {
+          if (trendingMovies.length) {
+            saveCachedTrending(trendingMovies);
+          }
+          return {
+            movies: trendingMovies,
+            isCached: false,
+            source: "google"
+          };
+        });
+      }
+
+      saveCachedTrending(trendingMovies);
+      return {
+        movies: trendingMovies,
+        isCached: false,
+        source: "google"
+      };
+    });
+  }).catch(function (error) {
+    console.warn("Lỗi khi tải Google Trending, chuyển sang danh sách KKPhim Home:", error);
+    return kkphimApi.getHome().then(function (res) {
+      return {
+        movies: res.movies || [],
+        isCached: false,
+        source: "kkphim-fallback"
+      };
+    });
+  });
+}
+
+function createGoogleTrendingService(kkphimApi) {
+  return {
+    getTrending(force) {
+      return fetchGoogleTrending(kkphimApi, force);
+    },
+    getCached() {
+      return getCachedTrending();
+    },
+    saveCached(movies) {
+      saveCachedTrending(movies);
+    },
+    clearCache() {
+      clearTrendingCache();
+    },
+    extractKeywords(suggestions) {
+      return extractKeywords(suggestions);
+    }
+  };
+}
+
+return {getCachedTrending: getCachedTrending, saveCachedTrending: saveCachedTrending, clearTrendingCache: clearTrendingCache, extractKeywords: extractKeywords, fetchGoogleSuggestions: fetchGoogleSuggestions, fetchGoogleTrending: fetchGoogleTrending, createGoogleTrendingService: createGoogleTrendingService};
+});
+registerModule("js/home/movie-detail-modal.js", function (requireModule) {
+var isFavorite = requireModule("js/services/favorites-service.js")["isFavorite"];
+var toggleFavorite = requireModule("js/services/favorites-service.js")["toggleFavorite"];
+var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
+function cleanHtmlContent(html) {
+  if (!html) {
+    return "Chưa có mô tả nội dung cho phim này.";
+  }
+  const temp = document.createElement("div");
+  temp.innerHTML = html;
+  return temp.textContent || temp.innerText || "Chưa có mô tả nội dung.";
+}
+
+function createMovieDetailModal(parentContainer, kkphimApi, options) {
+  const overlay = document.createElement("div");
+  overlay.className = "movie-detail-overlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Chi tiết phim");
+
+  const modal = document.createElement("div");
+  modal.className = "movie-detail-modal";
+  overlay.appendChild(modal);
+
+  let disposed = false;
+  let currentMovie = null;
+  let detailData = null;
+  let activeServerIndex = 0;
+  let focusableElements = [];
+  let currentFocusIndex = 0;
+
+  function updateFocusables() {
+    focusableElements = Array.from(modal.querySelectorAll('button:not([disabled]), [tabindex="0"]'));
+  }
+
+  function setFocus(index) {
+    updateFocusables();
+    if (!focusableElements.length) {
+      return;
+    }
+    currentFocusIndex = Math.max(0, Math.min(focusableElements.length - 1, index));
+    focusableElements[currentFocusIndex].focus();
+  }
+
+  function renderLoading(movie) {
+    modal.innerHTML = "" +
+      '<div class="movie-detail-header">' +
+        '<button type="button" class="movie-detail-close" aria-label="Đóng chi tiết">×</button>' +
+      '</div>' +
+      '<div class="movie-detail-loading">' +
+        '<div class="loader-spinner" aria-hidden="true">' +
+          '<svg class="spinner-svg" viewBox="0 0 50 50">' +
+            '<circle class="spinner-track" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>' +
+            '<circle class="spinner-circle" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>' +
+          '</svg>' +
+        '</div>' +
+        '<p class="movie-detail-loading-text">Đang tải thông tin phim "' + (movie.title || "") + '"...</p>' +
+      '</div>';
+
+    const closeBtn = modal.querySelector(".movie-detail-close");
+    closeBtn.addEventListener("click", close);
+    closeBtn.focus();
+  }
+
+  function renderError(message) {
+    modal.innerHTML = "" +
+      '<div class="movie-detail-header">' +
+        '<button type="button" class="movie-detail-close" aria-label="Đóng chi tiết">×</button>' +
+      '</div>' +
+      '<div class="movie-detail-error">' +
+        '<p class="movie-detail-error-message">' + (message || "Không thể tải thông tin phim.") + '</p>' +
+        '<button type="button" class="movie-detail-btn movie-detail-btn-retry">Thử lại</button>' +
+      '</div>';
+
+    const closeBtn = modal.querySelector(".movie-detail-close");
+    closeBtn.addEventListener("click", close);
+    const retryBtn = modal.querySelector(".movie-detail-btn-retry");
+    if (retryBtn) {
+      retryBtn.addEventListener("click", function () {
+        loadDetail(currentMovie.slug);
+      });
+      retryBtn.focus();
+    }
+  }
+
+  function renderDetail(data) {
+    detailData = data;
+    const movie = data.movie;
+    const episodes = data.episodes || [];
+    const favActive = isFavorite(movie.slug);
+
+    let badgesHtml = "";
+    if (movie.quality) {
+      badgesHtml += '<span class="movie-badge badge-quality">' + movie.quality + '</span>';
+    }
+    if (movie.year) {
+      badgesHtml += '<span class="movie-badge badge-year">' + movie.year + '</span>';
+    }
+    if (movie.lang) {
+      badgesHtml += '<span class="movie-badge badge-lang">' + movie.lang + '</span>';
+    }
+    if (movie.episodeCurrent) {
+      badgesHtml += '<span class="movie-badge badge-episode">' + movie.episodeCurrent + '</span>';
+    }
+
+    const descText = cleanHtmlContent(movie.content);
+
+    // Server tabs HTML
+    let serverTabsHtml = "";
+    if (episodes.length > 0) {
+      serverTabsHtml = '<div class="movie-detail-servers" role="tablist" aria-label="Danh sách server">';
+      episodes.forEach(function (srv, idx) {
+        const isActive = idx === activeServerIndex;
+        serverTabsHtml += '<button type="button" class="movie-server-tab' + (isActive ? ' is-active' : '') + '" role="tab" aria-selected="' + (isActive ? 'true' : 'false') + '" data-server-index="' + idx + '">' + (srv.server_name || ('Server ' + (idx + 1))) + '</button>';
+      });
+      serverTabsHtml += '</div>';
+    }
+
+    // Episode list HTML
+    const currentServer = episodes[activeServerIndex] || episodes[0];
+    const serverData = (currentServer && Array.isArray(currentServer.server_data)) ? currentServer.server_data : [];
+
+    let episodesHtml = "";
+    if (serverData.length > 0) {
+      episodesHtml = '<div class="movie-detail-episodes-grid" role="group" aria-label="Danh sách tập">';
+      serverData.forEach(function (ep, epIdx) {
+        episodesHtml += '<button type="button" class="movie-episode-btn" data-ep-index="' + epIdx + '" data-m3u8="' + (ep.link_m3u8 || '') + '" data-embed="' + (ep.link_embed || '') + '" data-ep-name="' + (ep.name || '') + '">' + (ep.name || ('Tập ' + (epIdx + 1))) + '</button>';
+      });
+      episodesHtml += '</div>';
+    } else {
+      episodesHtml = '<p class="movie-episodes-empty">Chưa có tập phim nào trên server này.</p>';
+    }
+
+    modal.innerHTML = "" +
+      '<div class="movie-detail-backdrop">' +
+        '<img class="movie-backdrop-img" src="' + (movie.poster || fallbackPoster) + '" alt="" aria-hidden="true">' +
+        '<div class="movie-backdrop-gradient"></div>' +
+      '</div>' +
+      '<div class="movie-detail-header">' +
+        '<button type="button" class="movie-detail-close" aria-label="Đóng chi tiết">×</button>' +
+      '</div>' +
+      '<div class="movie-detail-body">' +
+        '<div class="movie-detail-poster-wrap">' +
+          '<img class="movie-detail-poster" src="' + (movie.poster || fallbackPoster) + '" alt="' + (movie.title || '') + '">' +
+        '</div>' +
+        '<div class="movie-detail-info">' +
+          '<h1 class="movie-detail-title">' + (movie.title || '') + '</h1>' +
+          (movie.originTitle ? '<h2 class="movie-detail-origin">' + movie.originTitle + '</h2>' : '') +
+          '<div class="movie-detail-badges">' + badgesHtml + '</div>' +
+          '<p class="movie-detail-desc">' + descText + '</p>' +
+          '<div class="movie-detail-actions">' +
+            '<button type="button" class="movie-detail-btn movie-detail-fav-btn' + (favActive ? ' is-favorite' : '') + '" aria-pressed="' + (favActive ? 'true' : 'false') + '">' +
+              '<span class="fav-icon">' + (favActive ? '♥' : '♡') + '</span> ' +
+              '<span class="fav-label">' + (favActive ? 'Đã yêu thích' : 'Thêm vào yêu thích') + '</span>' +
+            '</button>' +
+          '</div>' +
+          '<div class="movie-detail-section-title">Chọn tập phim:</div>' +
+          serverTabsHtml +
+          '<div class="movie-episodes-container">' + episodesHtml + '</div>' +
+        '</div>' +
+      '</div>';
+
+    // Bind Close
+    const closeBtn = modal.querySelector(".movie-detail-close");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", close);
+    }
+
+    // Bind Favorite toggle
+    const favBtn = modal.querySelector(".movie-detail-fav-btn");
+    if (favBtn) {
+      favBtn.addEventListener("click", function () {
+        const nowFav = toggleFavorite(movie);
+        favBtn.classList.toggle("is-favorite", nowFav);
+        favBtn.setAttribute("aria-pressed", nowFav ? "true" : "false");
+        const iconSpan = favBtn.querySelector(".fav-icon");
+        const labelSpan = favBtn.querySelector(".fav-label");
+        if (iconSpan) {
+          iconSpan.textContent = nowFav ? "♥" : "♡";
+        }
+        if (labelSpan) {
+          labelSpan.textContent = nowFav ? "Đã yêu thích" : "Thêm vào yêu thích";
+        }
+        if (options && typeof options.onFavoritesChanged === "function") {
+          options.onFavoritesChanged(movie, nowFav);
+        }
+      });
+    }
+
+    // Bind Server tabs
+    const serverTabs = modal.querySelectorAll(".movie-server-tab");
+    serverTabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        const newIdx = parseInt(tab.dataset.serverIndex, 10);
+        if (newIdx !== activeServerIndex) {
+          activeServerIndex = newIdx;
+          renderDetail(detailData);
+        }
+      });
+    });
+
+    // Bind Episode buttons
+    const episodeBtns = modal.querySelectorAll(".movie-episode-btn");
+    episodeBtns.forEach(function (epBtn) {
+      epBtn.addEventListener("click", function () {
+        const epIndex = parseInt(epBtn.dataset.epIndex, 10);
+        const epObj = serverData[epIndex];
+        if (!epObj) {
+          return;
+        }
+        const m3u8Url = epObj.link_m3u8 || epObj.link_embed;
+        if (!m3u8Url) {
+          alert("Tập phim này hiện không có đường dẫn phát.");
+          return;
+        }
+
+        const serverName = currentServer ? currentServer.server_name : "Vietsub";
+        const playbackMovie = {
+          id: movie.slug + "-" + (epObj.slug || epIndex),
+          slug: movie.slug,
+          seriesTitle: movie.title,
+          episodeName: epObj.name,
+          title: movie.title + " - " + epObj.name,
+          poster: movie.poster,
+          m3u8: m3u8Url,
+          fallbackEmbed: epObj.link_embed || "",
+          playbackEnabled: true,
+          source: "KKPhim · " + serverName,
+          episodesList: serverData.map(function (item, idx) {
+            return {
+              index: idx,
+              name: item.name,
+              slug: item.slug || String(idx),
+              m3u8: item.link_m3u8 || item.link_embed,
+              fallbackEmbed: item.link_embed || ""
+            };
+          }),
+          currentEpisodeIndex: epIndex,
+          serverName: serverName
+        };
+
+        close();
+        if (options && typeof options.onSelectEpisode === "function") {
+          options.onSelectEpisode(playbackMovie);
+        }
+      });
+    });
+
+    // Set initial focus: first episode button, or favorite button if no episodes
+    const firstEp = modal.querySelector(".movie-episode-btn");
+    if (firstEp) {
+      firstEp.focus();
+    } else if (favBtn) {
+      favBtn.focus();
+    } else if (closeBtn) {
+      closeBtn.focus();
+    }
+  }
+
+  function loadDetail(slug) {
+    renderLoading(currentMovie);
+    kkphimApi.getMovieDetail(slug).then(function (data) {
+      if (disposed) {
+        return;
+      }
+      renderDetail(data);
+    }).catch(function (error) {
+      if (disposed) {
+        return;
+      }
+      renderError(error.message || "Không thể tải thông tin chi tiết phim.");
+    });
+  }
+
+  function open(movie) {
+    currentMovie = movie;
+    activeServerIndex = 0;
+    detailData = null;
+    parentContainer.appendChild(overlay);
+    loadDetail(movie.slug);
+  }
+
+  function close() {
+    if (overlay.parentNode) {
+      overlay.parentNode.removeChild(overlay);
+    }
+    if (options && typeof options.onClose === "function") {
+      options.onClose();
+    }
+  }
+
+  function onKeyDown(event, key) {
+    if (key.isBack || key.isEscape) {
+      close();
+      return true;
+    }
+
+    if (key.direction === "left" || key.direction === "right" || key.direction === "up" || key.direction === "down") {
+      updateFocusables();
+      if (!focusableElements.length) {
+        return true;
+      }
+      const activeEl = document.activeElement;
+      let currentIndex = focusableElements.indexOf(activeEl);
+      if (currentIndex === -1) {
+        setFocus(0);
+        return true;
+      }
+
+      // If on close button
+      const closeBtn = modal.querySelector(".movie-detail-close");
+      const favBtn = modal.querySelector(".movie-detail-fav-btn");
+      const serverTabs = Array.from(modal.querySelectorAll(".movie-server-tab"));
+      const episodeBtns = Array.from(modal.querySelectorAll(".movie-episode-btn"));
+
+      if (key.direction === "down") {
+        if (activeEl === closeBtn || activeEl === favBtn) {
+          if (serverTabs.length > 0) {
+            serverTabs[0].focus();
+          } else if (episodeBtns.length > 0) {
+            episodeBtns[0].focus();
+          }
+          return true;
+        } else if (serverTabs.includes(activeEl)) {
+          if (episodeBtns.length > 0) {
+            episodeBtns[0].focus();
+          }
+          return true;
+        } else if (episodeBtns.includes(activeEl)) {
+          // move down row in episodes
+          const epIdx = episodeBtns.indexOf(activeEl);
+          // estimate columns
+          let nextIdx = epIdx + 5;
+          if (nextIdx >= episodeBtns.length) {
+            nextIdx = episodeBtns.length - 1;
+          }
+          episodeBtns[nextIdx].focus();
+          return true;
+        }
+      } else if (key.direction === "up") {
+        if (episodeBtns.includes(activeEl)) {
+          const epIdx = episodeBtns.indexOf(activeEl);
+          const nextIdx = epIdx - 5;
+          if (nextIdx >= 0) {
+            episodeBtns[nextIdx].focus();
+          } else if (serverTabs.length > 0) {
+            serverTabs[Math.min(activeServerIndex, serverTabs.length - 1)].focus();
+          } else if (favBtn) {
+            favBtn.focus();
+          }
+          return true;
+        } else if (serverTabs.includes(activeEl)) {
+          if (favBtn) {
+            favBtn.focus();
+          } else if (closeBtn) {
+            closeBtn.focus();
+          }
+          return true;
+        } else if (activeEl === favBtn) {
+          if (closeBtn) {
+            closeBtn.focus();
+          }
+          return true;
+        }
+      } else if (key.direction === "left" || key.direction === "right") {
+        const delta = key.direction === "left" ? -1 : 1;
+        const nextIdx = currentIndex + delta;
+        if (nextIdx >= 0 && nextIdx < focusableElements.length) {
+          focusableElements[nextIdx].focus();
+        }
+        return true;
+      }
+    }
+
+    if (key.isSelect) {
+      const activeEl = document.activeElement;
+      if (activeEl && typeof activeEl.click === "function") {
+        activeEl.click();
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function destroy() {
+    disposed = true;
+    close();
+  }
+
+  return {
+    open: open,
+    close: close,
+    isOpen: function () {
+      return Boolean(overlay.parentNode);
+    },
+    onKeyDown: onKeyDown,
+    destroy: destroy
+  };
+}
+
+return {createMovieDetailModal: createMovieDetailModal};
+});
+registerModule("js/home/hero-carousel.js", function (requireModule) {
+var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
+var isFavorite = requireModule("js/services/favorites-service.js")["isFavorite"];
+var toggleFavorite = requireModule("js/services/favorites-service.js")["toggleFavorite"];
+function createHeroCarousel(parentContainer, actionsHandler) {
+  const container = document.createElement("section");
+  container.className = "home-hero-carousel";
+  container.setAttribute("aria-label", "Phim thịnh hành nổi bật");
+
+  let movies = [];
+  let currentIndex = 0;
+  let autoTimer = 0;
+  let destroyed = false;
+
+  const slidesWrap = document.createElement("div");
+  slidesWrap.className = "hero-slides-wrap";
+
+  const indicatorsWrap = document.createElement("div");
+  indicatorsWrap.className = "hero-indicators";
+
+  container.appendChild(slidesWrap);
+  container.appendChild(indicatorsWrap);
+
+  container.addEventListener("mouseenter", stopAutoSlide);
+  container.addEventListener("mouseleave", startAutoSlide);
+
+  function getSlideElements() {
+    return Array.from(slidesWrap.querySelectorAll(".hero-slide"));
+  }
+
+  function getIndicatorElements() {
+    return Array.from(indicatorsWrap.querySelectorAll(".hero-dot"));
+  }
+
+  function updateActiveSlideUI() {
+    const slides = getSlideElements();
+    const dots = getIndicatorElements();
+
+    slides.forEach(function (slide, idx) {
+      const isAct = idx === currentIndex;
+      slide.classList.toggle("is-active", isAct);
+      slide.setAttribute("aria-hidden", isAct ? "false" : "true");
+    });
+
+    dots.forEach(function (dot, idx) {
+      const isAct = idx === currentIndex;
+      dot.classList.toggle("is-active", isAct);
+      dot.setAttribute("aria-selected", isAct ? "true" : "false");
+    });
+  }
+
+  function goToSlide(index) {
+    if (!movies.length) {
+      return;
+    }
+    currentIndex = (index + movies.length) % movies.length;
+    updateActiveSlideUI();
+  }
+
+  function nextSlide() {
+    goToSlide(currentIndex + 1);
+  }
+
+  function prevSlide() {
+    goToSlide(currentIndex - 1);
+  }
+
+  function startAutoSlide() {
+    stopAutoSlide();
+    if (movies.length <= 1 || destroyed || container.hidden) {
+      return;
+    }
+    autoTimer = window.setTimeout(function () {
+      nextSlide();
+      startAutoSlide();
+    }, 6500);
+  }
+
+  function stopAutoSlide() {
+    if (autoTimer) {
+      window.clearTimeout(autoTimer);
+      autoTimer = 0;
+    }
+  }
+
+  function resetAutoSlide() {
+    stopAutoSlide();
+    startAutoSlide();
+  }
+
+  function buildSlide(movie, rank) {
+    const slide = document.createElement("article");
+    slide.className = "hero-slide";
+    slide.dataset.index = rank - 1;
+
+    const bgImage = movie.thumb || movie.poster || fallbackPoster;
+    const favActive = isFavorite(movie.slug || movie.id);
+
+    let badgesHtml = "";
+    if (movie.quality) {
+      badgesHtml += '<span class="movie-badge badge-quality">' + movie.quality + '</span>';
+    }
+    if (movie.year) {
+      badgesHtml += '<span class="movie-badge badge-year">' + movie.year + '</span>';
+    }
+    if (movie.lang) {
+      badgesHtml += '<span class="movie-badge badge-lang">' + movie.lang + '</span>';
+    }
+    if (movie.episodeCurrent) {
+      badgesHtml += '<span class="movie-badge badge-episode">' + movie.episodeCurrent + '</span>';
+    }
+
+    const desc = movie.originTitle ? (movie.originTitle + " · " + (movie.year || "") + " · " + (movie.time || "")) : "Khám phá bộ phim nổi bật hàng đầu hôm nay trên BACUFlix.";
+
+    slide.innerHTML = "" +
+      '<div class="hero-backdrop">' +
+        '<img class="hero-backdrop-img" src="' + bgImage + '" alt="" aria-hidden="true">' +
+        '<div class="hero-gradient-top"></div>' +
+        '<div class="hero-gradient-left"></div>' +
+        '<div class="hero-gradient-bottom"></div>' +
+      '</div>' +
+      '<div class="hero-content">' +
+        '<div class="hero-trending-tag">' +
+          '<span class="hero-fire-icon">🔥</span> TOP ' + rank + ' THỊNH HÀNH HÔM NAY' +
+        '</div>' +
+        '<h2 class="hero-title">' + (movie.title || "Phim nổi bật") + '</h2>' +
+        '<div class="hero-badges">' + badgesHtml + '</div>' +
+        '<p class="hero-desc">' + desc + '</p>' +
+        '<div class="hero-actions">' +
+          '<button type="button" class="home-action primary-home-action hero-btn hero-btn-play">' +
+            '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>' +
+            '<span>Xem ngay</span>' +
+          '</button>' +
+          '<button type="button" class="home-action secondary-home-action hero-btn hero-btn-detail">' +
+            '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>' +
+            '<span>Chi tiết</span>' +
+          '</button>' +
+          '<button type="button" class="hero-btn-fav' + (favActive ? ' is-favorite' : '') + '" aria-label="' + (favActive ? 'Bỏ yêu thích' : 'Thêm yêu thích') + '">' +
+            '<span class="hero-fav-icon">' + (favActive ? '♥' : '♡') + '</span>' +
+          '</button>' +
+        '</div>' +
+      '</div>';
+
+    // Bind Play Button
+    const playBtn = slide.querySelector(".hero-btn-play");
+    playBtn.addEventListener("click", function () {
+      if (typeof actionsHandler.onPlayMovie === "function") {
+        actionsHandler.onPlayMovie(movie);
+      }
+    });
+
+    // Bind Detail Button
+    const detailBtn = slide.querySelector(".hero-btn-detail");
+    detailBtn.addEventListener("click", function () {
+      if (typeof actionsHandler.onOpenDetail === "function") {
+        actionsHandler.onOpenDetail(movie);
+      }
+    });
+
+    // Bind Favorite Button
+    const favBtn = slide.querySelector(".hero-btn-fav");
+    favBtn.addEventListener("click", function () {
+      const isNowFav = toggleFavorite(movie);
+      favBtn.classList.toggle("is-favorite", isNowFav);
+      favBtn.setAttribute("aria-label", isNowFav ? "Bỏ yêu thích" : "Thêm yêu thích");
+      const icon = favBtn.querySelector(".hero-fav-icon");
+      if (icon) {
+        icon.textContent = isNowFav ? "♥" : "♡";
+      }
+      if (typeof actionsHandler.onFavoriteToggle === "function") {
+        actionsHandler.onFavoriteToggle(movie, isNowFav);
+      }
+    });
+
+    return slide;
+  }
+
+  function setMovies(newMovies) {
+    if (!newMovies || !newMovies.length) {
+      container.hidden = true;
+      return;
+    }
+    container.hidden = false;
+    movies = newMovies.slice(0, 5); // Take top 5 for hero carousel
+    currentIndex = 0;
+
+    while (slidesWrap.firstChild) {
+      slidesWrap.removeChild(slidesWrap.firstChild);
+    }
+    while (indicatorsWrap.firstChild) {
+      indicatorsWrap.removeChild(indicatorsWrap.firstChild);
+    }
+
+    movies.forEach(function (movie, idx) {
+      const slide = buildSlide(movie, idx + 1);
+      slidesWrap.appendChild(slide);
+
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.className = "hero-dot" + (idx === 0 ? " is-active" : "");
+      dot.setAttribute("aria-label", "Chuyển đến phim " + (idx + 1));
+      dot.addEventListener("click", function () {
+        goToSlide(idx);
+        resetAutoSlide();
+      });
+      indicatorsWrap.appendChild(dot);
+    });
+
+    updateActiveSlideUI();
+    startAutoSlide();
+  }
+
+  function getFocusableElements() {
+    const slides = getSlideElements();
+    const activeSlide = slides[currentIndex];
+    if (!activeSlide) {
+      return [];
+    }
+    return Array.from(activeSlide.querySelectorAll("button:not([disabled])"));
+  }
+
+  function destroy() {
+    destroyed = true;
+    stopAutoSlide();
+    if (container.parentNode) {
+      container.parentNode.removeChild(container);
+    }
+  }
+
+  return {
+    element: container,
+    setMovies: setMovies,
+    nextSlide: nextSlide,
+    prevSlide: prevSlide,
+    goToSlide: goToSlide,
+    getFocusableElements: getFocusableElements,
+    startAutoSlide: startAutoSlide,
+    stopAutoSlide: stopAutoSlide,
+    destroy: destroy
+  };
+}
+
+return {createHeroCarousel: createHeroCarousel};
+});
 registerModule("js/navigation/double-back.js", function (requireModule) {
 function createDoubleBack(timeout, onReset) {
   let timer = 0;
@@ -908,14 +2784,11 @@ function createDoubleBack(timeout, onReset) {
 return {createDoubleBack: createDoubleBack};
 });
 registerModule("js/player/player-screen.js", function (requireModule) {
-var createPlaybackService = requireModule("js/player/playback-service.js")["createPlaybackService"];
-var createSeekController = requireModule("js/player/seek-controller.js")["createSeekController"];
-var createSubtitleService = requireModule("js/player/subtitle-service.js")["createSubtitleService"];
-var getActiveSubtitleText = requireModule("js/player/subtitle-parser.js")["getActiveSubtitleText"];
-var activateFocusedElement = requireModule("js/navigation/remote-navigation.js")["activateFocusedElement"];
-var focusNext = requireModule("js/navigation/remote-navigation.js")["focusNext"];
-var formatTime = requireModule("js/utils/format-time.js")["formatTime"];
-var currentDevice = requireModule("js/utils/device.js")["currentDevice"];
+var createPlaybackService = requireModule("js/player/playback-service.js")["createPlaybackService"];var createSeekController = requireModule("js/player/seek-controller.js")["createSeekController"];var createSubtitleService = requireModule("js/player/subtitle-service.js")["createSubtitleService"];var getActiveSubtitleText = requireModule("js/player/subtitle-parser.js")["getActiveSubtitleText"];var activateFocusedElement = requireModule("js/navigation/remote-navigation.js")["activateFocusedElement"];
+var focusNext = requireModule("js/navigation/remote-navigation.js")["focusNext"];var formatTime = requireModule("js/utils/format-time.js")["formatTime"];var currentDevice = requireModule("js/utils/device.js")["currentDevice"];
+const PLAY_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>';
+const PAUSE_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 5.5A1.5 1.5 0 0 1 7.5 4h1A1.5 1.5 0 0 1 10 5.5v13A1.5 1.5 0 0 1 8.5 20h-1A1.5 1.5 0 0 1 6 18.5v-13zm8 0A1.5 1.5 0 0 1 15.5 4h1a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v-13z"/></svg>';
+
 function playerMarkup(movie) {
   let hintText = "← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Esc / Back to hide controls or return";
   if (currentDevice === "mobile") {
@@ -943,10 +2816,10 @@ function playerMarkup(movie) {
     '<header class="topbar ui-overlay">' +
     '<button class="brand home-return-button" type="button" aria-label="Return to movie catalog"><img src="icon.png" alt="">' +
     '<span>BACU<span class="brand-accent">Flix</span></span></button>' +
-    '<span class="stream-label"><span class="live-dot"></span> NOW PLAYING</span></header>' +
-    '<div class="bottom-bar ui-overlay"><div class="now-playing">' +
-    '<span class="eyebrow">NOW PLAYING</span><span class="now-playing-title"></span>' +
-    '</div></div>' +
+    '<div class="now-playing">' +
+    '<span class="eyebrow"><span class="live-dot"></span> NOW PLAYING</span>' +
+    '<span class="now-playing-title"></span>' +
+    '</div></header>' +
     '<p id="status" class="status" role="status" aria-live="polite">Loading stream...</p>' +
     '<div id="player-loader" class="player-loader is-active" role="status" aria-label="Loading video">' +
     '<div class="loader-spinner" aria-hidden="true">' +
@@ -970,11 +2843,14 @@ function playerMarkup(movie) {
     '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m15 18-6-6 6-6"/></svg></span>' +
     '<span class="control-caption">Back</span></button>' +
     '<button id="toggle-play-button" class="control-button primary-control" type="button" aria-label="Pause">' +
-    '<span id="play-pause-symbol" class="control-symbol" aria-hidden="true">Ⅱ</span>' +
+    '<span id="play-pause-symbol" class="control-symbol" aria-hidden="true">' + PAUSE_ICON + '</span>' +
     '<span id="play-pause-caption" class="control-caption">Pause</span></button>' +
     '<button id="forward-button" class="control-button" type="button" aria-label="Forward 10 seconds">' +
     '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m9 18 6-6-6-6"/></svg></span>' +
     '<span class="control-caption">Forward</span></button>' +
+    '<button id="next-episode-button" class="control-button" type="button" aria-label="Tập tiếp theo">' +
+    '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></span>' +
+    '<span class="control-caption">Tập tiếp</span></button>' +
     '<span class="control-divider" aria-hidden="true"></span>' +
     '<button id="volume-down-button" class="control-button compact-control" type="button" aria-label="Volume down">' +
     '<span class="control-symbol volume-symbol" aria-hidden="true">−</span><span class="control-caption">Vol −</span></button>' +
@@ -987,7 +2863,17 @@ function playerMarkup(movie) {
     '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>' +
     '</span><span id="fullscreen-label" class="control-caption">Full screen</span></button>' +
     '</div><p class="remote-hint">' + hintText + '</p>' +
-    '</div></section>';
+    '</div>' +
+    '<div id="auto-next-overlay" class="auto-next-overlay" hidden aria-hidden="true">' +
+    '<div class="auto-next-box">' +
+    '<p class="auto-next-label">TẬP TIẾP THEO</p>' +
+    '<h3 id="auto-next-title" class="auto-next-title"></h3>' +
+    '<p class="auto-next-countdown">Tự động phát sau <span id="auto-next-timer">5</span>s</p>' +
+    '<div class="auto-next-actions">' +
+    '<button id="auto-next-now" type="button" class="home-action primary-home-action auto-next-btn">Phát ngay</button>' +
+    '<button id="auto-next-cancel" type="button" class="home-action secondary-home-action auto-next-btn">Hủy</button>' +
+    '</div></div></div>' +
+    '</section>';
 }
 
 function createPlayerScreen(root, movie, onBackRequest) {
@@ -1023,6 +2909,17 @@ function createPlayerScreen(root, movie, onBackRequest) {
   const seekOverlayRight = root.querySelector("#seek-overlay-right");
   const loader = root.querySelector("#player-loader");
   const loaderLabel = root.querySelector("#loader-label");
+  const nextEpisodeButton = root.querySelector("#next-episode-button");
+  const autoNextOverlay = root.querySelector("#auto-next-overlay");
+  const autoNextTitle = root.querySelector("#auto-next-title");
+  const autoNextTimer = root.querySelector("#auto-next-timer");
+  const autoNextNowBtn = root.querySelector("#auto-next-now");
+  const autoNextCancelBtn = root.querySelector("#auto-next-cancel");
+  let currentMovie = movie;
+  let episodesList = Array.isArray(movie.episodesList) ? movie.episodesList : [];
+  let currentEpisodeIndex = (typeof movie.currentEpisodeIndex === "number") ? movie.currentEpisodeIndex : 0;
+  let autoNextCountdownTimer = 0;
+  let autoNextRemainingSec = 0;
   const subtitleService = createSubtitleService();
   const cleanups = [];
   let subtitleCues = [];
@@ -1364,7 +3261,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
   function updatePlaybackControl(state) {
     togglePlayButton.setAttribute("aria-label", state.paused ? "Play" : "Pause");
     playPauseCaption.textContent = state.paused ? "Play" : "Pause";
-    playPauseSymbol.textContent = state.paused ? "▶" : "Ⅱ";
+    playPauseSymbol.innerHTML = state.paused ? PLAY_ICON : PAUSE_ICON;
   }
 
   function updateTimeline(previewProgress) {
@@ -1373,6 +3270,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
       seekBar.disabled = true;
       seekBar.value = "0";
       seekBar.style.setProperty("--seek-progress", "0%");
+      seekBar.style.backgroundImage = "linear-gradient(to right, #e50914 0%, #e50914 0%, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.28) 100%)";
       currentTimeLabel.textContent = formatTime(playback.getCurrentTime());
       durationLabel.textContent = formatTime(video.duration);
       return;
@@ -1383,7 +3281,9 @@ function createPlayerScreen(root, movie, onBackRequest) {
       ? Math.max(0, Math.min(1, previewProgress))
       : Math.max(0, Math.min(1, (playback.getCurrentTime() - range.start) / (range.end - range.start)));
     const percentage = progress * 100;
-    seekBar.style.setProperty("--seek-progress", percentage + "%");
+    const pctStr = percentage.toFixed(2) + "%";
+    seekBar.style.setProperty("--seek-progress", pctStr);
+    seekBar.style.backgroundImage = "linear-gradient(to right, #e50914 0%, #e50914 " + pctStr + ", rgba(255, 255, 255, 0.28) " + pctStr + ", rgba(255, 255, 255, 0.28) 100%)";
     seekBar.value = String(Math.round(percentage * 10));
     currentTimeLabel.textContent = formatTime(progress * (range.end - range.start));
     durationLabel.textContent = formatTime(range.end - range.start);
@@ -1418,6 +3318,106 @@ function createPlayerScreen(root, movie, onBackRequest) {
     }, typeof delay === "number" ? delay : CONTROLS_AUTOHIDE_MS);
   }
 
+  function updateNextButtonState() {
+    if (!nextEpisodeButton) {
+      return;
+    }
+    const hasMultiple = episodesList && episodesList.length > 1;
+    const hasNext = hasMultiple && (currentEpisodeIndex + 1 < episodesList.length);
+    if (!hasMultiple) {
+      nextEpisodeButton.hidden = true;
+      nextEpisodeButton.style.display = "none";
+    } else {
+      nextEpisodeButton.hidden = false;
+      nextEpisodeButton.style.display = "";
+      nextEpisodeButton.disabled = !hasNext;
+      if (hasNext) {
+        const nextEp = episodesList[currentEpisodeIndex + 1];
+        nextEpisodeButton.setAttribute("aria-label", "Tập tiếp theo: " + nextEp.name);
+        nextEpisodeButton.title = "Phát tiếp: " + nextEp.name;
+      } else {
+        nextEpisodeButton.setAttribute("aria-label", "Đã đến tập cuối");
+        nextEpisodeButton.title = "Đã đến tập cuối";
+      }
+    }
+  }
+
+  function cancelAutoNext() {
+    if (autoNextCountdownTimer) {
+      window.clearInterval(autoNextCountdownTimer);
+      autoNextCountdownTimer = 0;
+    }
+    if (autoNextOverlay) {
+      autoNextOverlay.hidden = true;
+      autoNextOverlay.setAttribute("aria-hidden", "true");
+    }
+  }
+
+  function startAutoNextCountdown() {
+    cancelAutoNext();
+    if (!episodesList || episodesList.length <= 1 || (currentEpisodeIndex + 1 >= episodesList.length) || disposed) {
+      return;
+    }
+    const nextEp = episodesList[currentEpisodeIndex + 1];
+    if (!nextEp) {
+      return;
+    }
+    autoNextRemainingSec = 5;
+    if (autoNextTitle) {
+      autoNextTitle.textContent = nextEp.name;
+    }
+    if (autoNextTimer) {
+      autoNextTimer.textContent = String(autoNextRemainingSec);
+    }
+    if (autoNextOverlay) {
+      autoNextOverlay.hidden = false;
+      autoNextOverlay.setAttribute("aria-hidden", "false");
+    }
+    if (autoNextNowBtn) {
+      autoNextNowBtn.focus();
+    }
+    autoNextCountdownTimer = window.setInterval(function () {
+      if (disposed) {
+        cancelAutoNext();
+        return;
+      }
+      autoNextRemainingSec -= 1;
+      if (autoNextTimer) {
+        autoNextTimer.textContent = String(Math.max(0, autoNextRemainingSec));
+      }
+      if (autoNextRemainingSec <= 0) {
+        cancelAutoNext();
+        playEpisode(currentEpisodeIndex + 1);
+      }
+    }, 1000);
+  }
+
+  function playEpisode(index) {
+    if (index < 0 || !episodesList || index >= episodesList.length || disposed) {
+      return;
+    }
+    cancelAutoNext();
+    currentEpisodeIndex = index;
+    const ep = episodesList[index];
+    const streamUrl = ep.m3u8 || ep.fallbackEmbed;
+    if (!streamUrl) {
+      showStatus("Không tìm thấy đường dẫn phát cho " + ep.name);
+      return;
+    }
+    const seriesTitle = currentMovie.seriesTitle || (currentMovie.title ? currentMovie.title.split(" - ")[0] : "Phim");
+    const newFullTitle = seriesTitle + " - " + ep.name;
+    currentMovie.title = newFullTitle;
+    currentMovie.m3u8 = streamUrl;
+    if (nowPlayingTitle) {
+      nowPlayingTitle.textContent = newFullTitle;
+    }
+    showLoader("Đang tải " + ep.name + "...");
+    showStatus("Đang phát " + ep.name);
+    updateNextButtonState();
+    playback.start(streamUrl);
+    scheduleHide(3000);
+  }
+
   function focusControl(direction) {
     const buttons = Array.prototype.slice.call(controls.querySelectorAll("button:not([disabled])"));
     const active = document.activeElement;
@@ -1448,6 +3448,32 @@ function createPlayerScreen(root, movie, onBackRequest) {
   function onKeyDown(event, key) {
     if (disposed) {
       return false;
+    }
+    if (autoNextOverlay && !autoNextOverlay.hidden) {
+      if (key.isBack || key.isEscape) {
+        cancelAutoNext();
+        showControls(true);
+        return true;
+      }
+      if (key.isSelect) {
+        if (document.activeElement === autoNextCancelBtn) {
+          cancelAutoNext();
+          showControls(true);
+        } else {
+          cancelAutoNext();
+          playEpisode(currentEpisodeIndex + 1);
+        }
+        return true;
+      }
+      if (key.direction === "left" || key.direction === "right") {
+        if (document.activeElement === autoNextCancelBtn) {
+          autoNextNowBtn.focus();
+        } else {
+          autoNextCancelBtn.focus();
+        }
+        return true;
+      }
+      return true;
     }
     if (key.isBack) {
       if (key.isRepeat) {
@@ -1621,6 +3647,9 @@ function createPlayerScreen(root, movie, onBackRequest) {
     },
     onEnded() {
       showControls(true);
+      if (episodesList && episodesList.length > 1 && currentEpisodeIndex + 1 < episodesList.length) {
+        startAutoNextCountdown();
+      }
     }
   });
 
@@ -1677,6 +3706,27 @@ function createPlayerScreen(root, movie, onBackRequest) {
   listen(togglePlayButton, "click", function () {
     playback.toggle();
   });
+  if (nextEpisodeButton) {
+    listen(nextEpisodeButton, "click", function () {
+      if (currentEpisodeIndex + 1 < episodesList.length) {
+        playEpisode(currentEpisodeIndex + 1);
+      }
+    });
+  }
+  if (autoNextNowBtn) {
+    listen(autoNextNowBtn, "click", function () {
+      cancelAutoNext();
+      if (currentEpisodeIndex + 1 < episodesList.length) {
+        playEpisode(currentEpisodeIndex + 1);
+      }
+    });
+  }
+  if (autoNextCancelBtn) {
+    listen(autoNextCancelBtn, "click", function () {
+      cancelAutoNext();
+      showControls(true);
+    });
+  }
   listen(root.querySelector(".home-return-button"), "click", function () {
     onBackRequest();
   });
@@ -1831,6 +3881,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
   updateTimeline();
   initSubtitles();
   updateFullscreenControl();
+  updateNextButtonState();
   showLoader("Loading movie...");
   playback.start(movie.m3u8);
   scheduleHide();
@@ -1862,6 +3913,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
       subtitleService.cancel();
       subtitleCues = [];
       renderSubtitles("");
+      cancelAutoNext();
       seekController.destroy();
       cleanups.forEach(function (cleanup) {
         cleanup();
@@ -2948,7 +5000,7 @@ return {formatTime: formatTime};
 });
 registerModule("js/utils/device.js", function (requireModule) {
 function detectDevice() {
-  if (typeof window === "undefined" || !navigator) {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
     return "desktop";
   }
   const ua = navigator.userAgent || "";

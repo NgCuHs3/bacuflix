@@ -462,7 +462,7 @@ assert.equal(enterKey.isSelect, true);
 assert.equal(enterKey.isBack, false);
 
 // Player navigation bar UI verification
-const playerSource = fs.readFileSync("js/player/player-screen.js", "utf8");
+const playerSource = fs.readFileSync("js/player/player-screen.js", "utf8").replace(/\r\n/g, "\n");
 assert.equal(playerSource.includes('id="sound-toggle"'), false, "sound-toggle should be removed from player markup");
 assert.ok(playerSource.includes('id="fullscreen-button"'), "fullscreen-button should be present in player markup");
 assert.ok(playerSource.includes('id="fullscreen-symbol"'), "fullscreen-symbol should be present in player markup");

@@ -9,6 +9,9 @@
                      required_version="2.3"/>
   <name>BACUFlix</name>
   <icon src="icon.png"/>
+  <access origin="*" subdomains="true"/>
+  <access origin="https://phimapi.com" subdomains="true"/>
+  <access origin="https://phimimg.com" subdomains="true"/>
   <access origin="https://raw.githubusercontent.com" subdomains="true"/>
   <access origin="https://tikpho.apiaz.xyz" subdomains="true"/>
   <access origin="https://p16-oec-sg.ibyteimg.com" subdomains="true"/>

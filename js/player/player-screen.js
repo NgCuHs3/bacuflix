@@ -6,6 +6,9 @@ import { activateFocusedElement, focusNext } from "../navigation/remote-navigati
 import { formatTime } from "../utils/format-time.js";
 import { currentDevice } from "../utils/device.js";
 
+const PLAY_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>';
+const PAUSE_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 5.5A1.5 1.5 0 0 1 7.5 4h1A1.5 1.5 0 0 1 10 5.5v13A1.5 1.5 0 0 1 8.5 20h-1A1.5 1.5 0 0 1 6 18.5v-13zm8 0A1.5 1.5 0 0 1 15.5 4h1a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v-13z"/></svg>';
+
 function playerMarkup(movie) {
   let hintText = "← → Move / seek · ↑ ↓ Switch controls · Volume keys adjust sound · Esc / Back to hide controls or return";
   if (currentDevice === "mobile") {
@@ -33,10 +36,10 @@ function playerMarkup(movie) {
     '<header class="topbar ui-overlay">' +
     '<button class="brand home-return-button" type="button" aria-label="Return to movie catalog"><img src="icon.png" alt="">' +
     '<span>BACU<span class="brand-accent">Flix</span></span></button>' +
-    '<span class="stream-label"><span class="live-dot"></span> NOW PLAYING</span></header>' +
-    '<div class="bottom-bar ui-overlay"><div class="now-playing">' +
-    '<span class="eyebrow">NOW PLAYING</span><span class="now-playing-title"></span>' +
-    '</div></div>' +
+    '<div class="now-playing">' +
+    '<span class="eyebrow"><span class="live-dot"></span> NOW PLAYING</span>' +
+    '<span class="now-playing-title"></span>' +
+    '</div></header>' +
     '<p id="status" class="status" role="status" aria-live="polite">Loading stream...</p>' +
     '<div id="player-loader" class="player-loader is-active" role="status" aria-label="Loading video">' +
     '<div class="loader-spinner" aria-hidden="true">' +
@@ -60,11 +63,14 @@ function playerMarkup(movie) {
     '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m15 18-6-6 6-6"/></svg></span>' +
     '<span class="control-caption">Back</span></button>' +
     '<button id="toggle-play-button" class="control-button primary-control" type="button" aria-label="Pause">' +
-    '<span id="play-pause-symbol" class="control-symbol" aria-hidden="true">Ⅱ</span>' +
+    '<span id="play-pause-symbol" class="control-symbol" aria-hidden="true">' + PAUSE_ICON + '</span>' +
     '<span id="play-pause-caption" class="control-caption">Pause</span></button>' +
     '<button id="forward-button" class="control-button" type="button" aria-label="Forward 10 seconds">' +
     '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m9 18 6-6-6-6"/></svg></span>' +
     '<span class="control-caption">Forward</span></button>' +
+    '<button id="next-episode-button" class="control-button" type="button" aria-label="Tập tiếp theo">' +
+    '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></span>' +
+    '<span class="control-caption">Tập tiếp</span></button>' +
     '<span class="control-divider" aria-hidden="true"></span>' +
     '<button id="volume-down-button" class="control-button compact-control" type="button" aria-label="Volume down">' +
     '<span class="control-symbol volume-symbol" aria-hidden="true">−</span><span class="control-caption">Vol −</span></button>' +
@@ -77,7 +83,17 @@ function playerMarkup(movie) {
     '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>' +
     '</span><span id="fullscreen-label" class="control-caption">Full screen</span></button>' +
     '</div><p class="remote-hint">' + hintText + '</p>' +
-    '</div></section>';
+    '</div>' +
+    '<div id="auto-next-overlay" class="auto-next-overlay" hidden aria-hidden="true">' +
+    '<div class="auto-next-box">' +
+    '<p class="auto-next-label">TẬP TIẾP THEO</p>' +
+    '<h3 id="auto-next-title" class="auto-next-title"></h3>' +
+    '<p class="auto-next-countdown">Tự động phát sau <span id="auto-next-timer">5</span>s</p>' +
+    '<div class="auto-next-actions">' +
+    '<button id="auto-next-now" type="button" class="home-action primary-home-action auto-next-btn">Phát ngay</button>' +
+    '<button id="auto-next-cancel" type="button" class="home-action secondary-home-action auto-next-btn">Hủy</button>' +
+    '</div></div></div>' +
+    '</section>';
 }
 
 export function createPlayerScreen(root, movie, onBackRequest) {
@@ -113,6 +129,17 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   const seekOverlayRight = root.querySelector("#seek-overlay-right");
   const loader = root.querySelector("#player-loader");
   const loaderLabel = root.querySelector("#loader-label");
+  const nextEpisodeButton = root.querySelector("#next-episode-button");
+  const autoNextOverlay = root.querySelector("#auto-next-overlay");
+  const autoNextTitle = root.querySelector("#auto-next-title");
+  const autoNextTimer = root.querySelector("#auto-next-timer");
+  const autoNextNowBtn = root.querySelector("#auto-next-now");
+  const autoNextCancelBtn = root.querySelector("#auto-next-cancel");
+  let currentMovie = movie;
+  let episodesList = Array.isArray(movie.episodesList) ? movie.episodesList : [];
+  let currentEpisodeIndex = (typeof movie.currentEpisodeIndex === "number") ? movie.currentEpisodeIndex : 0;
+  let autoNextCountdownTimer = 0;
+  let autoNextRemainingSec = 0;
   const subtitleService = createSubtitleService();
   const cleanups = [];
   let subtitleCues = [];
@@ -454,7 +481,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   function updatePlaybackControl(state) {
     togglePlayButton.setAttribute("aria-label", state.paused ? "Play" : "Pause");
     playPauseCaption.textContent = state.paused ? "Play" : "Pause";
-    playPauseSymbol.textContent = state.paused ? "▶" : "Ⅱ";
+    playPauseSymbol.innerHTML = state.paused ? PLAY_ICON : PAUSE_ICON;
   }
 
   function updateTimeline(previewProgress) {
@@ -463,6 +490,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       seekBar.disabled = true;
       seekBar.value = "0";
       seekBar.style.setProperty("--seek-progress", "0%");
+      seekBar.style.backgroundImage = "linear-gradient(to right, #e50914 0%, #e50914 0%, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.28) 100%)";
       currentTimeLabel.textContent = formatTime(playback.getCurrentTime());
       durationLabel.textContent = formatTime(video.duration);
       return;
@@ -473,7 +501,9 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       ? Math.max(0, Math.min(1, previewProgress))
       : Math.max(0, Math.min(1, (playback.getCurrentTime() - range.start) / (range.end - range.start)));
     const percentage = progress * 100;
-    seekBar.style.setProperty("--seek-progress", percentage + "%");
+    const pctStr = percentage.toFixed(2) + "%";
+    seekBar.style.setProperty("--seek-progress", pctStr);
+    seekBar.style.backgroundImage = "linear-gradient(to right, #e50914 0%, #e50914 " + pctStr + ", rgba(255, 255, 255, 0.28) " + pctStr + ", rgba(255, 255, 255, 0.28) 100%)";
     seekBar.value = String(Math.round(percentage * 10));
     currentTimeLabel.textContent = formatTime(progress * (range.end - range.start));
     durationLabel.textContent = formatTime(range.end - range.start);
@@ -508,6 +538,106 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     }, typeof delay === "number" ? delay : CONTROLS_AUTOHIDE_MS);
   }
 
+  function updateNextButtonState() {
+    if (!nextEpisodeButton) {
+      return;
+    }
+    const hasMultiple = episodesList && episodesList.length > 1;
+    const hasNext = hasMultiple && (currentEpisodeIndex + 1 < episodesList.length);
+    if (!hasMultiple) {
+      nextEpisodeButton.hidden = true;
+      nextEpisodeButton.style.display = "none";
+    } else {
+      nextEpisodeButton.hidden = false;
+      nextEpisodeButton.style.display = "";
+      nextEpisodeButton.disabled = !hasNext;
+      if (hasNext) {
+        const nextEp = episodesList[currentEpisodeIndex + 1];
+        nextEpisodeButton.setAttribute("aria-label", "Tập tiếp theo: " + nextEp.name);
+        nextEpisodeButton.title = "Phát tiếp: " + nextEp.name;
+      } else {
+        nextEpisodeButton.setAttribute("aria-label", "Đã đến tập cuối");
+        nextEpisodeButton.title = "Đã đến tập cuối";
+      }
+    }
+  }
+
+  function cancelAutoNext() {
+    if (autoNextCountdownTimer) {
+      window.clearInterval(autoNextCountdownTimer);
+      autoNextCountdownTimer = 0;
+    }
+    if (autoNextOverlay) {
+      autoNextOverlay.hidden = true;
+      autoNextOverlay.setAttribute("aria-hidden", "true");
+    }
+  }
+
+  function startAutoNextCountdown() {
+    cancelAutoNext();
+    if (!episodesList || episodesList.length <= 1 || (currentEpisodeIndex + 1 >= episodesList.length) || disposed) {
+      return;
+    }
+    const nextEp = episodesList[currentEpisodeIndex + 1];
+    if (!nextEp) {
+      return;
+    }
+    autoNextRemainingSec = 5;
+    if (autoNextTitle) {
+      autoNextTitle.textContent = nextEp.name;
+    }
+    if (autoNextTimer) {
+      autoNextTimer.textContent = String(autoNextRemainingSec);
+    }
+    if (autoNextOverlay) {
+      autoNextOverlay.hidden = false;
+      autoNextOverlay.setAttribute("aria-hidden", "false");
+    }
+    if (autoNextNowBtn) {
+      autoNextNowBtn.focus();
+    }
+    autoNextCountdownTimer = window.setInterval(function () {
+      if (disposed) {
+        cancelAutoNext();
+        return;
+      }
+      autoNextRemainingSec -= 1;
+      if (autoNextTimer) {
+        autoNextTimer.textContent = String(Math.max(0, autoNextRemainingSec));
+      }
+      if (autoNextRemainingSec <= 0) {
+        cancelAutoNext();
+        playEpisode(currentEpisodeIndex + 1);
+      }
+    }, 1000);
+  }
+
+  function playEpisode(index) {
+    if (index < 0 || !episodesList || index >= episodesList.length || disposed) {
+      return;
+    }
+    cancelAutoNext();
+    currentEpisodeIndex = index;
+    const ep = episodesList[index];
+    const streamUrl = ep.m3u8 || ep.fallbackEmbed;
+    if (!streamUrl) {
+      showStatus("Không tìm thấy đường dẫn phát cho " + ep.name);
+      return;
+    }
+    const seriesTitle = currentMovie.seriesTitle || (currentMovie.title ? currentMovie.title.split(" - ")[0] : "Phim");
+    const newFullTitle = seriesTitle + " - " + ep.name;
+    currentMovie.title = newFullTitle;
+    currentMovie.m3u8 = streamUrl;
+    if (nowPlayingTitle) {
+      nowPlayingTitle.textContent = newFullTitle;
+    }
+    showLoader("Đang tải " + ep.name + "...");
+    showStatus("Đang phát " + ep.name);
+    updateNextButtonState();
+    playback.start(streamUrl);
+    scheduleHide(3000);
+  }
+
   function focusControl(direction) {
     const buttons = Array.prototype.slice.call(controls.querySelectorAll("button:not([disabled])"));
     const active = document.activeElement;
@@ -538,6 +668,32 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   function onKeyDown(event, key) {
     if (disposed) {
       return false;
+    }
+    if (autoNextOverlay && !autoNextOverlay.hidden) {
+      if (key.isBack || key.isEscape) {
+        cancelAutoNext();
+        showControls(true);
+        return true;
+      }
+      if (key.isSelect) {
+        if (document.activeElement === autoNextCancelBtn) {
+          cancelAutoNext();
+          showControls(true);
+        } else {
+          cancelAutoNext();
+          playEpisode(currentEpisodeIndex + 1);
+        }
+        return true;
+      }
+      if (key.direction === "left" || key.direction === "right") {
+        if (document.activeElement === autoNextCancelBtn) {
+          autoNextNowBtn.focus();
+        } else {
+          autoNextCancelBtn.focus();
+        }
+        return true;
+      }
+      return true;
     }
     if (key.isBack) {
       if (key.isRepeat) {
@@ -711,6 +867,9 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     },
     onEnded() {
       showControls(true);
+      if (episodesList && episodesList.length > 1 && currentEpisodeIndex + 1 < episodesList.length) {
+        startAutoNextCountdown();
+      }
     }
   });
 
@@ -767,6 +926,27 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   listen(togglePlayButton, "click", function () {
     playback.toggle();
   });
+  if (nextEpisodeButton) {
+    listen(nextEpisodeButton, "click", function () {
+      if (currentEpisodeIndex + 1 < episodesList.length) {
+        playEpisode(currentEpisodeIndex + 1);
+      }
+    });
+  }
+  if (autoNextNowBtn) {
+    listen(autoNextNowBtn, "click", function () {
+      cancelAutoNext();
+      if (currentEpisodeIndex + 1 < episodesList.length) {
+        playEpisode(currentEpisodeIndex + 1);
+      }
+    });
+  }
+  if (autoNextCancelBtn) {
+    listen(autoNextCancelBtn, "click", function () {
+      cancelAutoNext();
+      showControls(true);
+    });
+  }
   listen(root.querySelector(".home-return-button"), "click", function () {
     onBackRequest();
   });
@@ -921,6 +1101,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   updateTimeline();
   initSubtitles();
   updateFullscreenControl();
+  updateNextButtonState();
   showLoader("Loading movie...");
   playback.start(movie.m3u8);
   scheduleHide();
@@ -952,6 +1133,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       subtitleService.cancel();
       subtitleCues = [];
       renderSubtitles("");
+      cancelAutoNext();
       seekController.destroy();
       cleanups.forEach(function (cleanup) {
         cleanup();

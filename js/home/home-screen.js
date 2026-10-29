@@ -1,5 +1,10 @@
 import { activateFocusedElement, focusNext } from "../navigation/remote-navigation.js";
 import { fallbackPoster } from "../config/catalog-sources.js";
+import { createKkphimApi } from "../services/kkphim-api.js";
+import { isFavorite, toggleFavorite, getFavorites } from "../services/favorites-service.js";
+import { createGoogleTrendingService } from "../services/google-trending-service.js";
+import { createMovieDetailModal } from "./movie-detail-modal.js";
+import { createHeroCarousel } from "./hero-carousel.js";
 
 function makeButton(className, text, label) {
   const button = document.createElement("button");
@@ -40,6 +45,50 @@ function makeMovieCard(movie, actionsHandler) {
   });
   image.src = usingFallback ? fallbackPoster : movie.poster;
 
+  // Badges container
+  const badges = document.createElement("div");
+  badges.className = "catalog-card-badges";
+
+  if (movie.quality) {
+    const qBadge = document.createElement("span");
+    qBadge.className = "catalog-badge catalog-badge-quality";
+    qBadge.textContent = movie.quality;
+    badges.appendChild(qBadge);
+  }
+  if (movie.lang) {
+    const lBadge = document.createElement("span");
+    lBadge.className = "catalog-badge catalog-badge-lang";
+    lBadge.textContent = movie.lang;
+    badges.appendChild(lBadge);
+  }
+  if (movie.episodeCurrent) {
+    const eBadge = document.createElement("span");
+    eBadge.className = "catalog-badge catalog-badge-episode";
+    eBadge.textContent = movie.episodeCurrent;
+    badges.appendChild(eBadge);
+  }
+
+  // Quick favorite button
+  const favBtn = document.createElement("button");
+  favBtn.type = "button";
+  favBtn.className = "catalog-card-fav" + (isFavorite(movie.slug || movie.id) ? " is-favorite" : "");
+  favBtn.setAttribute("aria-label", isFavorite(movie.slug || movie.id) ? "Bỏ yêu thích" : "Thêm yêu thích");
+  favBtn.tabIndex = -1;
+  favBtn.innerHTML = '<span class="card-fav-icon">' + (isFavorite(movie.slug || movie.id) ? "♥" : "♡") + '</span>';
+  favBtn.addEventListener("click", function (event) {
+    event.stopPropagation();
+    const isNowFav = toggleFavorite(movie);
+    favBtn.classList.toggle("is-favorite", isNowFav);
+    favBtn.setAttribute("aria-label", isNowFav ? "Bỏ yêu thích" : "Thêm yêu thích");
+    const icon = favBtn.querySelector(".card-fav-icon");
+    if (icon) {
+      icon.textContent = isNowFav ? "♥" : "♡";
+    }
+    if (typeof actionsHandler.onFavoriteToggle === "function") {
+      actionsHandler.onFavoriteToggle(movie, isNowFav);
+    }
+  });
+
   const details = document.createElement("div");
   details.className = "catalog-card-details";
   const title = document.createElement("h2");
@@ -47,13 +96,13 @@ function makeMovieCard(movie, actionsHandler) {
   title.textContent = movie.title;
   const source = document.createElement("p");
   source.className = "catalog-card-source";
-  source.textContent = movie.source;
+  source.textContent = movie.year ? (movie.source + " · " + movie.year) : (movie.source || "KKPhim");
 
   const play = document.createElement("button");
   play.type = "button";
   play.className = "home-action primary-home-action catalog-play" + (movie.playbackEnabled ? "" : " is-unavailable");
   play.tabIndex = -1;
-  play.setAttribute("aria-label", (movie.playbackEnabled ? "Play " : "Playback unavailable for ") + movie.title);
+  play.setAttribute("aria-label", (movie.playbackEnabled ? "Chi tiết / Xem " : "Playback unavailable for ") + movie.title);
 
   const playIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   playIcon.setAttribute("class", "catalog-play-icon");
@@ -68,17 +117,21 @@ function makeMovieCard(movie, actionsHandler) {
 
   const playText = document.createElement("span");
   playText.className = "catalog-play-label";
-  playText.textContent = movie.playbackEnabled ? "Play" : "Unavailable";
+  playText.textContent = movie.playbackEnabled ? "Chi tiết" : "Unavailable";
 
   play.appendChild(playIcon);
   play.appendChild(playText);
 
-  const cardEntry = { element: card, playButton: play, movie: movie };
+  const cardEntry = { element: card, playButton: play, favButton: favBtn, movie: movie };
 
   if (movie.playbackEnabled) {
     play.addEventListener("click", function (event) {
       event.stopPropagation();
-      actionsHandler.onSelect(movie);
+      if (typeof actionsHandler.onOpenDetail === "function" && (movie.slug || !movie.m3u8)) {
+        actionsHandler.onOpenDetail(movie);
+      } else {
+        actionsHandler.onSelect(movie);
+      }
     });
   } else {
     play.title = "Playback is disabled until an authorized stream source is configured.";
@@ -89,7 +142,7 @@ function makeMovieCard(movie, actionsHandler) {
   }
 
   card.addEventListener("click", function (event) {
-    if (event.target === play || play.contains(event.target)) {
+    if (event.target === play || play.contains(event.target) || event.target === favBtn || favBtn.contains(event.target)) {
       return;
     }
     if (typeof actionsHandler.onCardClick === "function") {
@@ -101,6 +154,8 @@ function makeMovieCard(movie, actionsHandler) {
   details.appendChild(source);
   details.appendChild(play);
   card.appendChild(image);
+  card.appendChild(badges);
+  card.appendChild(favBtn);
   card.appendChild(details);
   return cardEntry;
 }
@@ -108,10 +163,18 @@ function makeMovieCard(movie, actionsHandler) {
 export function createHomeScreen(root, catalogService, actionsHandler, options) {
   const screen = document.createElement("section");
   screen.className = "home-screen catalog-screen";
-  screen.setAttribute("aria-label", "BACUFlix movie catalog");
+  screen.setAttribute("aria-label", "BACUFlix KKPhim movie catalog");
+
+  const kkphimApi = createKkphimApi();
+  const googleTrendingService = createGoogleTrendingService(kkphimApi);
+
   let toastTimer = 0;
+  let searchDebounceTimer = 0;
   let destroyed = false;
   let refreshing = false;
+  let activeTab = "new"; // "new" | "trending" | "favorites" | "search"
+  let previousTab = "new";
+  let currentSearchQuery = "";
   let currentResult = null;
   let cards = [];
   let activeCardIndex = 0;
@@ -119,6 +182,69 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
   let currentActionEntry = null;
   let isProgrammaticFocus = false;
   let cachedColumnsCount = 1;
+
+  // Pagination / Infinite scroll state
+  let currentPage = 1;
+  let isLoadingMore = false;
+  let hasMore = true;
+
+  // Detail Modal instance
+  const detailModal = createMovieDetailModal(screen, kkphimApi, {
+    onSelectEpisode: function (playbackMovie) {
+      if (typeof actionsHandler.onSelect === "function") {
+        actionsHandler.onSelect(playbackMovie);
+      }
+    },
+    onFavoritesChanged: function () {
+      if (activeTab === "favorites") {
+        loadTab("favorites", true);
+      } else {
+        updateCardFavStates();
+      }
+    },
+    onClose: function () {
+      if (selectedCardEntry) {
+        setSelectedCard(selectedCardEntry, true);
+      }
+    }
+  });
+
+  // Hero Section Carousel (Netflix-style)
+  const heroCarousel = createHeroCarousel(screen, {
+    onPlayMovie: function (movie) {
+      if (movie.slug) {
+        detailModal.open(movie);
+      } else if (movie.playbackEnabled) {
+        actionsHandler.onSelect(movie);
+      }
+    },
+    onOpenDetail: function (movie) {
+      if (movie.slug) {
+        detailModal.open(movie);
+      } else {
+        actionsHandler.onSelect(movie);
+      }
+    },
+    onFavoriteToggle: function (_movie, _isFav) {
+      if (activeTab === "favorites") {
+        loadTab("favorites", true);
+      } else {
+        updateCardFavStates();
+      }
+    }
+  });
+
+  function updateCardFavStates() {
+    cards.forEach(function (cardEntry) {
+      const isFav = isFavorite(cardEntry.movie.slug || cardEntry.movie.id);
+      cardEntry.favButton.classList.toggle("is-favorite", isFav);
+      cardEntry.favButton.setAttribute("aria-label", isFav ? "Bỏ yêu thích" : "Thêm yêu thích");
+      const icon = cardEntry.favButton.querySelector(".card-fav-icon");
+      if (icon) {
+        icon.textContent = isFav ? "♥" : "♡";
+      }
+    });
+  }
 
   function updateColumnsCount() {
     if (cards.length < 2) {
@@ -256,8 +382,10 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     return -1;
   }
 
+  // Create Header UI
   const header = document.createElement("header");
   header.className = "home-header";
+
   const brand = document.createElement("div");
   brand.className = "home-brand";
   const logo = document.createElement("img");
@@ -271,48 +399,179 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
   brand.appendChild(logo);
   brand.appendChild(brandText);
 
-  const catalogLabel = document.createElement("span");
-  catalogLabel.className = "home-nav-current";
-  catalogLabel.textContent = "MOVIES";
-  const refreshButton = makeButton("home-action secondary-home-action catalog-refresh", "Refresh catalog");
-  refreshButton.addEventListener("click", function () {
-    refresh(true);
+  // Tabs: Mới | Trending | Yêu thích | Của tôi
+  const navTabs = document.createElement("nav");
+  navTabs.className = "home-nav-tabs";
+  navTabs.setAttribute("aria-label", "Mục chính");
+
+  const tabConfigs = [
+    { id: "new", label: "Mới" },
+    { id: "trending", label: "Trending" },
+    { id: "favorites", label: "Yêu thích" }
+  ];
+  const tabButtons = [];
+
+  tabConfigs.forEach(function (tab) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "home-nav-tab" + (tab.id === activeTab ? " is-active" : "");
+    btn.textContent = tab.label;
+    btn.setAttribute("aria-label", tab.label);
+    btn.dataset.tabId = tab.id;
+    btn.addEventListener("click", function () {
+      switchTab(tab.id);
+    });
+    navTabs.appendChild(btn);
+    tabButtons.push(btn);
   });
+
+  // Search input & Clear
+  const searchBox = document.createElement("div");
+  searchBox.className = "home-search-box";
+
+  const searchIcon = document.createElement("span");
+  searchIcon.className = "home-search-icon";
+  searchIcon.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 11.99 14 9.5 14z"/></svg>';
+
+  const searchInput = document.createElement("input");
+  searchInput.type = "search";
+  searchInput.className = "home-search-input";
+  searchInput.placeholder = "Tìm kiếm phim...";
+  searchInput.setAttribute("aria-label", "Tìm kiếm phim");
+  searchInput.autocomplete = "off";
+  searchInput.spellcheck = false;
+
+  const searchClear = document.createElement("button");
+  searchClear.type = "button";
+  searchClear.className = "home-search-clear";
+  searchClear.textContent = "×";
+  searchClear.setAttribute("aria-label", "Xóa tìm kiếm");
+  searchClear.hidden = true;
+
+  searchBox.appendChild(searchIcon);
+  searchBox.appendChild(searchInput);
+  searchBox.appendChild(searchClear);
+
+  searchInput.addEventListener("input", function () {
+    const val = searchInput.value.trim();
+    searchClear.hidden = !val;
+    window.clearTimeout(searchDebounceTimer);
+    if (!val) {
+      if (activeTab === "search") {
+        switchTab(previousTab || "new");
+      }
+      return;
+    }
+    searchDebounceTimer = window.setTimeout(function () {
+      executeSearch(val);
+    }, 450);
+  });
+
+  searchInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      window.clearTimeout(searchDebounceTimer);
+      const val = searchInput.value.trim();
+      if (val) {
+        executeSearch(val);
+      }
+    } else if (e.key === "Escape") {
+      searchInput.blur();
+    }
+  });
+
+  searchClear.addEventListener("click", function () {
+    searchInput.value = "";
+    searchClear.hidden = true;
+    switchTab(previousTab || "new");
+    searchInput.focus();
+  });
+
   header.appendChild(brand);
-  header.appendChild(catalogLabel);
-  header.appendChild(refreshButton);
+  header.appendChild(navTabs);
+  header.appendChild(searchBox);
 
   const heading = document.createElement("h1");
   heading.className = "catalog-heading";
-  heading.textContent = "Discover movies";
+  heading.textContent = "Phim mới cập nhật";
+
   const message = document.createElement("p");
   message.className = "catalog-message";
   message.setAttribute("role", "status");
   message.setAttribute("aria-live", "polite");
+
   const grid = document.createElement("div");
   grid.className = "catalog-grid";
-  grid.setAttribute("aria-label", "Movies");
+  grid.setAttribute("aria-label", "Danh sách phim");
+
   const notice = document.createElement("p");
   notice.className = "catalog-notice";
+
+  // Loading more indicator (infinite scroll)
+  const loadingMoreEl = document.createElement("div");
+  loadingMoreEl.className = "catalog-loading-more";
+  loadingMoreEl.hidden = true;
+  loadingMoreEl.innerHTML = "" +
+    '<div class="loader-spinner" aria-hidden="true">' +
+      '<svg class="spinner-svg" viewBox="0 0 50 50">' +
+        '<circle class="spinner-track" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>' +
+        '<circle class="spinner-circle" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>' +
+      '</svg>' +
+    '</div>' +
+    '<span class="loading-more-text">Đang tải thêm phim...</span>';
+
   const toast = document.createElement("p");
   toast.className = "home-toast";
   toast.setAttribute("role", "status");
   toast.setAttribute("aria-live", "polite");
   toast.hidden = true;
+
   const hint = document.createElement("p");
   hint.className = "home-remote-hint";
-  hint.textContent = "Use the directional buttons to explore · Press OK to select";
+  hint.textContent = "Phím điều hướng để di chuyển · OK để xem chi tiết & chọn tập";
+
+  // Mount elements to screen in order: Header -> Hero Carousel -> Heading -> Grid
   screen.appendChild(header);
+  screen.appendChild(heroCarousel.element);
   screen.appendChild(heading);
   screen.appendChild(message);
   screen.appendChild(notice);
   screen.appendChild(grid);
+  screen.appendChild(loadingMoreEl);
   screen.appendChild(hint);
   screen.appendChild(toast);
+
   while (root.firstChild) {
     root.removeChild(root.firstChild);
   }
   root.appendChild(screen);
+
+  function createCardActions() {
+    return {
+      onSelect: actionsHandler.onSelect,
+      onPlaybackUnavailable: actionsHandler.onPlaybackUnavailable,
+      onOpenDetail: function (m) {
+        if (m.slug) {
+          detailModal.open(m);
+        } else {
+          actionsHandler.onSelect(m);
+        }
+      },
+      onFavoriteToggle: function (_m, _isFav) {
+        if (activeTab === "favorites") {
+          loadTab("favorites", true);
+        }
+      },
+      onCardClick: function (entry) {
+        if (entry.movie && entry.movie.slug) {
+          detailModal.open(entry.movie);
+        } else if (entry.movie && entry.movie.playbackEnabled) {
+          actionsHandler.onSelect(entry.movie);
+        } else {
+          activateStageB(entry);
+        }
+      }
+    };
+  }
 
   function render(result) {
     currentResult = result;
@@ -322,29 +581,33 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     cards = [];
     notice.textContent = "";
     notice.hidden = true;
+
     if (result.failedAll) {
-      const reason = result.errors.length ? " " + result.errors[0].message : "";
-      message.textContent = "Unable to load the movie catalog." + reason;
+      const reason = result.errors && result.errors.length ? " " + result.errors[0].message : "";
+      message.textContent = "Không thể tải danh sách phim." + reason;
       message.classList.add("is-error");
       return;
     }
 
     message.classList.remove("is-error");
-    if (!result.movies.length) {
-      message.textContent = "No movies are available in this catalog.";
+    if (!result.movies || !result.movies.length) {
+      if (activeTab === "favorites") {
+        message.textContent = "Chưa có phim nào trong danh sách Yêu thích. Hãy khám phá và chọn ♥ để thêm phim!";
+      } else if (activeTab === "search") {
+        message.textContent = 'Không tìm thấy phim phù hợp với từ khóa "' + currentSearchQuery + '".';
+      } else {
+        message.textContent = "Hiện không có phim nào trong mục này.";
+      }
       return;
     }
 
-    message.textContent = result.movies.length + (result.movies.length === 1 ? " movie" : " movies");
+    message.textContent = result.movies.length + (result.movies.length === 1 ? " phim" : " phim");
     let targetCard = null;
+    const cardActions = createCardActions();
+
     result.movies.forEach(function (movie, idx) {
-      const cardEntry = makeMovieCard(movie, {
-        onSelect: actionsHandler.onSelect,
-        onPlaybackUnavailable: actionsHandler.onPlaybackUnavailable,
-        onCardClick: function (entry) {
-          activateStageB(entry);
-        }
-      });
+      const cardEntry = makeMovieCard(movie, cardActions);
+
       cardEntry.element.addEventListener("focus", function () {
         if (isProgrammaticFocus) {
           return;
@@ -353,19 +616,18 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
           setSelectedCard(cardEntry, false);
         }
       });
+
       grid.appendChild(cardEntry.element);
       cards.push(cardEntry);
+
       if (options && options.selectedMovieId && movie.id === options.selectedMovieId) {
         targetCard = cardEntry;
         activeCardIndex = idx;
       }
     });
-    if (result.errors.length) {
-      notice.textContent = "Some catalogs could not be refreshed. Showing available saved movies.";
-      notice.hidden = false;
-    } else if (result.diagnostics.length) {
-      notice.textContent = result.diagnostics.length + " invalid catalog entr" +
-        (result.diagnostics.length === 1 ? "y was" : "ies were") + " skipped.";
+
+    if (result.notice) {
+      notice.textContent = result.notice;
       notice.hidden = false;
     }
 
@@ -375,25 +637,235 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     }
   }
 
-  function onWindowResize() {
-    updateColumnsCount();
-  }
-  window.addEventListener("resize", onWindowResize);
+  function appendMovies(newMovies) {
+    if (!newMovies || !newMovies.length) {
+      return;
+    }
+    const cardActions = createCardActions();
+    let appendedCount = 0;
 
-  function refresh(force) {
+    newMovies.forEach(function (movie) {
+      // Deduplicate by slug or id
+      const exists = cards.some(function (c) {
+        return (movie.slug && c.movie.slug === movie.slug) || (movie.id && c.movie.id === movie.id);
+      });
+      if (exists) {
+        return;
+      }
+
+      const cardEntry = makeMovieCard(movie, cardActions);
+      cardEntry.element.addEventListener("focus", function () {
+        if (isProgrammaticFocus) {
+          return;
+        }
+        if (document.activeElement === cardEntry.element) {
+          setSelectedCard(cardEntry, false);
+        }
+      });
+
+      grid.appendChild(cardEntry.element);
+      cards.push(cardEntry);
+      appendedCount += 1;
+    });
+
+    if (appendedCount > 0) {
+      updateColumnsCount();
+      message.textContent = cards.length + " phim";
+    }
+  }
+
+  function loadMore() {
+    if (isLoadingMore || !hasMore || destroyed) {
+      return;
+    }
+    if (activeTab === "favorites") {
+      return;
+    }
+
+    isLoadingMore = true;
+    loadingMoreEl.hidden = false;
+    const nextPage = currentPage + 1;
+
+    let promise;
+    if (activeTab === "new") {
+      promise = kkphimApi.getNewUpdated(nextPage);
+    } else if (activeTab === "trending") {
+      promise = kkphimApi.getTrending(nextPage);
+    } else if (activeTab === "search") {
+      promise = kkphimApi.searchMovies(currentSearchQuery, 24, nextPage);
+    }
+
+    if (!promise) {
+      isLoadingMore = false;
+      loadingMoreEl.hidden = true;
+      return;
+    }
+
+    promise.then(function (res) {
+      if (destroyed) {
+        return;
+      }
+      const newMovies = res && Array.isArray(res.movies) ? res.movies : [];
+      if (!newMovies.length) {
+        hasMore = false;
+        return;
+      }
+      currentPage = nextPage;
+      appendMovies(newMovies);
+    }).catch(function (err) {
+      console.warn("Không thể tải thêm phim:", err);
+    }).then(function () {
+      isLoadingMore = false;
+      if (!destroyed) {
+        loadingMoreEl.hidden = true;
+      }
+    });
+  }
+
+  function onScreenScroll() {
+    if (isLoadingMore || !hasMore || destroyed) {
+      return;
+    }
+    if (activeTab === "favorites") {
+      return;
+    }
+    const scrollBottom = screen.scrollHeight - screen.scrollTop - screen.clientHeight;
+    if (scrollBottom < 380) {
+      loadMore();
+    }
+  }
+  screen.addEventListener("scroll", onScreenScroll);
+
+  function updateTabButtonsUI() {
+    tabButtons.forEach(function (btn) {
+      const isAct = btn.dataset.tabId === activeTab;
+      btn.classList.toggle("is-active", isAct);
+      btn.setAttribute("aria-selected", isAct ? "true" : "false");
+    });
+  }
+
+  function switchTab(tabId) {
+    if (activeTab !== "search") {
+      previousTab = activeTab;
+    }
+    activeTab = tabId;
+    currentPage = 1;
+    hasMore = true;
+    isLoadingMore = false;
+    loadingMoreEl.hidden = true;
+    updateTabButtonsUI();
+
+    if (tabId !== "search") {
+      currentSearchQuery = "";
+      if (searchInput.value) {
+        searchInput.value = "";
+        searchClear.hidden = true;
+      }
+    }
+
+    // Show hero carousel only on "new" and "trending" tabs, hide on favorites and search
+    const showHero = (tabId === "new" || tabId === "trending");
+    heroCarousel.element.hidden = !showHero;
+    if (showHero) {
+      heroCarousel.startAutoSlide();
+    } else {
+      heroCarousel.stopAutoSlide();
+    }
+
+    if (tabId === "new") {
+      heading.textContent = "Phim mới cập nhật";
+    } else if (tabId === "trending") {
+      heading.textContent = "Phim đang thịnh hành (Google Trends)";
+    } else if (tabId === "favorites") {
+      heading.textContent = "Phim yêu thích của bạn";
+    }
+
+    loadTab(tabId, false);
+  }
+
+  function executeSearch(keyword) {
+    const kw = (keyword || "").trim();
+    if (!kw) {
+      return;
+    }
+    if (activeTab !== "search") {
+      previousTab = activeTab;
+    }
+    activeTab = "search";
+    currentPage = 1;
+    hasMore = true;
+    isLoadingMore = false;
+    loadingMoreEl.hidden = true;
+    currentSearchQuery = kw;
+
+    tabButtons.forEach(function (btn) {
+      btn.classList.remove("is-active");
+    });
+    heroCarousel.element.hidden = true;
+    heroCarousel.stopAutoSlide();
+    heading.textContent = 'Kết quả tìm kiếm cho: "' + kw + '"';
+    message.textContent = "Đang tìm kiếm phim...";
+    message.classList.remove("is-error");
+
+    kkphimApi.searchMovies(kw, 24, 1).then(function (res) {
+      if (destroyed || activeTab !== "search" || currentSearchQuery !== kw) {
+        return;
+      }
+      render({
+        movies: res.movies || [],
+        errors: [],
+        diagnostics: [],
+        failedAll: false
+      });
+    }).catch(function (error) {
+      if (destroyed || activeTab !== "search") {
+        return;
+      }
+      render({
+        movies: [],
+        errors: [{ message: error.message || "Lỗi khi tìm kiếm phim." }],
+        diagnostics: [],
+        failedAll: true
+      });
+    });
+  }
+
+  function loadTab(tabId, force) {
     if (refreshing || destroyed) {
       return;
     }
     refreshing = true;
-    refreshButton.disabled = true;
     message.classList.remove("is-error");
-    if (!currentResult || !currentResult.movies.length) {
-      message.textContent = force ? "Refreshing movie catalog..." : "Loading movie catalog...";
+
+    if (!currentResult || !currentResult.movies || !currentResult.movies.length) {
+      message.textContent = "Đang tải danh sách phim...";
     } else {
-      notice.textContent = "Refreshing movie catalog...";
+      notice.textContent = "Đang làm mới danh sách phim...";
       notice.hidden = false;
     }
-    catalogService.load(force).then(function (result) {
+
+    let promise;
+    if (tabId === "new") {
+      promise = kkphimApi.getNewUpdated(1).then(function (res) {
+        return { movies: res.movies || [], errors: [], diagnostics: [], failedAll: false };
+      });
+    } else if (tabId === "trending") {
+      promise = googleTrendingService.getTrending(force).then(function (res) {
+        return { movies: res.movies || [], errors: [], diagnostics: [], failedAll: false };
+      });
+    } else if (tabId === "favorites") {
+      const favs = getFavorites();
+      promise = Promise.resolve({
+        movies: favs.slice(),
+        errors: [],
+        diagnostics: [],
+        failedAll: false
+      });
+    } else {
+      promise = Promise.resolve({ movies: [], errors: [], diagnostics: [], failedAll: false });
+    }
+
+    promise.then(function (result) {
       if (!destroyed) {
         render(result);
       }
@@ -401,7 +873,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       if (!destroyed) {
         render({
           movies: [],
-          errors: [{ message: error.message || "Catalog request failed." }],
+          errors: [{ message: error.message || "Không thể tải dữ liệu phim." }],
           diagnostics: [],
           failedAll: true
         });
@@ -409,35 +881,74 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     }).then(function () {
       refreshing = false;
       if (!destroyed) {
-        refreshButton.disabled = false;
-        if (!screen.contains(document.activeElement)) {
-          if (options && options.selectedMovieId) {
-            const matchIndex = currentResult && currentResult.movies ?
-              currentResult.movies.findIndex(function (m) { return m.id === options.selectedMovieId; }) : -1;
-            if (matchIndex >= 0 && cards[matchIndex]) {
-              setSelectedCard(cards[matchIndex], true);
-              return;
-            }
-          }
-          if (cards.length) {
-            setSelectedCard(cards[activeCardIndex] || cards[0], true);
-          } else {
-            refreshButton.focus();
-          }
+        if (!screen.contains(document.activeElement) && cards.length) {
+          setSelectedCard(cards[0], true);
         }
       }
     });
   }
 
-  const existingResult = (options && options.initialResult) ||
-    (catalogService && typeof catalogService.getLastResult === "function" ? catalogService.getLastResult() : null);
-  if (existingResult && existingResult.movies && existingResult.movies.length) {
-    render(existingResult);
+  function refresh(_force) {
+    if (activeTab === "search") {
+      if (currentSearchQuery) {
+        executeSearch(currentSearchQuery);
+      }
+    } else {
+      loadTab(activeTab, true);
+    }
   }
-  refresh(false);
+
+  function onWindowResize() {
+    updateColumnsCount();
+  }
+  window.addEventListener("resize", onWindowResize);
+
+  // Initial load: Fetch trending for Hero Carousel & display "new" tab
+  googleTrendingService.getTrending(false).then(function (res) {
+    if (destroyed) {
+      return;
+    }
+    if (res && res.movies && res.movies.length) {
+      heroCarousel.setMovies(res.movies);
+    }
+  }).catch(function (err) {
+    console.warn("Lỗi tải hero banner:", err);
+  });
+
+  switchTab("new");
 
   return {
     onKeyDown(event, key) {
+      if (detailModal.isOpen()) {
+        return detailModal.onKeyDown(event, key);
+      }
+
+      const active = document.activeElement;
+      const isTyping = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA");
+
+      // While typing in search or any input: NEVER intercept characters, backspaces or spaces!
+      if (isTyping) {
+        if (key.isEscape) {
+          active.blur();
+          return true;
+        }
+        if (key.direction === "down") {
+          active.blur();
+          if (!heroCarousel.element.hidden) {
+            const heroBtns = heroCarousel.getFocusableElements();
+            if (heroBtns.length) {
+              heroBtns[0].focus();
+              return true;
+            }
+          }
+          if (cards.length > 0) {
+            setSelectedCard(cards[0], true);
+            return true;
+          }
+        }
+        return false;
+      }
+
       if (key.isBack) {
         if (currentActionEntry || (selectedCardEntry && selectedCardEntry.element.classList.contains("has-action-focus"))) {
           cancelStageB(currentActionEntry || selectedCardEntry);
@@ -451,6 +962,12 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
             return true;
           }
         }
+        if (activeTab === "search" && searchInput.value) {
+          searchInput.value = "";
+          searchClear.hidden = true;
+          switchTab(previousTab || "new");
+          return true;
+        }
         if (!key.isRepeat) {
           actionsHandler.onBack();
         }
@@ -458,23 +975,32 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       }
 
       if (key.isSelect) {
-        const active = document.activeElement;
-        if (active === refreshButton) {
-          refresh(true);
+        if (tabButtons.includes(active)) {
+          active.click();
+          return true;
+        }
+        if (active === searchClear) {
+          searchClear.click();
           return true;
         }
         const activeIdx = getActiveCardIndex();
         if (activeIdx !== -1) {
           const cardEntry = cards[activeIdx];
           if (active === cardEntry.playButton || currentActionEntry === cardEntry) {
-            if (cardEntry.movie.playbackEnabled) {
+            if (cardEntry.movie.slug) {
+              detailModal.open(cardEntry.movie);
+            } else if (cardEntry.movie.playbackEnabled) {
               actionsHandler.onSelect(cardEntry.movie);
             } else {
               actionsHandler.onPlaybackUnavailable(cardEntry.movie);
             }
             return true;
           } else {
-            activateStageB(cardEntry);
+            if (cardEntry.movie && cardEntry.movie.slug) {
+              detailModal.open(cardEntry.movie);
+            } else {
+              activateStageB(cardEntry);
+            }
             return true;
           }
         }
@@ -482,6 +1008,33 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       }
 
       if (key.direction === "left" || key.direction === "right") {
+        const topHeaderNav = tabButtons.concat([searchInput]);
+        const headerNavIndex = topHeaderNav.indexOf(active);
+
+        if (headerNavIndex !== -1) {
+          const delta = key.direction === "left" ? -1 : 1;
+          const nextNavIdx = headerNavIndex + delta;
+          if (nextNavIdx >= 0 && nextNavIdx < topHeaderNav.length) {
+            topHeaderNav[nextNavIdx].focus();
+            return true;
+          }
+          return true;
+        }
+
+        // Inside hero carousel
+        if (heroCarousel.element.contains(active)) {
+          const heroBtns = heroCarousel.getFocusableElements();
+          const currentHeroIdx = heroBtns.indexOf(active);
+          if (currentHeroIdx !== -1) {
+            const nextHeroIdx = currentHeroIdx + (key.direction === "left" ? -1 : 1);
+            if (nextHeroIdx >= 0 && nextHeroIdx < heroBtns.length) {
+              heroBtns[nextHeroIdx].focus();
+              return true;
+            }
+          }
+          return true;
+        }
+
         const activeIdx = getActiveCardIndex();
         if (activeIdx !== -1) {
           clearActionFocus();
@@ -493,19 +1046,23 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
             setSelectedCard(cards[activeIdx], true);
           }
           return true;
-        } else if (document.activeElement === refreshButton && key.direction === "right" && cards.length > 0) {
-          setSelectedCard(cards[0], true);
-          return true;
         }
         return false;
       }
 
       if (key.direction === "up" || key.direction === "down") {
-        const active = document.activeElement;
         const activeIdx = getActiveCardIndex();
         const cols = cachedColumnsCount || 1;
+        const topHeaderNav = tabButtons.concat([searchInput]);
 
         if (key.direction === "up") {
+          // Inside hero carousel -> go up to header nav
+          if (heroCarousel.element.contains(active)) {
+            const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
+            activeTabBtn.focus();
+            return true;
+          }
+
           if (activeIdx !== -1) {
             clearActionFocus();
             const targetIdx = activeIdx - cols;
@@ -513,19 +1070,47 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
               setSelectedCard(cards[targetIdx], true);
               return true;
             } else {
-              refreshButton.focus();
+              // Top row of cards: go to hero if visible, else to header
+              if (!heroCarousel.element.hidden) {
+                const heroBtns = heroCarousel.getFocusableElements();
+                if (heroBtns.length) {
+                  heroBtns[0].focus();
+                  return true;
+                }
+              }
+              const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
+              activeTabBtn.focus();
               return true;
             }
           }
         } else if (key.direction === "down") {
-          if (active === refreshButton && cards.length > 0) {
-            setSelectedCard(cards[activeCardIndex] || cards[0], true);
-            return true;
+          // From header nav -> down to hero or cards
+          if (topHeaderNav.includes(active)) {
+            if (!heroCarousel.element.hidden) {
+              const heroBtns = heroCarousel.getFocusableElements();
+              if (heroBtns.length) {
+                heroBtns[0].focus();
+                return true;
+              }
+            }
+            if (cards.length > 0) {
+              setSelectedCard(cards[activeCardIndex] || cards[0], true);
+              return true;
+            }
+          } else if (heroCarousel.element.contains(active)) {
+            // From hero -> down to cards
+            if (cards.length > 0) {
+              setSelectedCard(cards[activeCardIndex] || cards[0], true);
+              return true;
+            }
           } else if (activeIdx !== -1) {
             clearActionFocus();
             const targetIdx = activeIdx + cols;
             if (targetIdx < cards.length) {
               setSelectedCard(cards[targetIdx], true);
+              return true;
+            } else if (hasMore && !isLoadingMore && (activeTab === "new" || activeTab === "trending" || activeTab === "search")) {
+              loadMore();
               return true;
             }
             return true;
@@ -553,7 +1138,11 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     destroy() {
       destroyed = true;
       window.removeEventListener("resize", onWindowResize);
+      screen.removeEventListener("scroll", onScreenScroll);
       window.clearTimeout(toastTimer);
+      window.clearTimeout(searchDebounceTimer);
+      heroCarousel.destroy();
+      detailModal.destroy();
       cards = [];
       selectedCardEntry = null;
       currentActionEntry = null;

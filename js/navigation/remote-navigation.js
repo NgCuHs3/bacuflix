@@ -35,7 +35,8 @@ export function normalizeRemoteKey(event) {
     direction,
     isRepeat: event.repeat === true,
     isBack: key === "Back" || key === "BrowserBack" || key === "Escape" ||
-      key === "XF86Back" || code === 10009 || code === 27 || code === 8,
+      key === "XF86Back" || code === 10009 || code === 27 ||
+      (code === 8 && !(event && event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA"))),
     isEscape: key === "Escape" || code === 27,
     isSelect: key === "Enter" || key === " " || code === 13 || code === 32,
     isPlayPause: key === "MediaPlayPause" || code === 10252,
@@ -68,6 +69,15 @@ export function createRemoteNavigation() {
   let activeScreen = null;
 
   function onKeyDown(event) {
+    const isInput = event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA");
+    if (isInput) {
+      // In text input, allow normal typing, spaces, backspaces and text cursor navigation.
+      // Only delegate Escape, ArrowDown or Enter to the screen navigation handler.
+      const isExitOrSubmit = event.key === "Escape" || event.key === "ArrowDown" || event.keyCode === 40 || event.key === "Enter" || event.keyCode === 13;
+      if (!isExitOrSubmit) {
+        return;
+      }
+    }
     if (activeScreen && activeScreen.onKeyDown && activeScreen.onKeyDown(event, normalizeRemoteKey(event))) {
       event.preventDefault();
       event.stopPropagation();

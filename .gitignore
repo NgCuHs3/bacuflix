@@ -1,2 +1,4 @@
 .qoder/
-.buildResult/.qoder/
+.buildResult/
+*.wgt
+dist/*.wgt
