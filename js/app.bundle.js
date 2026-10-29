@@ -824,9 +824,28 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
 
     if (cards.length > 0) {
       updateColumnsCount();
+      const hasHero = !heroCarousel.element.hidden;
       const active = document.activeElement;
-      const isHeaderActive = (tabButtons && tabButtons.includes(active)) || active === searchInput || (heroCarousel && heroCarousel.element && heroCarousel.element.contains(active));
-      setSelectedCard(targetCard || cards[0], !isHeaderActive);
+      const isHeaderActive = (tabButtons && tabButtons.includes(active)) || active === searchInput;
+      const isHeroActive = heroCarousel.element && heroCarousel.element.contains(active);
+
+      if (hasHero) {
+        // With hero banner active: keep Card 0 selected but do NOT steal focus or scroll away from Hero
+        setSelectedCard(targetCard || cards[0], false);
+        if (!isHeaderActive && !isHeroActive) {
+          const heroBtns = heroCarousel.getFocusableElements();
+          if (heroBtns.length) {
+            heroBtns[0].focus();
+          }
+          screen.scrollTop = 0;
+          if (typeof window !== "undefined") {
+            window.scrollTo(0, 0);
+          }
+        }
+      } else {
+        // Without hero (favorites / search): focus first card if not typing in header
+        setSelectedCard(targetCard || cards[0], !isHeaderActive);
+      }
     }
   }
 
@@ -1113,6 +1132,19 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     }
     if (res && res.movies && res.movies.length) {
       heroCarousel.setMovies(res.movies);
+      // Focus hero action button on open
+      const active = document.activeElement;
+      const isHeaderFocused = (tabButtons && tabButtons.includes(active)) || active === searchInput;
+      if (!isHeaderFocused) {
+        const heroBtns = heroCarousel.getFocusableElements();
+        if (heroBtns.length) {
+          heroBtns[0].focus();
+          screen.scrollTop = 0;
+          if (typeof window !== "undefined") {
+            window.scrollTo(0, 0);
+          }
+        }
+      }
     }
   }).catch(function (err) {
     console.warn("Lỗi tải hero banner:", err);
@@ -1195,13 +1227,19 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       const isHeroActive = heroCarousel.element && heroCarousel.element.contains(active);
 
       if (!isHeaderActive && !isHeroActive) {
-        let activeIdx = getActiveCardIndex();
-        if (activeIdx === -1 && cards.length > 0) {
-          const fallbackIdx = (activeCardIndex >= 0 && activeCardIndex < cards.length) ? activeCardIndex : 0;
-          setSelectedCard(cards[fallbackIdx], true);
-        } else if (cards.length > 0 && (!active || active === document.body || active === document.documentElement || active === screen || active === root)) {
-          const idxToFocus = activeIdx >= 0 ? activeIdx : 0;
-          setSelectedCard(cards[idxToFocus], true);
+        const hasHero = !heroCarousel.element.hidden;
+        const heroBtns = hasHero ? heroCarousel.getFocusableElements() : [];
+        if (hasHero && heroBtns.length && (!active || active === document.body || active === document.documentElement || active === screen || active === root) && screen.scrollTop < 200) {
+          heroBtns[0].focus();
+        } else {
+          let activeIdx = getActiveCardIndex();
+          if (activeIdx === -1 && cards.length > 0) {
+            const fallbackIdx = (activeCardIndex >= 0 && activeCardIndex < cards.length) ? activeCardIndex : 0;
+            setSelectedCard(cards[fallbackIdx], true);
+          } else if (cards.length > 0 && (!active || active === document.body || active === document.documentElement || active === screen || active === root)) {
+            const idxToFocus = activeIdx >= 0 ? activeIdx : 0;
+            setSelectedCard(cards[idxToFocus], true);
+          }
         }
       }
 
@@ -1312,6 +1350,10 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
                 const heroBtns = heroCarousel.getFocusableElements();
                 if (heroBtns.length) {
                   heroBtns[0].focus();
+                  screen.scrollTop = 0;
+                  if (typeof window !== "undefined") {
+                    window.scrollTo(0, 0);
+                  }
                   return true;
                 }
               }
