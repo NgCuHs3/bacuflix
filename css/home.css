@@ -553,629 +553,6 @@
   transform: scale(1.04);
 }
 
-/* ==========================================================================
-   Device Adaptations: Mobile Phone Screens (<= 768px)
-   ========================================================================== */
-
-@media (max-width: 768px) {
-  .home-screen {
-    padding: 0 14px max(28px, env(safe-area-inset-bottom, 20px));
-  }
-
-  .home-header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    height: auto;
-    min-height: auto;
-    margin: 0 -14px 10px;
-    padding-top: max(8px, env(safe-area-inset-top, 0px));
-    padding-bottom: 8px;
-    padding-left: max(14px, env(safe-area-inset-left, 0px));
-    padding-right: max(14px, env(safe-area-inset-right, 0px));
-    background: rgba(8, 9, 14, 0.96);
-    -webkit-backdrop-filter: blur(20px);
-    backdrop-filter: blur(20px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    gap: 8px 10px;
-  }
-
-  /* Row 1 Left: Brand Logo + Text */
-  .home-brand {
-    order: 1;
-    gap: 7px;
-    margin-right: 0;
-    font-size: 18px;
-    flex-shrink: 0;
-  }
-
-  .home-brand img {
-    width: 26px;
-    height: 26px;
-    border-radius: 22.37%;
-  }
-
-  /* Row 1 Right: Flexible Search Box */
-  .home-search-box {
-    order: 2;
-    flex: 1 1 180px;
-    min-width: 150px;
-    max-width: none;
-    margin: 0;
-  }
-
-  .home-search-input {
-    width: 100%;
-    height: 36px;
-    font-size: 13.5px;
-    padding: 0 32px 0 34px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-  }
-
-  .home-search-input:focus {
-    background: rgba(0, 0, 0, 0.7);
-    border-color: var(--home-accent);
-    box-shadow: 0 0 0 2px rgba(229, 9, 36, 0.4);
-  }
-
-  .home-search-icon {
-    left: 10px;
-  }
-
-  .home-search-icon svg {
-    width: 15px;
-    height: 15px;
-  }
-
-  .home-search-clear {
-    right: 8px;
-    width: 20px;
-    height: 20px;
-    font-size: 13px;
-  }
-
-  /* Row 2: Category Navigation Tabs */
-  .home-nav-tabs {
-    order: 3;
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0;
-    padding: 2px 0;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-
-  .home-nav-tabs::-webkit-scrollbar {
-    display: none;
-  }
-
-  .home-nav-tab {
-    height: 32px;
-    padding: 0 14px;
-    font-size: 12.5px;
-    border-radius: 999px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  /* Hero Section on Mobile */
-  .home-hero-carousel {
-    width: calc(100% + 28px);
-    height: 380px;
-    margin: 0 -14px 16px;
-  }
-
-  .hero-slide {
-    padding: 16px 14px 16px;
-  }
-
-  .hero-content {
-    max-width: 100%;
-    gap: 6px;
-  }
-
-  .hero-trending-tag {
-    font-size: 11px;
-    letter-spacing: 0.05em;
-  }
-
-  .hero-title {
-    font-size: 20px;
-    line-height: 1.2;
-    -webkit-line-clamp: 2;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .hero-badges {
-    gap: 6px;
-    margin: 2px 0;
-  }
-
-  .hero-overview {
-    font-size: 12px;
-    line-height: 1.4;
-    -webkit-line-clamp: 2;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .hero-actions {
-    gap: 8px;
-    margin-top: 6px;
-  }
-
-  .hero-action-btn {
-    height: 36px;
-    padding: 0 16px;
-    font-size: 12.5px;
-    border-radius: 8px;
-  }
-
-  .hero-btn-play svg,
-  .hero-btn-detail svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  .hero-indicators {
-    right: 14px;
-    bottom: 14px;
-  }
-
-  .home-nav-current {
-    height: 24px;
-    padding: 0 10px;
-    font-size: 10px;
-  }
-
-  .catalog-refresh {
-    height: 32px;
-    padding: 0 12px;
-    font-size: 12px;
-    gap: 5px;
-  }
-
-  .catalog-refresh-icon {
-    width: 13px;
-    height: 13px;
-  }
-
-  .catalog-heading {
-    margin: 8px 0 4px;
-    font-size: 20px;
-  }
-
-  .catalog-message {
-    margin-bottom: 14px;
-    font-size: 12px;
-  }
-
-  /* Two clean, balanced columns on phone screens */
-  .catalog-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    margin-bottom: 24px;
-  }
-
-  .catalog-card-details {
-    padding: 10px 10px 12px;
-  }
-
-  .catalog-card-title {
-    font-size: 13.5px;
-  }
-
-  .catalog-card-source {
-    margin-bottom: 6px;
-    font-size: 10px;
-  }
-
-  .catalog-play {
-    height: 34px;
-    min-height: 34px;
-    font-size: 12px;
-    border-radius: 6px;
-  }
-
-  .home-remote-hint {
-    display: none;
-  }
-}
-
-/* Explicit data-device mobile hook */
-[data-device="mobile"] .home-remote-hint {
-  display: none;
-}
-
-[data-device="mobile"] .catalog-grid {
-  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
-  gap: 12px;
-}
-
-@media (max-width: 480px) {
-  [data-device="mobile"] .catalog-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-/* ==========================================================================
-   Device Adaptations: TV / High-Definition Large Screens
-   ========================================================================== */
-
-/* Optimized TV & Large Resolution Screens (Full HD, 2K, 4K UHD, 55"+ TVs) */
-/* Compatible with older WebKit (Chromium 47-63+, Tizen 3-7, zero clamp/gap dependency) */
-@media (min-width: 1200px) {
-  .home-screen {
-    padding: 0 4vw 64px;
-  }
-
-  .home-header {
-    height: 96px;
-    margin: 0 -4vw 24px;
-    padding: 0 4vw;
-    background: linear-gradient(180deg, rgba(8, 9, 14, 0.98) 0%, rgba(8, 9, 14, 0.85) 75%, transparent 100%) !important;
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-  }
-
-  .home-brand {
-    font-size: 34px;
-  }
-
-  .home-brand img {
-    width: 48px;
-    height: 48px;
-    margin-right: 14px;
-    border-radius: 22.37%;
-  }
-
-  /* Scale UP: only 4-5 huge cards per row -> drastically fewer DOM/images -> 60fps */
-  .catalog-grid {
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)) !important;
-    gap: 30px;
-    max-width: 100% !important;
-    width: 100%;
-    margin: 0 0 60px !important;
-  }
-
-  .catalog-heading {
-    font-size: 38px;
-    font-weight: 800;
-    margin: 28px 0 18px;
-  }
-
-  .catalog-card {
-    border-radius: 16px;
-    background: #141726 !important;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
-    -webkit-backface-visibility: hidden;
-    backface-visibility: hidden;
-  }
-
-  /* Explicit height for older WebKit without aspect-ratio (2:3 of 320px = 480px) */
-  .catalog-poster {
-    height: 480px !important;
-    min-height: 480px !important;
-    max-height: 480px !important;
-    width: 100%;
-    object-fit: cover;
-  }
-
-  .catalog-card-info {
-    padding: 16px 18px 18px;
-  }
-
-  .catalog-card-title {
-    font-size: 20px;
-    font-weight: 700;
-    line-height: 1.35;
-    margin-bottom: 6px;
-  }
-
-  .catalog-badge {
-    font-size: 13.5px;
-    font-weight: 800;
-    padding: 4px 10px;
-    border-radius: 6px;
-    margin-bottom: 4px;
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-  }
-
-  .catalog-card-fav {
-    width: 44px;
-    height: 44px;
-    font-size: 20px;
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-    background: rgba(8, 9, 14, 0.85) !important;
-  }
-
-  .catalog-play {
-    height: 50px;
-    min-height: 50px;
-    font-size: 17px;
-    border-radius: 12px;
-  }
-
-  /* Full-bleed edge-to-edge Hero Carousel with explicit height fallback */
-  .home-hero-carousel {
-    width: calc(100% + 8vw);
-    height: 720px;
-    height: clamp(620px, 78vh, 880px);
-    margin: -96px -4vw 44px;
-  }
-
-  .hero-content {
-    max-width: 940px;
-    padding: 0 4vw;
-    bottom: 68px;
-  }
-
-  .hero-title {
-    font-size: 52px;
-    font-size: clamp(42px, 4.2vw, 66px);
-    font-weight: 800;
-    line-height: 1.15;
-    margin-bottom: 14px;
-  }
-
-  .hero-overview {
-    font-size: 18.5px;
-    line-height: 1.6;
-    -webkit-line-clamp: 3;
-    max-width: 860px;
-  }
-
-  .hero-actions {
-    margin-top: 10px;
-  }
-
-  .hero-action-btn {
-    height: 58px;
-    padding: 0 38px;
-    font-size: 18px;
-    font-weight: 700;
-    border-radius: 14px;
-    margin-right: 18px;
-  }
-
-  .hero-action-btn:last-child {
-    margin-right: 0;
-  }
-
-  .home-nav-tabs {
-    margin-right: 28px;
-  }
-
-  .home-nav-tab {
-    height: 52px;
-    padding: 0 30px;
-    font-size: 17.5px;
-    font-weight: 700;
-    margin-right: 14px;
-  }
-
-  .home-nav-tab:last-child {
-    margin-right: 0;
-  }
-
-  .home-search-box {
-    min-width: 320px;
-    max-width: 460px;
-  }
-
-  .home-search-input {
-    height: 52px;
-    font-size: 17.5px;
-    padding: 0 44px 0 52px;
-  }
-
-  .movie-detail-modal {
-    max-width: 1520px;
-    width: 92vw;
-    max-height: 88vh;
-    border-radius: 28px;
-    background: #111422 !important;
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-  }
-
-  .movie-detail-body {
-    padding: 34px 52px 52px;
-  }
-
-  .movie-detail-poster-wrap {
-    width: 270px;
-    min-width: 270px;
-    margin-right: 44px;
-  }
-
-  .movie-detail-poster {
-    height: 405px !important;
-    width: 100%;
-    object-fit: cover;
-  }
-
-  .movie-detail-title {
-    font-size: 40px;
-    line-height: 1.25;
-  }
-
-  .movie-detail-overview {
-    font-size: 18px;
-    line-height: 1.65;
-    max-width: 980px;
-  }
-
-  .movie-detail-episodes-grid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 14px;
-  }
-
-  .movie-episode-btn {
-    min-height: 56px;
-    font-size: 17.5px;
-    font-weight: 700;
-    border-radius: 12px;
-  }
-
-  .movie-detail-play-btn {
-    height: 58px;
-    padding: 0 44px;
-    font-size: 18.5px;
-    border-radius: 14px;
-  }
-}
-
-/* 4K UHD Specific Scaling (3840x2160) */
-@media (min-width: 2500px) {
-  .home-screen {
-    padding: 0 3.5vw 72px;
-  }
-
-  .home-header {
-    height: 110px;
-    margin: 0 -3.5vw 28px;
-    padding: 0 3.5vw;
-  }
-
-  .home-brand {
-    font-size: 44px;
-  }
-
-  .home-brand img {
-    width: 64px;
-    height: 64px;
-    margin-right: 18px;
-  }
-
-  .home-nav-tab {
-    height: 60px;
-    padding: 0 36px;
-    font-size: 21px;
-    margin-right: 18px;
-  }
-
-  .home-search-input {
-    height: 60px;
-    font-size: 21px;
-  }
-
-  .catalog-grid {
-    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)) !important;
-    gap: 40px;
-  }
-
-  .catalog-poster {
-    height: 600px !important;
-    min-height: 600px !important;
-    max-height: 600px !important;
-  }
-
-  .catalog-heading {
-    font-size: 46px;
-  }
-
-  .catalog-card-title {
-    font-size: 24px;
-  }
-
-  .home-hero-carousel {
-    width: calc(100% + 7vw);
-    height: 920px;
-    margin: -110px -3.5vw 50px;
-  }
-
-  .hero-title {
-    font-size: 72px;
-  }
-
-  .hero-overview {
-    font-size: 23px;
-    max-width: 1200px;
-  }
-
-  .hero-action-btn {
-    height: 66px;
-    padding: 0 48px;
-    font-size: 21px;
-    margin-right: 22px;
-  }
-
-  .movie-detail-modal {
-    max-width: 1950px;
-    width: 88vw;
-  }
-
-  .movie-detail-poster-wrap {
-    width: 350px;
-    min-width: 350px;
-    margin-right: 52px;
-  }
-
-  .movie-detail-poster {
-    height: 525px !important;
-  }
-
-  .movie-detail-title {
-    font-size: 50px;
-  }
-
-  .movie-detail-overview {
-    font-size: 23px;
-  }
-
-  .movie-episode-btn {
-    min-height: 68px;
-    font-size: 21px;
-  }
-}
-
-[data-device="tv"] .catalog-card:focus,
-[data-device="tv"] .catalog-card.is-selected,
-[data-device="tv"] .catalog-card.movie-card--selected {
-  transform: translateY(-6px) scale(1.04);
-  box-shadow:
-    0 0 0 3px #fff,
-    0 0 0 7px var(--home-accent),
-    0 22px 52px rgba(0, 0, 0, 0.85),
-    0 0 36px var(--home-accent-glow);
-}
-
-[data-device="tv"] .home-remote-hint {
-  font-size: 14px;
-  margin-top: 24px;
-}
-
-/* ==========================================================================
-   Accessibility: Reduced Motion
-   ========================================================================== */
-
-@media (prefers-reduced-motion: reduce) {
-  .catalog-card,
-  .movie-card,
-  .home-action,
-  .catalog-play,
-  .catalog-poster {
-    transition: none !important;
-    transform: none !important;
-  }
-}
-
 
 /* ==========================================================================
    KKPhim Navigation Tabs & Search UI
@@ -1699,15 +1076,7 @@
   padding: 12px 0;
 }
 
-@media (max-width: 768px) {
-  .movie-detail-body {
-    flex-direction: column;
-    align-items: center;
-  }
-  .movie-detail-poster-wrap {
-    width: 160px;
-  }
-}
+
 
 
 /* ==========================================================================
@@ -2002,4 +1371,713 @@
   border-radius: 999px;
   background: var(--home-accent);
   box-shadow: 0 0 12px var(--home-accent-glow);
+}
+
+
+/* ==========================================================================
+   Accessibility: Reduced Motion
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .catalog-card,
+  .movie-card,
+  .home-action,
+  .catalog-play,
+  .catalog-poster {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+
+
+
+/* ==========================================================================
+   Device Adaptations: TV / High-Definition Large Screens
+   Supports [data-device="tv"] attribute & @media (min-width: 1200px)
+   Compatible with older WebKit (Tizen 3.0 - 7.0, Chromium 47-63+)
+   ========================================================================== */
+
+[data-device="tv"] .home-screen,
+body[data-device="tv"] .home-screen,
+@media (min-width: 1200px) {
+  .home-screen {
+    padding: 0 4vw 64px;
+  }
+
+  .home-header {
+    height: 96px;
+    margin: 0 -4vw 24px;
+    padding: 0 4vw;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    background: linear-gradient(180deg, rgba(8, 9, 14, 0.98) 0%, rgba(8, 9, 14, 0.85) 75%, transparent 100%) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .home-brand {
+    font-size: 34px;
+    gap: 14px;
+    margin-right: 28px;
+    flex-shrink: 0;
+  }
+
+  .home-brand img {
+    width: 48px;
+    height: 48px;
+    margin-right: 14px;
+    border-radius: 22.37%;
+  }
+
+  .home-nav-tabs {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-right: 28px;
+    flex-shrink: 0;
+  }
+
+  .home-nav-tab {
+    height: 52px;
+    padding: 0 28px;
+    font-size: 17.5px;
+    font-weight: 700;
+    margin-right: 14px;
+    border-radius: 999px;
+  }
+
+  .home-nav-tab:last-child {
+    margin-right: 0;
+  }
+
+  .home-search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-width: 320px;
+    max-width: 480px;
+    flex: 1;
+    margin-right: 0;
+  }
+
+  .home-search-input {
+    width: 100%;
+    height: 52px;
+    font-size: 17.5px;
+    padding: 0 44px 0 52px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.45);
+    border: 2px solid rgba(255, 255, 255, 0.18);
+  }
+
+  .home-search-icon {
+    left: 16px;
+  }
+
+  .home-search-icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .home-search-clear {
+    right: 14px;
+    width: 26px;
+    height: 26px;
+    font-size: 16px;
+  }
+
+  .home-hero-carousel {
+    width: calc(100% + 8vw);
+    height: 700px;
+    margin: -96px -4vw 40px;
+  }
+
+  .hero-slide {
+    padding: 96px clamp(28px, 4vw, 54px) 50px;
+  }
+
+  .hero-content {
+    max-width: 960px;
+    gap: 12px;
+  }
+
+  .hero-trending-tag {
+    font-size: 14px;
+    letter-spacing: 0.12em;
+  }
+
+  .hero-title {
+    font-size: 52px;
+    font-weight: 900;
+    line-height: 1.15;
+    margin-bottom: 8px;
+  }
+
+  .hero-badges .movie-badge {
+    padding: 6px 14px;
+    font-size: 13.5px;
+  }
+
+  .hero-overview {
+    font-size: 18px;
+    line-height: 1.6;
+    -webkit-line-clamp: 3;
+    max-width: 880px;
+  }
+
+  .hero-actions {
+    margin-top: 12px;
+    gap: 16px;
+  }
+
+  .hero-action-btn {
+    height: 56px;
+    padding: 0 36px;
+    font-size: 18px;
+    font-weight: 700;
+    border-radius: 14px;
+  }
+
+  .hero-btn-play svg,
+  .hero-btn-detail svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .hero-btn-fav {
+    width: 56px;
+    height: 56px;
+    font-size: 24px;
+    border-radius: 14px;
+  }
+
+  /* Catalog Grid on TV: 4-5 large cards per row for 10-foot viewing */
+  .catalog-grid {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)) !important;
+    gap: 30px;
+    width: 100%;
+    margin: 0 0 60px !important;
+  }
+
+  .catalog-heading {
+    font-size: 38px;
+    font-weight: 800;
+    margin: 28px 0 18px;
+  }
+
+  .catalog-card {
+    border-radius: 16px;
+    background: #141726 !important;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  .catalog-poster {
+    height: 480px !important;
+    min-height: 480px !important;
+    max-height: 480px !important;
+    width: 100%;
+    object-fit: cover;
+  }
+
+  .catalog-card-info {
+    padding: 16px 18px 18px;
+  }
+
+  .catalog-card-title {
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.35;
+    margin-bottom: 6px;
+  }
+
+  .catalog-badge {
+    font-size: 13.5px;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 6px;
+  }
+
+  .catalog-card-fav {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+  }
+
+  .catalog-play {
+    height: 50px;
+    min-height: 50px;
+    font-size: 17px;
+    border-radius: 12px;
+  }
+
+  .movie-detail-modal {
+    max-width: 1520px;
+    width: 92vw;
+    max-height: 88vh;
+    border-radius: 28px;
+    background: #111422 !important;
+  }
+
+  .movie-detail-body {
+    padding: 34px 52px 52px;
+  }
+
+  .movie-detail-poster-wrap {
+    width: 270px;
+    min-width: 270px;
+    margin-right: 44px;
+  }
+
+  .movie-detail-poster {
+    height: 405px !important;
+    width: 100%;
+    object-fit: cover;
+  }
+
+  .movie-detail-title {
+    font-size: 40px;
+    line-height: 1.25;
+  }
+
+  .movie-detail-overview {
+    font-size: 18px;
+    line-height: 1.65;
+    max-width: 980px;
+  }
+
+  .movie-detail-episodes-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 14px;
+  }
+
+  .movie-episode-btn {
+    min-height: 56px;
+    font-size: 17.5px;
+    font-weight: 700;
+    border-radius: 12px;
+  }
+
+  .movie-detail-play-btn {
+    height: 58px;
+    padding: 0 44px;
+    font-size: 18.5px;
+    border-radius: 14px;
+  }
+}
+
+/* ==========================================================================
+   TV Remote Control Focus States (High-Contrast 4px Outline + Glowing Aura)
+   Crucial for Samsung Smart TV 10-foot living room experience
+   ========================================================================== */
+
+[data-device="tv"] .home-nav-tab:focus,
+[data-device="tv"] .home-nav-tab.is-active:focus,
+body[data-device="tv"] .home-nav-tab:focus {
+  outline: 4px solid #ffffff !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 24px rgba(229, 9, 36, 0.85) !important;
+  transform: scale(1.06) !important;
+  z-index: 10 !important;
+}
+
+[data-device="tv"] .home-search-input:focus,
+body[data-device="tv"] .home-search-input:focus {
+  outline: 4px solid #ffffff !important;
+  outline-offset: 4px !important;
+  border-color: var(--home-accent) !important;
+  background: rgba(18, 22, 34, 0.98) !important;
+  box-shadow: 0 0 24px rgba(229, 9, 36, 0.85) !important;
+}
+
+[data-device="tv"] .hero-btn-play:focus,
+[data-device="tv"] .hero-btn-detail:focus,
+[data-device="tv"] .hero-btn-fav:focus,
+body[data-device="tv"] .hero-btn-play:focus,
+body[data-device="tv"] .hero-btn-detail:focus,
+body[data-device="tv"] .hero-btn-fav:focus {
+  outline: 4px solid #ffffff !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 28px rgba(229, 9, 36, 0.9) !important;
+  transform: scale(1.06) !important;
+  z-index: 10 !important;
+}
+
+[data-device="tv"] .catalog-card:focus,
+[data-device="tv"] .catalog-card.is-selected,
+[data-device="tv"] .catalog-card.movie-card--selected,
+body[data-device="tv"] .catalog-card:focus,
+body[data-device="tv"] .catalog-card.is-selected,
+body[data-device="tv"] .catalog-card.movie-card--selected {
+  border-color: #ffffff !important;
+  box-shadow: 0 0 0 4px #ffffff, 0 16px 48px rgba(229, 9, 36, 0.7) !important;
+  outline: none !important;
+  transform: scale(1.04) !important;
+  z-index: 10 !important;
+}
+
+[data-device="tv"] .movie-detail-close:focus,
+[data-device="tv"] .movie-server-tab:focus,
+[data-device="tv"] .movie-episode-btn:focus,
+[data-device="tv"] .movie-detail-play-btn:focus,
+body[data-device="tv"] .movie-detail-close:focus,
+body[data-device="tv"] .movie-server-tab:focus,
+body[data-device="tv"] .movie-episode-btn:focus,
+body[data-device="tv"] .movie-detail-play-btn:focus {
+  outline: 4px solid #ffffff !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 24px rgba(229, 9, 36, 0.85) !important;
+  transform: scale(1.06) !important;
+}
+
+[data-device="tv"] .home-remote-hint {
+  display: flex !important;
+}
+
+
+
+/* ==========================================================================
+   4K UHD Specific Scaling (3840x2160)
+   ========================================================================== */
+@media (min-width: 2500px) {
+  .home-screen {
+    padding: 0 3.5vw 72px;
+  }
+
+  .home-header {
+    height: 110px;
+    margin: 0 -3.5vw 28px;
+    padding: 0 3.5vw;
+  }
+
+  .home-brand {
+    font-size: 44px;
+  }
+
+  .home-brand img {
+    width: 60px;
+    height: 60px;
+    margin-right: 18px;
+  }
+
+  .home-nav-tabs {
+    margin-right: 36px;
+  }
+
+  .home-nav-tab {
+    height: 64px;
+    padding: 0 38px;
+    font-size: 21px;
+    margin-right: 18px;
+  }
+
+  .home-search-box {
+    min-width: 400px;
+    max-width: 600px;
+  }
+
+  .home-search-input {
+    height: 60px;
+    font-size: 21px;
+  }
+
+  .catalog-grid {
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)) !important;
+    gap: 40px;
+  }
+
+  .catalog-poster {
+    height: 600px !important;
+    min-height: 600px !important;
+    max-height: 600px !important;
+  }
+
+  .catalog-heading {
+    font-size: 46px;
+  }
+
+  .catalog-card-title {
+    font-size: 24px;
+  }
+
+  .home-hero-carousel {
+    width: calc(100% + 7vw);
+    height: 920px;
+    margin: -110px -3.5vw 50px;
+  }
+
+  .hero-title {
+    font-size: 72px;
+  }
+
+  .hero-overview {
+    font-size: 23px;
+    max-width: 1200px;
+  }
+
+  .hero-action-btn {
+    height: 66px;
+    padding: 0 48px;
+    font-size: 21px;
+    margin-right: 22px;
+  }
+
+  .movie-detail-modal {
+    max-width: 1950px;
+    width: 90vw;
+    border-radius: 36px;
+  }
+}
+
+
+
+/* ==========================================================================
+   Device Adaptations: Mobile Phone Screens (<= 768px & [data-device="mobile"])
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .home-screen {
+    padding: 0 14px max(28px, env(safe-area-inset-bottom, 20px));
+  }
+
+  .home-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    height: auto;
+    min-height: auto;
+    margin: 0 -14px 10px;
+    padding-top: max(8px, env(safe-area-inset-top, 0px));
+    padding-bottom: 8px;
+    padding-left: max(14px, env(safe-area-inset-left, 0px));
+    padding-right: max(14px, env(safe-area-inset-right, 0px));
+    background: rgba(8, 9, 14, 0.96);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    gap: 8px 10px;
+  }
+
+  /* Row 1 Left: Brand Logo + Text */
+  .home-brand {
+    order: 1;
+    gap: 7px;
+    margin-right: 0;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .home-brand img {
+    width: 26px;
+    height: 26px;
+    border-radius: 22.37%;
+  }
+
+  /* Row 1 Right: Flexible Search Box */
+  .home-search-box {
+    order: 2;
+    flex: 1 1 180px;
+    min-width: 150px;
+    max-width: none;
+    margin: 0;
+  }
+
+  .home-search-input {
+    width: 100%;
+    height: 36px;
+    font-size: 13.5px;
+    padding: 0 32px 0 34px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  .home-search-input:focus {
+    background: rgba(0, 0, 0, 0.7);
+    border-color: var(--home-accent);
+    box-shadow: 0 0 0 2px rgba(229, 9, 36, 0.4);
+  }
+
+  .home-search-icon {
+    left: 10px;
+  }
+
+  .home-search-icon svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .home-search-clear {
+    right: 8px;
+    width: 20px;
+    height: 20px;
+    font-size: 13px;
+  }
+
+  /* Row 2: Category Navigation Tabs */
+  .home-nav-tabs {
+    order: 3;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 2px 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .home-nav-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .home-nav-tab {
+    height: 32px;
+    padding: 0 14px;
+    font-size: 12.5px;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Hero Section on Mobile */
+  .home-hero-carousel {
+    width: calc(100% + 28px);
+    height: 380px;
+    margin: 0 -14px 16px;
+  }
+
+  .hero-slide {
+    padding: 16px 14px 16px;
+  }
+
+  .hero-content {
+    max-width: 100%;
+    gap: 6px;
+  }
+
+  .hero-trending-tag {
+    font-size: 11px;
+    letter-spacing: 0.05em;
+  }
+
+  .hero-title {
+    font-size: 20px;
+    line-height: 1.2;
+    -webkit-line-clamp: 2;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .hero-badges {
+    gap: 6px;
+    margin: 2px 0;
+  }
+
+  .hero-overview {
+    font-size: 12px;
+    line-height: 1.4;
+    -webkit-line-clamp: 2;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .hero-actions {
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .hero-action-btn {
+    height: 36px;
+    padding: 0 16px;
+    font-size: 12.5px;
+    border-radius: 8px;
+  }
+
+  .hero-btn-play svg,
+  .hero-btn-detail svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .hero-indicators {
+    right: 14px;
+    bottom: 14px;
+  }
+
+  .catalog-heading {
+    margin: 8px 0 4px;
+    font-size: 20px;
+  }
+
+  .catalog-message {
+    margin-bottom: 14px;
+    font-size: 12px;
+  }
+
+  .catalog-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .catalog-card-details {
+    padding: 10px 10px 12px;
+  }
+
+  .catalog-card-title {
+    font-size: 13.5px;
+  }
+
+  .catalog-card-source {
+    margin-bottom: 6px;
+    font-size: 10px;
+  }
+
+  .catalog-play {
+    height: 34px;
+    min-height: 34px;
+    font-size: 12px;
+    border-radius: 6px;
+  }
+
+  .movie-detail-body {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .movie-detail-poster-wrap {
+    width: 160px;
+    min-width: 160px;
+    margin-right: 0;
+    margin-bottom: 18px;
+  }
+
+  .movie-detail-poster {
+    height: 240px !important;
+  }
+
+  .home-remote-hint {
+    display: none;
+  }
+}
+
+[data-device="mobile"] .home-remote-hint {
+  display: none;
+}
+
+[data-device="mobile"] .catalog-grid {
+  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 480px) {
+  [data-device="mobile"] .catalog-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }

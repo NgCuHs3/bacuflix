@@ -3,3 +3,5 @@
 *.wgt
 dist/*.wgt
 dist/
+*.png
+

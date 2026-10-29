@@ -72,9 +72,17 @@ export function createRemoteNavigation() {
     const isInput = event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA");
     if (isInput) {
       // In text input, allow normal typing, spaces, backspaces and text cursor navigation.
-      // Only delegate Escape, ArrowDown or Enter to the screen navigation handler.
-      const isExitOrSubmit = event.key === "Escape" || event.key === "ArrowDown" || event.keyCode === 40 || event.key === "Enter" || event.keyCode === 13;
-      if (!isExitOrSubmit) {
+      // Delegate Escape, Back, ArrowDown, ArrowUp, ArrowLeft (at start), or Enter to screen navigation handler.
+      const isBackKey = event.key === "Back" || event.key === "BrowserBack" || event.key === "XF86Back" ||
+        event.keyCode === 10009 || event.key === "Escape" || event.keyCode === 27;
+      const isDownKey = event.key === "ArrowDown" || event.keyCode === 40;
+      const isUpKey = event.key === "ArrowUp" || event.keyCode === 38;
+      const isEnterKey = event.key === "Enter" || event.keyCode === 13;
+      const isLeftKey = (event.key === "ArrowLeft" || event.keyCode === 37) &&
+        (event.target.selectionStart === 0 && event.target.selectionEnd === 0);
+
+      const shouldDelegate = isBackKey || isDownKey || isUpKey || isEnterKey || isLeftKey;
+      if (!shouldDelegate) {
         return;
       }
     }

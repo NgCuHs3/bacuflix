@@ -938,8 +938,21 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
 
       // While typing in search or any input: NEVER intercept characters, backspaces or spaces!
       if (isTyping) {
-        if (key.isEscape) {
+        if (key.isEscape || key.isBack) {
           active.blur();
+          const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
+          activeTabBtn.focus();
+          return true;
+        }
+        if (key.direction === "left") {
+          active.blur();
+          tabButtons[tabButtons.length - 1].focus();
+          return true;
+        }
+        if (key.direction === "up") {
+          active.blur();
+          const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
+          activeTabBtn.focus();
           return true;
         }
         if (key.direction === "down") {
