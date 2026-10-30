@@ -1,0 +1,24 @@
+{
+  "name": "bacuflix",
+  "version": "2.5.0",
+  "description": "BACUFlix Streaming App for Web, Mobile (Android Capacitor), and Samsung Tizen TV",
+  "main": "js/app.bundle.js",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "build:www": "node scripts/build.js && node scripts/prepare-www.js",
+    "cap:add": "node ./node_modules/@capacitor/cli/bin/capacitor add android",
+    "cap:sync": "npm run build:www && node ./node_modules/@capacitor/cli/bin/capacitor sync android",
+    "cap:open": "node ./node_modules/@capacitor/cli/bin/capacitor open android",
+    "start": "node scripts/serve.js",
+    "test": "node tests/catalog-tests.js && node tests/kkphim-tests.js && node tests/seek-and-url-tests.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/status-bar": "^6.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  }
+}

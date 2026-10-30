@@ -88,6 +88,8 @@ function showHome(options) {
       }, function () {
         if (window.tizen && window.tizen.application) {
           window.tizen.application.getCurrentApplication().exit();
+        } else if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App && typeof window.Capacitor.Plugins.App.exitApp === "function") {
+          window.Capacitor.Plugins.App.exitApp();
         }
       });
     }
@@ -247,9 +249,56 @@ function onPageHide() {
   window.removeEventListener("pagehide", onPageHide);
 }
 
+function setupCapacitorAndroidBridge() {
+  if (typeof window === "undefined" || !window.Capacitor || !window.Capacitor.Plugins) {
+    return;
+  }
+  const plugins = window.Capacitor.Plugins;
+  if (plugins.StatusBar) {
+    try {
+      if (typeof plugins.StatusBar.setBackgroundColor === "function") {
+        plugins.StatusBar.setBackgroundColor({ color: "#08090D" });
+      }
+      if (typeof plugins.StatusBar.setStyle === "function") {
+        plugins.StatusBar.setStyle({ style: "DARK" });
+      }
+    } catch (_) {}
+  }
+  if (plugins.App && typeof plugins.App.addListener === "function") {
+    plugins.App.addListener("backButton", function () {
+      if (NavigationState.disposed) {
+        return;
+      }
+      if (NavigationState.activeScreenName === "player") {
+        handlePlayerBack();
+        return;
+      }
+      if (
+        NavigationState.activeScreenName === "catalog" &&
+        NavigationState.screenInstance &&
+        typeof NavigationState.screenInstance.isDetailOpen === "function" &&
+        NavigationState.screenInstance.isDetailOpen()
+      ) {
+        NavigationState.screenInstance.closeDetail();
+        return;
+      }
+      doubleBack.handle(function () {
+        if (NavigationState.screenInstance && NavigationState.screenInstance.showBackPrompt) {
+          NavigationState.screenInstance.showBackPrompt("Nhấn BACK lần nữa để thoát BACUFlix");
+        }
+      }, function () {
+        if (typeof plugins.App.exitApp === "function") {
+          plugins.App.exitApp();
+        }
+      });
+    });
+  }
+}
+
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", onPopState);
   window.addEventListener("pagehide", onPageHide);
+  setupCapacitorAndroidBridge();
   const initialRoute = parseRoute(window.location.search, window.location.hash);
   if (initialRoute.movieSlug) {
     handleDeepLink(initialRoute.movieSlug, initialRoute.ep);

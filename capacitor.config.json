@@ -1,0 +1,23 @@
+{
+  "appId": "com.bacuflix.app",
+  "appName": "BACUFlix",
+  "webDir": "www",
+  "backgroundColor": "#08090D",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
+  },
+  "plugins": {
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#08090D",
+      "overlaysWebView": false
+    }
+  }
+}

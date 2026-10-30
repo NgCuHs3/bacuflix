@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BACUFlix</string>
+    <string name="title_activity_main">BACUFlix</string>
+    <string name="package_name">com.bacuflix.app</string>
+    <string name="custom_url_scheme">com.bacuflix.app</string>
+</resources>
