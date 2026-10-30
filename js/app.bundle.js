@@ -6407,8 +6407,24 @@ function createPlayerScreen(root, movie, onBackRequest) {
     });
   }
 
+  let nativeFullscreen = false;
+
+  function getNativeScreenMode() {
+    const cap = typeof window !== "undefined" ? window.Capacitor : null;
+    if (!cap || typeof cap.isNativePlatform !== "function" || !cap.isNativePlatform()) {
+      return null;
+    }
+    if (typeof cap.registerPlugin === "function") {
+      try {
+        return cap.registerPlugin("ScreenMode");
+      } catch (_) {}
+    }
+    return cap.Plugins && cap.Plugins.ScreenMode ? cap.Plugins.ScreenMode : null;
+  }
+
   function isFullscreenActive() {
     return Boolean(
+      nativeFullscreen ||
       document.fullscreenElement ||
       document.webkitFullscreenElement ||
       document.mozFullScreenElement ||
@@ -6435,6 +6451,18 @@ function createPlayerScreen(root, movie, onBackRequest) {
   }
 
   function toggleFullscreen() {
+    const nativeScreenMode = getNativeScreenMode();
+    if (nativeScreenMode) {
+      nativeFullscreen = !nativeFullscreen;
+      updateFullscreenControl();
+      const task = nativeFullscreen ? nativeScreenMode.enter() : nativeScreenMode.exit();
+      if (task && typeof task.catch === "function") {
+        task.catch(function (error) {
+          console.warn("Native fullscreen failed:", error);
+        });
+      }
+      return;
+    }
     if (isFullscreenActive()) {
       try {
         unlockLandscape();
@@ -7400,6 +7428,15 @@ function createPlayerScreen(root, movie, onBackRequest) {
       disposed = true;
       hideLoader();
       unlockLandscape();
+      if (nativeFullscreen) {
+        nativeFullscreen = false;
+        const nativeScreenMode = getNativeScreenMode();
+        if (nativeScreenMode) {
+          try {
+            nativeScreenMode.exit();
+          } catch (_) {}
+        }
+      }
       if (isFullscreenActive()) {
         try {
           const exit = document.exitFullscreen || document.webkitExitFullscreen;
