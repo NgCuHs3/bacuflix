@@ -6102,8 +6102,10 @@ function playerMarkup(movie) {
     '<div class="seek-feedback-arrows"><svg viewBox="0 0 24 24" class="seek-feedback-icon" width="36" height="36" fill="currentColor"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg></div>' +
     '<span class="seek-feedback-text">10 seconds</span></div></div>' +
     '<header class="topbar ui-overlay">' +
+    '<div class="topbar-left">' +
+    '<button class="player-back-button" type="button" aria-label="Quay lại"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>' +
     '<button class="brand home-return-button" type="button" aria-label="Return to movie catalog"><img src="icon.png" alt="">' +
-    '<span>BACU<span class="brand-accent">Flix</span></span></button>' +
+    '<span>BACU<span class="brand-accent">Flix</span></span></button></div>' +
     '<div class="now-playing">' +
     '<span class="eyebrow"><span class="live-dot"></span> NOW PLAYING</span>' +
     '<span class="now-playing-title"></span>' +
@@ -7213,6 +7215,9 @@ function createPlayerScreen(root, movie, onBackRequest) {
     });
   }
   listen(root.querySelector(".home-return-button"), "click", function () {
+    onBackRequest();
+  });
+  listen(root.querySelector(".player-back-button"), "click", function () {
     onBackRequest();
   });
   listen(root.querySelector("#volume-down-button"), "click", function () {
