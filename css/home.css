@@ -2527,3 +2527,444 @@ body[data-device="tv"] .movie-detail-play-btn:focus {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
+
+
+/* ==========================================================================
+   Netflix-Style Poster Card Polish & GPU Scroll Optimization
+   ========================================================================== */
+
+.catalog-card {
+  background: #10131e;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.catalog-poster-wrap {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: #0c0e17;
+}
+
+.catalog-poster-shade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 55%;
+  background: linear-gradient(180deg, rgba(16, 19, 30, 0) 0%, rgba(16, 19, 30, 0.65) 65%, #10131e 100%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.catalog-card-badges {
+  top: 10px;
+  left: 10px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: calc(100% - 54px);
+}
+
+.catalog-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+.catalog-badge-quality {
+  background: #e50914;
+  color: #ffffff;
+}
+
+.catalog-badge-episode {
+  background: rgba(15, 18, 28, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f1f5f9;
+}
+
+.catalog-card-details {
+  position: relative;
+  z-index: 3;
+  padding: 10px 14px 14px;
+  background: #10131e;
+  gap: 4px;
+}
+
+.catalog-card-title {
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.015em;
+}
+
+.catalog-card-source {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  text-transform: none;
+  letter-spacing: 0.01em;
+  margin-bottom: 6px;
+}
+
+.catalog-play {
+  height: 36px;
+  min-height: 36px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.catalog-card:focus .catalog-play,
+.catalog-card.is-selected .catalog-play {
+  background: #e50914;
+  border-color: #ff2a36;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(229, 9, 20, 0.45);
+}
+
+[data-device="tv"] .catalog-poster,
+body[data-device="tv"] .catalog-poster {
+  height: 390px !important;
+  min-height: 390px !important;
+  max-height: 390px !important;
+}
+
+[data-device="tv"] .catalog-card-title,
+body[data-device="tv"] .catalog-card-title {
+  font-size: 18px !important;
+}
+
+[data-device="tv"] .catalog-card-source,
+body[data-device="tv"] .catalog-card-source {
+  font-size: 13.5px !important;
+}
+
+/* ==========================================================================
+   Netflix TV Right-Side Custom Search Keyboard Dock (.tv-keyboard-panel)
+   ========================================================================== */
+
+.home-screen.is-keyboard-open .catalog-heading,
+.home-screen.is-keyboard-open .catalog-message,
+.home-screen.is-keyboard-open .catalog-notice {
+  max-width: 56vw !important;
+}
+
+.home-screen.is-keyboard-open .catalog-grid {
+  width: 61vw !important;
+  max-width: 61vw !important;
+  margin-right: auto !important;
+  margin-left: 0 !important;
+  padding-left: 4vw !important;
+  padding-right: 1.5vw !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 20px !important;
+}
+
+.home-screen.is-keyboard-open .catalog-poster {
+  height: 320px !important;
+  min-height: 320px !important;
+  max-height: 320px !important;
+}
+
+.home-search-box.is-keyboard-active .home-search-input {
+  border-color: #e50914 !important;
+  background: rgba(18, 22, 34, 0.96) !important;
+  box-shadow: 0 0 0 2px rgba(229, 9, 20, 0.55) !important;
+}
+
+.tv-keyboard-panel {
+  position: fixed;
+  top: 96px;
+  right: 2.5vw;
+  bottom: 24px;
+  width: 34vw;
+  min-width: 390px;
+  max-width: 560px;
+  z-index: 250;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 20px 22px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(16, 19, 28, 0.98) 0%, rgba(10, 12, 18, 0.99) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.78), 0 0 0 1px rgba(229, 9, 20, 0.22);
+  color: #ffffff;
+  box-sizing: border-box;
+  animation: tvKbSlideIn 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tv-keyboard-panel[hidden] {
+  display: none !important;
+}
+
+@keyframes tvKbSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tv-kb-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tv-kb-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tv-kb-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(229, 9, 20, 0.18);
+  border: 1px solid rgba(229, 9, 20, 0.5);
+  color: #ff424f;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.tv-kb-hint {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tv-kb-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  box-sizing: border-box;
+}
+
+.tv-kb-preview-icon {
+  display: inline-flex;
+  color: #e50914;
+  flex-shrink: 0;
+}
+
+.tv-kb-preview-text {
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv-kb-preview-text.is-placeholder {
+  color: rgba(255, 255, 255, 0.42);
+  font-weight: 500;
+}
+
+.tv-kb-cursor {
+  display: inline-block;
+  width: 2.5px;
+  height: 20px;
+  background: #e50914;
+  margin-left: -4px;
+  animation: tvKbBlink 1s steps(2, start) infinite;
+}
+
+@keyframes tvKbBlink {
+  to {
+    visibility: hidden;
+  }
+}
+
+.tv-kb-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tv-kb-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.07);
+  color: #f8fafc;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  transition: transform 100ms ease, background-color 100ms ease, border-color 100ms ease;
+}
+
+.tv-kb-action-key {
+  height: 42px;
+  font-size: 13.5px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tv-kb-action-icon {
+  font-size: 15px;
+  color: #ff4d58;
+}
+
+.tv-kb-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+  margin: 8px 0;
+}
+
+.tv-kb-char-key {
+  height: 46px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.tv-kb-key:hover,
+.tv-kb-key:focus {
+  background: #e50914 !important;
+  border-color: #ffffff !important;
+  color: #ffffff !important;
+  transform: scale(1.07);
+  box-shadow: 0 0 0 3px #ffffff, 0 6px 18px rgba(229, 9, 20, 0.75);
+  z-index: 5;
+}
+
+.tv-kb-key:focus .tv-kb-action-icon {
+  color: #ffffff;
+}
+
+.tv-kb-tags-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tv-kb-tags-label {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.tv-kb-tags {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.tv-kb-tag {
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.88);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  outline: none;
+  transition: transform 100ms ease, background-color 100ms ease;
+}
+
+.tv-kb-tag:hover,
+.tv-kb-tag:focus {
+  background: #e50914 !important;
+  border-color: #ffffff !important;
+  color: #ffffff !important;
+  transform: scale(1.05);
+  box-shadow: 0 0 0 3px #ffffff, 0 4px 14px rgba(229, 9, 20, 0.65);
+}
+
+.tv-kb-footer {
+  margin-top: 6px;
+}
+
+.tv-kb-submit-btn {
+  width: 100%;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 800;
+  cursor: pointer;
+  outline: none;
+  transition: transform 100ms ease, background-color 100ms ease;
+}
+
+.tv-kb-submit-btn:hover,
+.tv-kb-submit-btn:focus {
+  background: #e50914 !important;
+  border-color: #ffffff !important;
+  transform: scale(1.03);
+  box-shadow: 0 0 0 3px #ffffff, 0 6px 20px rgba(229, 9, 20, 0.75);
+}
+
+@media (min-width: 2500px) {
+  .tv-keyboard-panel {
+    top: 118px;
+    max-width: 780px;
+    padding: 28px 32px;
+    border-radius: 24px;
+  }
+
+  .tv-kb-preview {
+    min-height: 62px;
+  }
+
+  .tv-kb-preview-text {
+    font-size: 23px;
+  }
+
+  .tv-kb-action-key {
+    height: 56px;
+    font-size: 18px;
+  }
+
+  .tv-kb-char-key {
+    height: 62px;
+    font-size: 23px;
+  }
+
+  .tv-kb-tag {
+    height: 48px;
+    font-size: 17px;
+  }
+
+  .tv-kb-submit-btn {
+    height: 58px;
+    font-size: 19px;
+  }
+}
