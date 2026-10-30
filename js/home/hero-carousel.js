@@ -100,9 +100,23 @@ export function createHeroCarousel(parentContainer, actionsHandler) {
     return Array.from(indicatorsWrap.querySelectorAll(".hero-dot"));
   }
 
+  function loadSlideImage(slide) {
+    if (!slide) {
+      return;
+    }
+    const img = slide.querySelector(".hero-backdrop-img");
+    if (img && !img.getAttribute("src") && img.dataset.src) {
+      img.src = img.dataset.src;
+    }
+  }
+
   function updateActiveSlideUI() {
     const slides = getSlideElements();
     const dots = getIndicatorElements();
+
+    // Only fetch the visible slide and the next one; avoids downloading every large backdrop at once.
+    loadSlideImage(slides[currentIndex]);
+    loadSlideImage(slides[(currentIndex + 1) % Math.max(1, slides.length)]);
 
     slides.forEach(function (slide, idx) {
       const isAct = idx === currentIndex;
@@ -252,7 +266,7 @@ export function createHeroCarousel(parentContainer, actionsHandler) {
 
     slide.innerHTML = "" +
       '<div class="hero-backdrop">' +
-        '<img class="hero-backdrop-img" src="' + bgImage + '" data-poster="' + posterImage + '" alt="" aria-hidden="true">' +
+        '<img class="hero-backdrop-img" data-src="' + bgImage + '" data-poster="' + posterImage + '" alt="" aria-hidden="true" decoding="async">' +
         '<div class="hero-gradient-top"></div>' +
         '<div class="hero-gradient-left"></div>' +
         '<div class="hero-gradient-bottom"></div>' +

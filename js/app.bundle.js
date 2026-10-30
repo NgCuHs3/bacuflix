@@ -343,6 +343,8 @@ var createContinueWatchingSection = requireModule("js/home/movie-carousel.js")["
 var createGenreSection = requireModule("js/home/movie-carousel.js")["createGenreSection"];
 var createTvSearchKeyboard = requireModule("js/home/tv-search-keyboard.js")["createTvSearchKeyboard"];
 var currentDevice = requireModule("js/utils/device.js")["currentDevice"];
+var lazyLoadImage = requireModule("js/utils/lazy-image.js")["lazyLoadImage"];
+var cancelLazyImage = requireModule("js/utils/lazy-image.js")["cancelLazyImage"];
 const PLACEHOLDER_POSTER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
 function makeMovieCard(movie, actionsHandler) {
@@ -644,13 +646,14 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
 
   function attachCardPoster(entry) {
     if (entry && entry.image && !entry.imageAttached && entry.posterUrl) {
-      entry.image.src = entry.posterUrl;
+      lazyLoadImage(entry.image, entry.posterUrl);
       entry.imageAttached = true;
     }
   }
 
   function detachCardPoster(entry) {
     if (entry && entry.image && entry.imageAttached) {
+      cancelLazyImage(entry.image);
       entry.image.src = PLACEHOLDER_POSTER;
       entry.imageAttached = false;
     }
@@ -4517,9 +4520,23 @@ function createHeroCarousel(parentContainer, actionsHandler) {
     return Array.from(indicatorsWrap.querySelectorAll(".hero-dot"));
   }
 
+  function loadSlideImage(slide) {
+    if (!slide) {
+      return;
+    }
+    const img = slide.querySelector(".hero-backdrop-img");
+    if (img && !img.getAttribute("src") && img.dataset.src) {
+      img.src = img.dataset.src;
+    }
+  }
+
   function updateActiveSlideUI() {
     const slides = getSlideElements();
     const dots = getIndicatorElements();
+
+    // Only fetch the visible slide and the next one; avoids downloading every large backdrop at once.
+    loadSlideImage(slides[currentIndex]);
+    loadSlideImage(slides[(currentIndex + 1) % Math.max(1, slides.length)]);
 
     slides.forEach(function (slide, idx) {
       const isAct = idx === currentIndex;
@@ -4669,7 +4686,7 @@ function createHeroCarousel(parentContainer, actionsHandler) {
 
     slide.innerHTML = "" +
       '<div class="hero-backdrop">' +
-        '<img class="hero-backdrop-img" src="' + bgImage + '" data-poster="' + posterImage + '" alt="" aria-hidden="true">' +
+        '<img class="hero-backdrop-img" data-src="' + bgImage + '" data-poster="' + posterImage + '" alt="" aria-hidden="true" decoding="async">' +
         '<div class="hero-gradient-top"></div>' +
         '<div class="hero-gradient-left"></div>' +
         '<div class="hero-gradient-bottom"></div>' +
@@ -4880,6 +4897,7 @@ registerModule("js/home/movie-carousel.js", function (requireModule) {
 var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
 var isFavorite = requireModule("js/services/favorites-service.js")["isFavorite"];
 var toggleFavorite = requireModule("js/services/favorites-service.js")["toggleFavorite"];
+var lazyLoadImage = requireModule("js/utils/lazy-image.js")["lazyLoadImage"];
 const GENRE_CATEGORIES = [
   {
     slug: "hanh-dong",
@@ -4942,7 +4960,6 @@ function createCarouselMovieCard(movie, options) {
   const img = document.createElement("img");
   img.className = "carousel-poster-img";
   img.alt = "";
-  img.loading = "lazy";
   img.decoding = "async";
   img.width = 220;
   img.height = 330;
@@ -4957,7 +4974,7 @@ function createCarouselMovieCard(movie, options) {
     img.classList.add("is-fallback");
     img.src = fallbackPoster;
   });
-  img.src = posterUrl;
+  lazyLoadImage(img, posterUrl);
 
   const shade = document.createElement("div");
   shade.className = "carousel-poster-shade";
@@ -5401,6 +5418,57 @@ function createGenreSection(callbacks) {
 }
 
 return {GENRE_CATEGORIES: GENRE_CATEGORIES, createCarouselMovieCard: createCarouselMovieCard, createMovieCarouselSection: createMovieCarouselSection, createContinueWatchingSection: createContinueWatchingSection, createGenreSection: createGenreSection};
+});
+registerModule("js/utils/lazy-image.js", function (requireModule) {
+let observer = null;
+
+function getObserver() {
+  if (observer || typeof IntersectionObserver === "undefined") {
+    return observer;
+  }
+  observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting) {
+        return;
+      }
+      const img = entry.target;
+      observer.unobserve(img);
+      const url = img.dataset.lazySrc;
+      if (url) {
+        delete img.dataset.lazySrc;
+        img.src = url;
+      }
+    });
+  }, { rootMargin: "400px 800px 400px 800px" });
+  return observer;
+}
+
+// Defers loading of an image until it is near the viewport. Works inside
+// horizontally scrolling carousels (unlike native loading="lazy" in some WebViews).
+function lazyLoadImage(img, url) {
+  if (!img || !url) {
+    return;
+  }
+  const obs = getObserver();
+  if (!obs) {
+    img.src = url;
+    return;
+  }
+  img.dataset.lazySrc = url;
+  obs.observe(img);
+}
+
+function cancelLazyImage(img) {
+  if (!img) {
+    return;
+  }
+  delete img.dataset.lazySrc;
+  if (observer) {
+    observer.unobserve(img);
+  }
+}
+
+return {lazyLoadImage: lazyLoadImage, cancelLazyImage: cancelLazyImage};
 });
 registerModule("js/home/tv-search-keyboard.js", function (requireModule) {
 const KEY_ROWS = [

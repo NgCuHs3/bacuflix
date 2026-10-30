@@ -1,5 +1,6 @@
 import { fallbackPoster } from "../config/catalog-sources.js";
 import { isFavorite, toggleFavorite } from "../services/favorites-service.js";
+import { lazyLoadImage } from "../utils/lazy-image.js";
 
 export const GENRE_CATEGORIES = [
   {
@@ -63,7 +64,6 @@ export function createCarouselMovieCard(movie, options) {
   const img = document.createElement("img");
   img.className = "carousel-poster-img";
   img.alt = "";
-  img.loading = "lazy";
   img.decoding = "async";
   img.width = 220;
   img.height = 330;
@@ -78,7 +78,7 @@ export function createCarouselMovieCard(movie, options) {
     img.classList.add("is-fallback");
     img.src = fallbackPoster;
   });
-  img.src = posterUrl;
+  lazyLoadImage(img, posterUrl);
 
   const shade = document.createElement("div");
   shade.className = "carousel-poster-shade";

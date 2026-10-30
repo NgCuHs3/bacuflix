@@ -9,6 +9,7 @@ import { createHeroCarousel } from "./hero-carousel.js";
 import { createMovieCarouselSection, createContinueWatchingSection, createGenreSection } from "./movie-carousel.js";
 import { createTvSearchKeyboard } from "./tv-search-keyboard.js";
 import { currentDevice } from "../utils/device.js";
+import { lazyLoadImage, cancelLazyImage } from "../utils/lazy-image.js";
 
 const PLACEHOLDER_POSTER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
@@ -311,13 +312,14 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
 
   function attachCardPoster(entry) {
     if (entry && entry.image && !entry.imageAttached && entry.posterUrl) {
-      entry.image.src = entry.posterUrl;
+      lazyLoadImage(entry.image, entry.posterUrl);
       entry.imageAttached = true;
     }
   }
 
   function detachCardPoster(entry) {
     if (entry && entry.image && entry.imageAttached) {
+      cancelLazyImage(entry.image);
       entry.image.src = PLACEHOLDER_POSTER;
       entry.imageAttached = false;
     }
