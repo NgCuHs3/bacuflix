@@ -14,6 +14,21 @@ function keyCode(event) {
   return event.keyCode || event.which || 0;
 }
 
+function isTextEntryElement(el) {
+  if (!el || !el.tagName) {
+    return false;
+  }
+  if (el.tagName === "TEXTAREA") {
+    return true;
+  }
+  if (el.tagName === "INPUT") {
+    const type = (el.type || "text").toLowerCase();
+    return type === "text" || type === "search" || type === "password" ||
+      type === "email" || type === "url" || type === "tel" || type === "number";
+  }
+  return false;
+}
+
 export function normalizeRemoteKey(event) {
   const code = keyCode(event);
   const key = event.key;
@@ -36,7 +51,7 @@ export function normalizeRemoteKey(event) {
     isRepeat: event.repeat === true,
     isBack: key === "Back" || key === "BrowserBack" || key === "Escape" ||
       key === "XF86Back" || code === 10009 || code === 27 ||
-      (code === 8 && !(event && event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA"))),
+      (code === 8 && !(event && isTextEntryElement(event.target))),
     isEscape: key === "Escape" || code === 27,
     isSelect: key === "Enter" || key === " " || code === 13 || code === 32,
     isPlayPause: key === "MediaPlayPause" || code === 10252,
@@ -69,7 +84,7 @@ export function createRemoteNavigation() {
   let activeScreen = null;
 
   function onKeyDown(event) {
-    const isInput = event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA");
+    const isInput = isTextEntryElement(event.target);
     if (isInput) {
       // In text input, allow normal typing, spaces, backspaces and text cursor navigation.
       // Delegate Escape, Back, ArrowDown, ArrowUp, ArrowLeft (at start), or Enter to screen navigation handler.

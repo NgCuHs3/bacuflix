@@ -77,12 +77,16 @@ function showHome(options) {
     },
     onOpenDetail: function (movie) {
       if (typeof window !== "undefined" && window.history && window.history.pushState) {
-        window.history.pushState({ screen: "movie-detail", movieSlug: movie.slug }, "", buildMovieUrl(movie.slug));
+        try {
+          window.history.pushState({ screen: "movie-detail", movieSlug: movie.slug }, "", buildMovieUrl(movie.slug));
+        } catch (_) {}
       }
     },
     onCloseDetail: function () {
       if (typeof window !== "undefined" && window.history && window.history.pushState) {
-        window.history.pushState({ screen: "catalog" }, "", buildHomeUrl());
+        try {
+          window.history.pushState({ screen: "catalog" }, "", buildHomeUrl());
+        } catch (_) {}
       }
     },
     onPlaybackUnavailable: function () {
@@ -103,24 +107,30 @@ function showHome(options) {
     }
   }, {
     selectedMovieId: options && options.selectedMovieId ? options.selectedMovieId : (previousMovie ? previousMovie.id : null),
-    autoOpenSlug: options && options.autoOpenSlug ? options.autoOpenSlug : null
+    autoOpenSlug: options && options.autoOpenSlug ? options.autoOpenSlug : null,
+    autoOpenEpisodeIndex: options && typeof options.autoOpenEpisodeIndex === "number" ? options.autoOpenEpisodeIndex : 0
   });
 
   setActiveScreen("catalog", homeScreen);
 
   if (typeof window !== "undefined" && window.history && window.history.replaceState) {
-    if (options && options.autoOpenSlug) {
-      window.history.replaceState({ screen: "movie-detail", movieSlug: options.autoOpenSlug }, "", buildMovieUrl(options.autoOpenSlug));
-    } else {
-      window.history.replaceState({ screen: "catalog" }, "", buildHomeUrl());
-    }
+    try {
+      if (options && options.autoOpenSlug) {
+        window.history.replaceState({ screen: "movie-detail", movieSlug: options.autoOpenSlug }, "", buildMovieUrl(options.autoOpenSlug));
+      } else {
+        window.history.replaceState({ screen: "catalog" }, "", buildHomeUrl());
+      }
+    } catch (_) {}
   }
 }
 
 function handlePlayerBack() {
   const prevMovie = NavigationState.selectedMovie;
   if (prevMovie && prevMovie.slug) {
-    showHome({ autoOpenSlug: prevMovie.slug });
+    showHome({
+      autoOpenSlug: prevMovie.slug,
+      autoOpenEpisodeIndex: typeof prevMovie.currentEpisodeIndex === "number" ? prevMovie.currentEpisodeIndex : 0
+    });
   } else {
     showHome();
   }
@@ -140,7 +150,9 @@ function showPlayer(movie, pushHistory) {
   if (pushHistory && typeof window !== "undefined" && window.history && window.history.pushState) {
     const epNum = (typeof movie.currentEpisodeIndex === "number") ? (movie.currentEpisodeIndex + 1) : 1;
     const slug = movie.slug || movie.id;
-    window.history.pushState({ screen: "player", movieSlug: slug, ep: epNum }, "", buildEpisodeUrl(slug, epNum));
+    try {
+      window.history.pushState({ screen: "player", movieSlug: slug, ep: epNum }, "", buildEpisodeUrl(slug, epNum));
+    } catch (_) {}
   }
 }
 
@@ -503,7 +515,11 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   });
 
   if (options && options.autoOpenSlug) {
-    detailModal.open({ slug: options.autoOpenSlug, title: "" });
+    detailModal.open({
+      slug: options.autoOpenSlug,
+      title: "",
+      currentEpisodeIndex: typeof options.autoOpenEpisodeIndex === "number" ? options.autoOpenEpisodeIndex : 0
+    });
   }
 
   // Hero Section Carousel (Netflix-style)
@@ -1177,7 +1193,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       if (hasHero) {
         // With hero banner active: keep Card 0 selected but do NOT steal focus or scroll away from Hero
         setSelectedCard(targetCard || cards[0], false);
-        if (!isHeaderActive && !isHeroActive) {
+        if (!detailModal.isOpen() && !isHeaderActive && !isHeroActive) {
           const heroBtns = heroCarousel.getFocusableElements();
           if (heroBtns.length) {
             heroBtns[0].focus();
@@ -1189,7 +1205,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         }
       } else {
         // Without hero (favorites / search): focus first card if not typing in header
-        setSelectedCard(targetCard || cards[0], !isHeaderActive);
+        setSelectedCard(targetCard || cards[0], !detailModal.isOpen() && !isHeaderActive);
       }
     }
   }
@@ -1470,7 +1486,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       }
     }).then(function () {
       refreshing = false;
-      if (!destroyed) {
+      if (!destroyed && !detailModal.isOpen()) {
         if (!screen.contains(document.activeElement)) {
           if (options && options.selectedMovieId) {
             const matchIndex = currentResult && currentResult.movies ?
@@ -1514,7 +1530,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       // Focus hero action button on open
       const active = document.activeElement;
       const isHeaderFocused = (tabButtons && tabButtons.includes(active)) || active === searchInput;
-      if (!isHeaderFocused) {
+      if (!detailModal.isOpen() && !isHeaderFocused) {
         const heroBtns = heroCarousel.getFocusableElements();
         if (heroBtns.length) {
           heroBtns[0].focus();
@@ -1858,6 +1874,21 @@ function keyCode(event) {
   return event.keyCode || event.which || 0;
 }
 
+function isTextEntryElement(el) {
+  if (!el || !el.tagName) {
+    return false;
+  }
+  if (el.tagName === "TEXTAREA") {
+    return true;
+  }
+  if (el.tagName === "INPUT") {
+    const type = (el.type || "text").toLowerCase();
+    return type === "text" || type === "search" || type === "password" ||
+      type === "email" || type === "url" || type === "tel" || type === "number";
+  }
+  return false;
+}
+
 function normalizeRemoteKey(event) {
   const code = keyCode(event);
   const key = event.key;
@@ -1880,7 +1911,7 @@ function normalizeRemoteKey(event) {
     isRepeat: event.repeat === true,
     isBack: key === "Back" || key === "BrowserBack" || key === "Escape" ||
       key === "XF86Back" || code === 10009 || code === 27 ||
-      (code === 8 && !(event && event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA"))),
+      (code === 8 && !(event && isTextEntryElement(event.target))),
     isEscape: key === "Escape" || code === 27,
     isSelect: key === "Enter" || key === " " || code === 13 || code === 32,
     isPlayPause: key === "MediaPlayPause" || code === 10252,
@@ -1913,7 +1944,7 @@ function createRemoteNavigation() {
   let activeScreen = null;
 
   function onKeyDown(event) {
-    const isInput = event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA");
+    const isInput = isTextEntryElement(event.target);
     if (isInput) {
       // In text input, allow normal typing, spaces, backspaces and text cursor navigation.
       // Delegate Escape, Back, ArrowDown, ArrowUp, ArrowLeft (at start), or Enter to screen navigation handler.
@@ -2950,18 +2981,24 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
           serverName: serverName
         };
 
-        close();
+        close(true);
         if (options && typeof options.onSelectEpisode === "function") {
           options.onSelectEpisode(playbackMovie);
         }
       });
     });
 
-    // Set initial focus: first episode button, or favorite button if no episodes
+    // Set initial focus: current/first episode button, or favorite button if no episodes
     updateModalLayoutCache();
-    const firstEp = cachedEpisodeBtns.length ? cachedEpisodeBtns[0] : null;
-    if (firstEp) {
-      firstEp.focus();
+    const initialEpIdx = (currentMovie && typeof currentMovie.currentEpisodeIndex === "number")
+      ? Math.max(0, Math.min(cachedEpisodeBtns.length - 1, currentMovie.currentEpisodeIndex))
+      : 0;
+    const targetEpBtn = cachedEpisodeBtns.length ? cachedEpisodeBtns[initialEpIdx] : null;
+    if (targetEpBtn) {
+      targetEpBtn.focus();
+      if (typeof targetEpBtn.scrollIntoView === "function") {
+        targetEpBtn.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
     } else if (favBtn) {
       favBtn.focus();
     } else if (closeBtn) {
@@ -2995,11 +3032,11 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
     loadDetail(movie.slug);
   }
 
-  function close() {
+  function close(silent) {
     if (overlay.parentNode) {
       overlay.parentNode.removeChild(overlay);
     }
-    if (options && typeof options.onClose === "function") {
+    if (silent !== true && options && typeof options.onClose === "function") {
       options.onClose();
     }
   }
@@ -3020,7 +3057,14 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
       const activeEl = document.activeElement;
       let currentIndex = focusableElements.indexOf(activeEl);
       if (currentIndex === -1) {
-        setFocus(0);
+        if (cachedEpisodeBtns.length > 0) {
+          const fallbackEpIdx = (currentMovie && typeof currentMovie.currentEpisodeIndex === "number")
+            ? Math.max(0, Math.min(cachedEpisodeBtns.length - 1, currentMovie.currentEpisodeIndex))
+            : 0;
+          cachedEpisodeBtns[fallbackEpIdx].focus();
+        } else {
+          setFocus(0);
+        }
         return true;
       }
 
@@ -3183,7 +3227,7 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
     if (key.isSelect) {
       const activeEl = document.activeElement;
-      if (activeEl && typeof activeEl.click === "function") {
+      if (activeEl && modal.contains(activeEl) && typeof activeEl.click === "function") {
         activeEl.click();
         return true;
       }
@@ -3194,7 +3238,7 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
   function destroy() {
     disposed = true;
-    close();
+    close(true);
   }
 
   return {
@@ -3691,6 +3735,9 @@ function playerMarkup(movie) {
     '<input id="seek-bar" type="range" min="0" max="1000" value="0" aria-label="Seek" style="background-image: linear-gradient(to right, #e50924 0%, #e50924 0%, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.35) 100%);">' +
     '<span id="duration" class="time-label">0:00</span></label>' +
     '<div class="control-row">' +
+    '<button id="prev-episode-button" class="control-button" type="button" aria-label="Tập trước">' +
+    '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor" style="fill: currentColor; stroke: none;"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z"/></svg></span>' +
+    '<span class="control-caption">Tập trước</span></button>' +
     '<button id="rewind-button" class="control-button" type="button" aria-label="Rewind 10 seconds">' +
     '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m15 18-6-6 6-6"/></svg></span>' +
     '<span class="control-caption">Back</span></button>' +
@@ -3701,7 +3748,7 @@ function playerMarkup(movie) {
     '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m9 18 6-6-6-6"/></svg></span>' +
     '<span class="control-caption">Forward</span></button>' +
     '<button id="next-episode-button" class="control-button" type="button" aria-label="Tập tiếp theo">' +
-    '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></span>' +
+    '<span class="control-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor" style="fill: currentColor; stroke: none;"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></span>' +
     '<span class="control-caption">Tập tiếp</span></button>' +
     '<button id="share-button" class="control-button compact-control" type="button" aria-label="Chia sẻ tập phim">' +
     '<span class="control-symbol share-symbol" aria-hidden="true"><svg class="control-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span>' +
@@ -3764,6 +3811,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
   const seekOverlayRight = root.querySelector("#seek-overlay-right");
   const loader = root.querySelector("#player-loader");
   const loaderLabel = root.querySelector("#loader-label");
+  const prevEpisodeButton = root.querySelector("#prev-episode-button");
   const nextEpisodeButton = root.querySelector("#next-episode-button");
   const autoNextOverlay = root.querySelector("#auto-next-overlay");
   const autoNextTitle = root.querySelector("#auto-next-title");
@@ -3797,6 +3845,18 @@ function createPlayerScreen(root, movie, onBackRequest) {
   let pointerSeekSource = null;
   let selectedHoldSource = null;
   let autoplayBlocked = false;
+  let pendingSeekTime = null;
+  let ignoreTimelineUntil = 0;
+  let seekCommitTimer = 0;
+  let lastDirectCommitTime = 0;
+  let lastDirectCommitValue = "";
+
+  function getEffectiveCurrentTime() {
+    if (pendingSeekTime !== null && Date.now() < ignoreTimelineUntil) {
+      return pendingSeekTime;
+    }
+    return playback.getCurrentTime();
+  }
 
   nowPlayingTitle.textContent = movie.title;
 
@@ -4148,7 +4208,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
     seekBar.disabled = false;
     const progress = Number.isFinite(previewProgress)
       ? Math.max(0, Math.min(1, previewProgress))
-      : Math.max(0, Math.min(1, (playback.getCurrentTime() - range.start) / (range.end - range.start)));
+      : Math.max(0, Math.min(1, (getEffectiveCurrentTime() - range.start) / (range.end - range.start)));
     const percentage = progress * 100;
     const pctStr = percentage.toFixed(2) + "%";
     seekBar.style.setProperty("--seek-progress", pctStr);
@@ -4188,10 +4248,29 @@ function createPlayerScreen(root, movie, onBackRequest) {
   }
 
   function updateNextButtonState() {
+    const hasMultiple = episodesList && episodesList.length > 1;
+    if (prevEpisodeButton) {
+      const hasPrev = hasMultiple && currentEpisodeIndex > 0;
+      if (!hasMultiple) {
+        prevEpisodeButton.hidden = true;
+        prevEpisodeButton.style.display = "none";
+      } else {
+        prevEpisodeButton.hidden = false;
+        prevEpisodeButton.style.display = "";
+        prevEpisodeButton.disabled = !hasPrev;
+        if (hasPrev) {
+          const prevEp = episodesList[currentEpisodeIndex - 1];
+          prevEpisodeButton.setAttribute("aria-label", "Tập trước: " + prevEp.name);
+          prevEpisodeButton.title = "Phát tập trước: " + prevEp.name;
+        } else {
+          prevEpisodeButton.setAttribute("aria-label", "Đang ở tập đầu");
+          prevEpisodeButton.title = "Đang ở tập đầu";
+        }
+      }
+    }
     if (!nextEpisodeButton) {
       return;
     }
-    const hasMultiple = episodesList && episodesList.length > 1;
     const hasNext = hasMultiple && (currentEpisodeIndex + 1 < episodesList.length);
     if (!hasMultiple) {
       nextEpisodeButton.hidden = true;
@@ -4266,6 +4345,12 @@ function createPlayerScreen(root, movie, onBackRequest) {
       return;
     }
     cancelAutoNext();
+    seekController.cancel();
+    window.clearTimeout(seekCommitTimer);
+    seekCommitTimer = 0;
+    pendingSeekTime = null;
+    ignoreTimelineUntil = 0;
+    seeking = false;
     currentEpisodeIndex = index;
     const ep = episodesList[index];
     const streamUrl = ep.m3u8 || ep.fallbackEmbed;
@@ -4277,25 +4362,55 @@ function createPlayerScreen(root, movie, onBackRequest) {
     const newFullTitle = seriesTitle + " - " + ep.name;
     currentMovie.title = newFullTitle;
     currentMovie.m3u8 = streamUrl;
+    currentMovie.currentEpisodeIndex = index;
     if (nowPlayingTitle) {
       nowPlayingTitle.textContent = newFullTitle;
     }
+    mediaStarted = false;
+    autoplayBlocked = false;
+    playButton.hidden = true;
     showLoader("Đang tải " + ep.name + "...");
     showStatus("Đang phát " + ep.name);
+    const wasFocusedOnPrev = document.activeElement === prevEpisodeButton;
+    const wasFocusedOnNext = document.activeElement === nextEpisodeButton;
     updateNextButtonState();
+    if (wasFocusedOnPrev && (!prevEpisodeButton || prevEpisodeButton.disabled || prevEpisodeButton.hidden)) {
+      if (nextEpisodeButton && !nextEpisodeButton.disabled && !nextEpisodeButton.hidden) {
+        nextEpisodeButton.focus();
+      } else {
+        togglePlayButton.focus();
+      }
+    } else if (wasFocusedOnNext && (!nextEpisodeButton || nextEpisodeButton.disabled || nextEpisodeButton.hidden)) {
+      if (prevEpisodeButton && !prevEpisodeButton.disabled && !prevEpisodeButton.hidden) {
+        prevEpisodeButton.focus();
+      } else {
+        togglePlayButton.focus();
+      }
+    }
+    updateTimeline(0);
     if (typeof window !== "undefined" && window.history && window.history.replaceState) {
       const epNum = index + 1;
       const movieSlug = currentMovie.slug || currentMovie.id;
       if (movieSlug) {
-        window.history.replaceState({ screen: "player", movieSlug: movieSlug, ep: epNum }, "", buildEpisodeUrl(movieSlug, epNum));
+        try {
+          window.history.replaceState({ screen: "player", movieSlug: movieSlug, ep: epNum }, "", buildEpisodeUrl(movieSlug, epNum));
+        } catch (_) {}
       }
     }
     playback.start(streamUrl);
     scheduleHide(3000);
   }
 
+  function getControlButtons() {
+    return Array.prototype.slice.call(
+      controls.querySelectorAll("button:not([disabled]):not([hidden])")
+    ).filter(function (btn) {
+      return btn.style.display !== "none";
+    });
+  }
+
   function focusControl(direction) {
-    const buttons = Array.prototype.slice.call(controls.querySelectorAll("button:not([disabled])"));
+    const buttons = getControlButtons();
     const active = document.activeElement;
     const onTimeline = active === seekBar;
     seekController.commitPreview();
@@ -4356,37 +4471,30 @@ function createPlayerScreen(root, movie, onBackRequest) {
         return true;
       }
       seekController.commitPreview();
-      if (controlsVisible || stage.classList.contains("controls-visible")) {
-        window.clearTimeout(controlsTimer);
-        hideControls(true);
-        if (controls.contains(document.activeElement)) {
-          document.activeElement.blur();
-        }
-        return true;
-      }
       onBackRequest();
       return true;
     }
 
+    const wasControlsVisible = controlsVisible;
     if (!controlsVisible) {
-      showControls(true);
+      if (key.direction === "left" || key.direction === "right") {
+        showControls(false);
+        seekBar.focus();
+      } else {
+        showControls(true);
+      }
     }
     scheduleHide();
     const target = document.activeElement;
     const inControls = controls.contains(target);
 
     if (key.direction === "left" || key.direction === "right") {
-      const secondaryButtons = [
-        root.querySelector("#volume-down-button"),
-        root.querySelector("#volume-up-button"),
-        root.querySelector("#subtitle-button"),
-        root.querySelector("#fullscreen-button"),
-        root.querySelector("#next-episode-button"),
-        root.querySelector("#share-button")
-      ];
-      if (inControls && secondaryButtons.includes(target)) {
+      if (wasControlsVisible && inControls && target !== seekBar && !seekController.isScrubbing()) {
         focusControl(key.direction);
         return true;
+      }
+      if (target !== seekBar) {
+        seekBar.focus();
       }
       const wasScrubbing = seekController.isScrubbing();
       seekController.pressKey(key.direction === "left" ? -1 : 1, key.direction);
@@ -4397,6 +4505,10 @@ function createPlayerScreen(root, movie, onBackRequest) {
       return true;
     }
     if (key.direction === "up" || key.direction === "down") {
+      if (!wasControlsVisible) {
+        togglePlayButton.focus();
+        return true;
+      }
       if (inControls) {
         focusControl(key.direction);
       } else {
@@ -4460,7 +4572,9 @@ function createPlayerScreen(root, movie, onBackRequest) {
 
   function onKeyUp(event, key) {
     if (key.direction === "left" || key.direction === "right") {
-      seekController.releaseKey(key.direction);
+      if (seekController.isScrubbing()) {
+        seekController.releaseKey(key.direction);
+      }
       return true;
     }
     if (key.isFastForward || key.isRewind) {
@@ -4471,6 +4585,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
       const source = selectedHoldSource;
       selectedHoldSource = null;
       seekController.releaseKey(source.id);
+      suppressNextClick(source);
       return true;
     }
     return false;
@@ -4498,10 +4613,12 @@ function createPlayerScreen(root, movie, onBackRequest) {
       updateSoundControl(muted, volume);
     },
     onTimelineChange() {
-      if (!seeking && !video.seeking) {
+      if (!seeking && !video.seeking && !seekController.isScrubbing() && Date.now() >= ignoreTimelineUntil) {
         updateTimeline();
       }
-      updateSubtitleDisplay();
+      if (!seekController.isScrubbing()) {
+        updateSubtitleDisplay();
+      }
     },
     onAutoplayBlocked() {
       autoplayBlocked = true;
@@ -4525,7 +4642,9 @@ function createPlayerScreen(root, movie, onBackRequest) {
       stage.classList.remove("playback-error");
       status.dataset.visible = "false";
       scheduleHide();
-      updateSubtitleDisplay();
+      if (!seekController.isScrubbing()) {
+        updateSubtitleDisplay();
+      }
     },
     onWaiting() {
       showLoader("Buffering...");
@@ -4541,7 +4660,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
 
   const seekController = createSeekController({
     getRange: playback.getRange,
-    getCurrentTime: playback.getCurrentTime,
+    getCurrentTime: getEffectiveCurrentTime,
     onPreview(progress, time, meta) {
       updateTimeline(progress);
       const range = playback.getRange();
@@ -4555,7 +4674,8 @@ function createPlayerScreen(root, movie, onBackRequest) {
       }
     },
     onCommit(time, meta) {
-      playback.seek(time);
+      pendingSeekTime = time;
+      ignoreTimelineUntil = Date.now() + 1200;
       const range = playback.getRange();
       const progress = (range && range.end > range.start)
         ? Math.max(0, Math.min(1, (time - range.start) / (range.end - range.start)))
@@ -4565,6 +4685,19 @@ function createPlayerScreen(root, movie, onBackRequest) {
       if (meta && meta.direction && !meta.isDirect) {
         const side = meta.direction < 0 ? "left" : "right";
         showSeekFeedback(side, meta.percentage, meta.deltaSeconds, time);
+      }
+      window.clearTimeout(seekCommitTimer);
+      if (meta && meta.isTap) {
+        seekCommitTimer = window.setTimeout(function () {
+          seekCommitTimer = 0;
+          if (!disposed) {
+            ignoreTimelineUntil = Date.now() + 1200;
+            playback.seek(time);
+          }
+        }, 180);
+      } else {
+        seekCommitTimer = 0;
+        playback.seek(time);
       }
       scheduleHide();
     }
@@ -4617,6 +4750,13 @@ function createPlayerScreen(root, movie, onBackRequest) {
   listen(togglePlayButton, "click", function () {
     playback.toggle();
   });
+  if (prevEpisodeButton) {
+    listen(prevEpisodeButton, "click", function () {
+      if (currentEpisodeIndex > 0) {
+        playEpisode(currentEpisodeIndex - 1);
+      }
+    });
+  }
   if (nextEpisodeButton) {
     listen(nextEpisodeButton, "click", function () {
       if (currentEpisodeIndex + 1 < episodesList.length) {
@@ -4648,7 +4788,17 @@ function createPlayerScreen(root, movie, onBackRequest) {
     changeVolume(0.1);
   });
   function commitSeekBarValue() {
+    if (seekController.isScrubbing() && !seeking) {
+      return;
+    }
     seeking = false;
+    const now = Date.now();
+    const currentVal = String(seekBar.value);
+    if (now - lastDirectCommitTime < 80 && currentVal === lastDirectCommitValue) {
+      return;
+    }
+    lastDirectCommitTime = now;
+    lastDirectCommitValue = currentVal;
     const range = playback.getRange();
     if (range) {
       seekController.setPreview(Number(seekBar.value) / 1000);
@@ -4656,7 +4806,16 @@ function createPlayerScreen(root, movie, onBackRequest) {
     seekController.commitPreview();
   }
 
+  listen(seekBar, "keydown", function (event) {
+    const k = event.key || "";
+    if (k === "ArrowLeft" || k === "ArrowRight" || k === "ArrowUp" || k === "ArrowDown" || k === "Left" || k === "Right" || k === "Up" || k === "Down") {
+      event.preventDefault();
+    }
+  });
   listen(seekBar, "input", function () {
+    if (seekController.isScrubbing() && !seeking) {
+      return;
+    }
     seeking = true;
     const range = playback.getRange();
     if (range) {
@@ -4689,11 +4848,6 @@ function createPlayerScreen(root, movie, onBackRequest) {
       }
     });
   }
-  listen(window, "blur", function () {
-    if (seekController.isScrubbing()) {
-      seekController.cancel();
-    }
-  });
   listen(controls, "focusin", function () {
     showControls(false);
     scheduleHide();
@@ -4748,14 +4902,14 @@ function createPlayerScreen(root, movie, onBackRequest) {
     showLoader("Loading movie...");
     playback.play();
   });
-  listen(video, "timeupdate", function () {
-    updateSubtitleDisplay();
-  });
-  listen(video, "seeking", function () {
-    updateSubtitleDisplay();
-  });
   listen(video, "seeked", function () {
-    updateSubtitleDisplay();
+    if (!seekCommitTimer && !seekController.isScrubbing()) {
+      pendingSeekTime = null;
+      ignoreTimelineUntil = 0;
+    }
+    if (!seekController.isScrubbing()) {
+      updateSubtitleDisplay();
+    }
     if (video.readyState >= 3) {
       hideLoader();
     }
@@ -4823,6 +4977,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
   updateNextButtonState();
   showLoader("Loading movie...");
   playback.start(movie.m3u8);
+  togglePlayButton.focus();
   scheduleHide();
 
   return {
@@ -4839,7 +4994,10 @@ function createPlayerScreen(root, movie, onBackRequest) {
         try {
           const exit = document.exitFullscreen || document.webkitExitFullscreen;
           if (exit) {
-            exit.call(document);
+            const p = exit.call(document);
+            if (p && typeof p.catch === "function") {
+              p.catch(function () {});
+            }
           }
         } catch (_) {}
       }
@@ -4849,6 +5007,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
       window.clearTimeout(suppressClickTimer);
       window.clearTimeout(singleClickTimer);
       window.clearTimeout(feedbackTimer);
+      window.clearTimeout(seekCommitTimer);
       subtitleService.cancel();
       subtitleCues = [];
       renderSubtitles("");
@@ -4899,6 +5058,27 @@ function createPlaybackService(video, callbacks) {
     }
   }
 
+  function cleanupMedia() {
+    if (hls) {
+      const oldHls = hls;
+      hls = null;
+      try {
+        oldHls.stopLoad();
+      } catch (_) {}
+      try {
+        oldHls.detachMedia();
+      } catch (_) {}
+      try {
+        oldHls.destroy();
+      } catch (_) {}
+    }
+    try {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    } catch (_) {}
+  }
+
   function reportFailure(message, error) {
     if (failed || destroyed) {
       return;
@@ -4907,10 +5087,7 @@ function createPlaybackService(video, callbacks) {
     if (error) {
       console.error("Video playback failed:", error);
     }
-    if (hls) {
-      hls.destroy();
-      hls = null;
-    }
+    cleanupMedia();
     if (callbacks.onError) {
       callbacks.onError(message);
     }
@@ -4924,6 +5101,9 @@ function createPlaybackService(video, callbacks) {
     if (playback && typeof playback.then === "function") {
       playback.catch(function (error) {
         if (failed || destroyed) {
+          return;
+        }
+        if (error.name === "AbortError") {
           return;
         }
         if (error.name === "NotAllowedError") {
@@ -4948,10 +5128,7 @@ function createPlaybackService(video, callbacks) {
     }
     fallbackAttempted = true;
     console.warn("Falling back to native HLS playback:", reason);
-    if (hls) {
-      hls.destroy();
-      hls = null;
-    }
+    cleanupMedia();
     video.src = sourceUrl;
     video.load();
     attemptPlayback();
@@ -4959,6 +5136,9 @@ function createPlaybackService(video, callbacks) {
   }
 
   function onMediaError() {
+    if (destroyed || !sourceUrl || (!hls && !video.getAttribute("src"))) {
+      return;
+    }
     const code = video.error ? video.error.code : "unknown";
     console.error("Video element error:", video.error);
     if (useNativeHls("media error " + code)) {
@@ -5025,6 +5205,8 @@ function createPlaybackService(video, callbacks) {
       if (destroyed) {
         return;
       }
+      sourceUrl = "";
+      cleanupMedia();
       sourceUrl = url;
       failed = false;
       fallbackAttempted = false;
@@ -5036,15 +5218,24 @@ function createPlaybackService(video, callbacks) {
 
       if (window.Hls && window.Hls.isSupported()) {
         try {
-          hls = new window.Hls({
+          const instance = new window.Hls({
             loader: createSegmentLoader(window.Hls.DefaultConfig.loader)
           });
-          hls.on(window.Hls.Events.MEDIA_ATTACHED, function () {
-            hls.loadSource(sourceUrl);
+          hls = instance;
+          instance.on(window.Hls.Events.MEDIA_ATTACHED, function () {
+            if (destroyed || hls !== instance) {
+              return;
+            }
+            instance.loadSource(sourceUrl);
           });
-          hls.on(window.Hls.Events.MANIFEST_PARSED, attemptPlayback);
-          hls.on(window.Hls.Events.ERROR, function (_event, data) {
-            if (!data.fatal) {
+          instance.on(window.Hls.Events.MANIFEST_PARSED, function () {
+            if (destroyed || hls !== instance) {
+              return;
+            }
+            attemptPlayback();
+          });
+          instance.on(window.Hls.Events.ERROR, function (_event, data) {
+            if (destroyed || hls !== instance || !data.fatal) {
               return;
             }
             console.error("HLS playback error:", data);
@@ -5052,7 +5243,7 @@ function createPlaybackService(video, callbacks) {
               reportFailure("Stream error: " + data.details);
             }
           });
-          hls.attachMedia(video);
+          instance.attachMedia(video);
         } catch (error) {
           console.error("Unable to initialize HLS playback:", error);
           if (!useNativeHls(error.message)) {
@@ -5111,29 +5302,19 @@ function createPlaybackService(video, callbacks) {
       return video.currentTime;
     },
     stop() {
-      if (hls) {
-        hls.destroy();
-        hls = null;
-      }
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
+      sourceUrl = "";
+      cleanupMedia();
     },
     destroy() {
       if (destroyed) {
         return;
       }
       destroyed = true;
+      sourceUrl = "";
       listeners.forEach(function (removeListener) {
         removeListener();
       });
-      if (hls) {
-        hls.destroy();
-        hls = null;
-      }
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
+      cleanupMedia();
     }
   };
 }
@@ -5379,7 +5560,8 @@ function createSeekController(options) {
   let tapCount = 0;
   let keyWatchdogTimer = 0;
   let keyRepeatCount = 0;
-  const KEY_WATCHDOG_TIMEOUT_MS = 160;
+  const INITIAL_WATCHDOG_TIMEOUT_MS = 650;
+  const REPEAT_WATCHDOG_TIMEOUT_MS = 180;
 
   function clearKeyWatchdog() {
     if (keyWatchdogTimer) {
@@ -5390,13 +5572,14 @@ function createSeekController(options) {
 
   function resetKeyWatchdog() {
     clearKeyWatchdog();
+    const timeout = keyRepeatCount > 1 ? REPEAT_WATCHDOG_TIMEOUT_MS : INITIAL_WATCHDOG_TIMEOUT_MS;
     keyWatchdogTimer = window.setTimeout(function () {
       keyWatchdogTimer = 0;
       if (pressedKeys.length || scrubbing) {
         pressedKeys = [];
         finish(true);
       }
-    }, KEY_WATCHDOG_TIMEOUT_MS);
+    }, timeout);
   }
 
   function cancelFrame() {
@@ -5423,6 +5606,14 @@ function createSeekController(options) {
     const frameDuration = lastFrame ? Math.min(0.2, Math.max(0, (timestamp - lastFrame) / 1000)) : 0.016;
     lastFrame = timestamp;
     elapsed += frameDuration;
+
+    if (elapsed < 0.18) {
+      const canWait = direction > 0 ? previewProgress < 1 : previewProgress > 0;
+      if (canWait) {
+        frame = window.requestAnimationFrame(animate);
+      }
+      return;
+    }
 
     const currentSpeed = Math.min(
       speed.maximumProgressPerSecond,

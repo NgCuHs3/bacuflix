@@ -23,7 +23,8 @@ export function createSeekController(options) {
   let tapCount = 0;
   let keyWatchdogTimer = 0;
   let keyRepeatCount = 0;
-  const KEY_WATCHDOG_TIMEOUT_MS = 160;
+  const INITIAL_WATCHDOG_TIMEOUT_MS = 650;
+  const REPEAT_WATCHDOG_TIMEOUT_MS = 180;
 
   function clearKeyWatchdog() {
     if (keyWatchdogTimer) {
@@ -34,13 +35,14 @@ export function createSeekController(options) {
 
   function resetKeyWatchdog() {
     clearKeyWatchdog();
+    const timeout = keyRepeatCount > 1 ? REPEAT_WATCHDOG_TIMEOUT_MS : INITIAL_WATCHDOG_TIMEOUT_MS;
     keyWatchdogTimer = window.setTimeout(function () {
       keyWatchdogTimer = 0;
       if (pressedKeys.length || scrubbing) {
         pressedKeys = [];
         finish(true);
       }
-    }, KEY_WATCHDOG_TIMEOUT_MS);
+    }, timeout);
   }
 
   function cancelFrame() {
@@ -67,6 +69,14 @@ export function createSeekController(options) {
     const frameDuration = lastFrame ? Math.min(0.2, Math.max(0, (timestamp - lastFrame) / 1000)) : 0.016;
     lastFrame = timestamp;
     elapsed += frameDuration;
+
+    if (elapsed < 0.18) {
+      const canWait = direction > 0 ? previewProgress < 1 : previewProgress > 0;
+      if (canWait) {
+        frame = window.requestAnimationFrame(animate);
+      }
+      return;
+    }
 
     const currentSpeed = Math.min(
       speed.maximumProgressPerSecond,

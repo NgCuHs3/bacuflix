@@ -296,18 +296,24 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
           serverName: serverName
         };
 
-        close();
+        close(true);
         if (options && typeof options.onSelectEpisode === "function") {
           options.onSelectEpisode(playbackMovie);
         }
       });
     });
 
-    // Set initial focus: first episode button, or favorite button if no episodes
+    // Set initial focus: current/first episode button, or favorite button if no episodes
     updateModalLayoutCache();
-    const firstEp = cachedEpisodeBtns.length ? cachedEpisodeBtns[0] : null;
-    if (firstEp) {
-      firstEp.focus();
+    const initialEpIdx = (currentMovie && typeof currentMovie.currentEpisodeIndex === "number")
+      ? Math.max(0, Math.min(cachedEpisodeBtns.length - 1, currentMovie.currentEpisodeIndex))
+      : 0;
+    const targetEpBtn = cachedEpisodeBtns.length ? cachedEpisodeBtns[initialEpIdx] : null;
+    if (targetEpBtn) {
+      targetEpBtn.focus();
+      if (typeof targetEpBtn.scrollIntoView === "function") {
+        targetEpBtn.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
     } else if (favBtn) {
       favBtn.focus();
     } else if (closeBtn) {
@@ -341,11 +347,11 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
     loadDetail(movie.slug);
   }
 
-  function close() {
+  function close(silent) {
     if (overlay.parentNode) {
       overlay.parentNode.removeChild(overlay);
     }
-    if (options && typeof options.onClose === "function") {
+    if (silent !== true && options && typeof options.onClose === "function") {
       options.onClose();
     }
   }
@@ -366,7 +372,14 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
       const activeEl = document.activeElement;
       let currentIndex = focusableElements.indexOf(activeEl);
       if (currentIndex === -1) {
-        setFocus(0);
+        if (cachedEpisodeBtns.length > 0) {
+          const fallbackEpIdx = (currentMovie && typeof currentMovie.currentEpisodeIndex === "number")
+            ? Math.max(0, Math.min(cachedEpisodeBtns.length - 1, currentMovie.currentEpisodeIndex))
+            : 0;
+          cachedEpisodeBtns[fallbackEpIdx].focus();
+        } else {
+          setFocus(0);
+        }
         return true;
       }
 
@@ -529,7 +542,7 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
     if (key.isSelect) {
       const activeEl = document.activeElement;
-      if (activeEl && typeof activeEl.click === "function") {
+      if (activeEl && modal.contains(activeEl) && typeof activeEl.click === "function") {
         activeEl.click();
         return true;
       }
@@ -540,7 +553,7 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
   function destroy() {
     disposed = true;
-    close();
+    close(true);
   }
 
   return {

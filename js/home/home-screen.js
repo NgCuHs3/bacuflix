@@ -234,7 +234,11 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
   });
 
   if (options && options.autoOpenSlug) {
-    detailModal.open({ slug: options.autoOpenSlug, title: "" });
+    detailModal.open({
+      slug: options.autoOpenSlug,
+      title: "",
+      currentEpisodeIndex: typeof options.autoOpenEpisodeIndex === "number" ? options.autoOpenEpisodeIndex : 0
+    });
   }
 
   // Hero Section Carousel (Netflix-style)
@@ -908,7 +912,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       if (hasHero) {
         // With hero banner active: keep Card 0 selected but do NOT steal focus or scroll away from Hero
         setSelectedCard(targetCard || cards[0], false);
-        if (!isHeaderActive && !isHeroActive) {
+        if (!detailModal.isOpen() && !isHeaderActive && !isHeroActive) {
           const heroBtns = heroCarousel.getFocusableElements();
           if (heroBtns.length) {
             heroBtns[0].focus();
@@ -920,7 +924,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
         }
       } else {
         // Without hero (favorites / search): focus first card if not typing in header
-        setSelectedCard(targetCard || cards[0], !isHeaderActive);
+        setSelectedCard(targetCard || cards[0], !detailModal.isOpen() && !isHeaderActive);
       }
     }
   }
@@ -1201,7 +1205,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       }
     }).then(function () {
       refreshing = false;
-      if (!destroyed) {
+      if (!destroyed && !detailModal.isOpen()) {
         if (!screen.contains(document.activeElement)) {
           if (options && options.selectedMovieId) {
             const matchIndex = currentResult && currentResult.movies ?
@@ -1245,7 +1249,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       // Focus hero action button on open
       const active = document.activeElement;
       const isHeaderFocused = (tabButtons && tabButtons.includes(active)) || active === searchInput;
-      if (!isHeaderFocused) {
+      if (!detailModal.isOpen() && !isHeaderFocused) {
         const heroBtns = heroCarousel.getFocusableElements();
         if (heroBtns.length) {
           heroBtns[0].focus();

@@ -63,12 +63,16 @@ function showHome(options) {
     },
     onOpenDetail: function (movie) {
       if (typeof window !== "undefined" && window.history && window.history.pushState) {
-        window.history.pushState({ screen: "movie-detail", movieSlug: movie.slug }, "", buildMovieUrl(movie.slug));
+        try {
+          window.history.pushState({ screen: "movie-detail", movieSlug: movie.slug }, "", buildMovieUrl(movie.slug));
+        } catch (_) {}
       }
     },
     onCloseDetail: function () {
       if (typeof window !== "undefined" && window.history && window.history.pushState) {
-        window.history.pushState({ screen: "catalog" }, "", buildHomeUrl());
+        try {
+          window.history.pushState({ screen: "catalog" }, "", buildHomeUrl());
+        } catch (_) {}
       }
     },
     onPlaybackUnavailable: function () {
@@ -89,24 +93,30 @@ function showHome(options) {
     }
   }, {
     selectedMovieId: options && options.selectedMovieId ? options.selectedMovieId : (previousMovie ? previousMovie.id : null),
-    autoOpenSlug: options && options.autoOpenSlug ? options.autoOpenSlug : null
+    autoOpenSlug: options && options.autoOpenSlug ? options.autoOpenSlug : null,
+    autoOpenEpisodeIndex: options && typeof options.autoOpenEpisodeIndex === "number" ? options.autoOpenEpisodeIndex : 0
   });
 
   setActiveScreen("catalog", homeScreen);
 
   if (typeof window !== "undefined" && window.history && window.history.replaceState) {
-    if (options && options.autoOpenSlug) {
-      window.history.replaceState({ screen: "movie-detail", movieSlug: options.autoOpenSlug }, "", buildMovieUrl(options.autoOpenSlug));
-    } else {
-      window.history.replaceState({ screen: "catalog" }, "", buildHomeUrl());
-    }
+    try {
+      if (options && options.autoOpenSlug) {
+        window.history.replaceState({ screen: "movie-detail", movieSlug: options.autoOpenSlug }, "", buildMovieUrl(options.autoOpenSlug));
+      } else {
+        window.history.replaceState({ screen: "catalog" }, "", buildHomeUrl());
+      }
+    } catch (_) {}
   }
 }
 
 function handlePlayerBack() {
   const prevMovie = NavigationState.selectedMovie;
   if (prevMovie && prevMovie.slug) {
-    showHome({ autoOpenSlug: prevMovie.slug });
+    showHome({
+      autoOpenSlug: prevMovie.slug,
+      autoOpenEpisodeIndex: typeof prevMovie.currentEpisodeIndex === "number" ? prevMovie.currentEpisodeIndex : 0
+    });
   } else {
     showHome();
   }
@@ -126,7 +136,9 @@ function showPlayer(movie, pushHistory) {
   if (pushHistory && typeof window !== "undefined" && window.history && window.history.pushState) {
     const epNum = (typeof movie.currentEpisodeIndex === "number") ? (movie.currentEpisodeIndex + 1) : 1;
     const slug = movie.slug || movie.id;
-    window.history.pushState({ screen: "player", movieSlug: slug, ep: epNum }, "", buildEpisodeUrl(slug, epNum));
+    try {
+      window.history.pushState({ screen: "player", movieSlug: slug, ep: epNum }, "", buildEpisodeUrl(slug, epNum));
+    } catch (_) {}
   }
 }
 

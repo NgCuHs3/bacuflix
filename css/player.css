@@ -1,4 +1,4 @@
-.video-stage {
+﻿.video-stage {
   position: relative;
   width: 100%;
   height: 100%;
@@ -45,13 +45,13 @@ video {
 
 .ui-overlay {
   opacity: 0;
-  visibility: hidden;
-  transition: opacity 220ms ease, visibility 220ms ease;
+  pointer-events: none;
+  transition: opacity 220ms ease;
 }
 
 .video-stage.controls-visible .ui-overlay {
   opacity: 1;
-  visibility: visible;
+  pointer-events: auto;
 }
 
 .topbar {
@@ -627,7 +627,7 @@ video {
 .video-stage.is-loading .player-loader,
 .video-stage.is-buffering .player-loader {
   opacity: 1;
-  visibility: visible;
+  pointer-events: auto;
   transform: translate(-50%, -50%) scale(1);
 }
 

@@ -30,6 +30,27 @@ export function createPlaybackService(video, callbacks) {
     }
   }
 
+  function cleanupMedia() {
+    if (hls) {
+      const oldHls = hls;
+      hls = null;
+      try {
+        oldHls.stopLoad();
+      } catch (_) {}
+      try {
+        oldHls.detachMedia();
+      } catch (_) {}
+      try {
+        oldHls.destroy();
+      } catch (_) {}
+    }
+    try {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    } catch (_) {}
+  }
+
   function reportFailure(message, error) {
     if (failed || destroyed) {
       return;
@@ -38,10 +59,7 @@ export function createPlaybackService(video, callbacks) {
     if (error) {
       console.error("Video playback failed:", error);
     }
-    if (hls) {
-      hls.destroy();
-      hls = null;
-    }
+    cleanupMedia();
     if (callbacks.onError) {
       callbacks.onError(message);
     }
@@ -55,6 +73,9 @@ export function createPlaybackService(video, callbacks) {
     if (playback && typeof playback.then === "function") {
       playback.catch(function (error) {
         if (failed || destroyed) {
+          return;
+        }
+        if (error.name === "AbortError") {
           return;
         }
         if (error.name === "NotAllowedError") {
@@ -79,10 +100,7 @@ export function createPlaybackService(video, callbacks) {
     }
     fallbackAttempted = true;
     console.warn("Falling back to native HLS playback:", reason);
-    if (hls) {
-      hls.destroy();
-      hls = null;
-    }
+    cleanupMedia();
     video.src = sourceUrl;
     video.load();
     attemptPlayback();
@@ -90,6 +108,9 @@ export function createPlaybackService(video, callbacks) {
   }
 
   function onMediaError() {
+    if (destroyed || !sourceUrl || (!hls && !video.getAttribute("src"))) {
+      return;
+    }
     const code = video.error ? video.error.code : "unknown";
     console.error("Video element error:", video.error);
     if (useNativeHls("media error " + code)) {
@@ -156,6 +177,8 @@ export function createPlaybackService(video, callbacks) {
       if (destroyed) {
         return;
       }
+      sourceUrl = "";
+      cleanupMedia();
       sourceUrl = url;
       failed = false;
       fallbackAttempted = false;
@@ -167,15 +190,24 @@ export function createPlaybackService(video, callbacks) {
 
       if (window.Hls && window.Hls.isSupported()) {
         try {
-          hls = new window.Hls({
+          const instance = new window.Hls({
             loader: createSegmentLoader(window.Hls.DefaultConfig.loader)
           });
-          hls.on(window.Hls.Events.MEDIA_ATTACHED, function () {
-            hls.loadSource(sourceUrl);
+          hls = instance;
+          instance.on(window.Hls.Events.MEDIA_ATTACHED, function () {
+            if (destroyed || hls !== instance) {
+              return;
+            }
+            instance.loadSource(sourceUrl);
           });
-          hls.on(window.Hls.Events.MANIFEST_PARSED, attemptPlayback);
-          hls.on(window.Hls.Events.ERROR, function (_event, data) {
-            if (!data.fatal) {
+          instance.on(window.Hls.Events.MANIFEST_PARSED, function () {
+            if (destroyed || hls !== instance) {
+              return;
+            }
+            attemptPlayback();
+          });
+          instance.on(window.Hls.Events.ERROR, function (_event, data) {
+            if (destroyed || hls !== instance || !data.fatal) {
               return;
             }
             console.error("HLS playback error:", data);
@@ -183,7 +215,7 @@ export function createPlaybackService(video, callbacks) {
               reportFailure("Stream error: " + data.details);
             }
           });
-          hls.attachMedia(video);
+          instance.attachMedia(video);
         } catch (error) {
           console.error("Unable to initialize HLS playback:", error);
           if (!useNativeHls(error.message)) {
@@ -242,29 +274,19 @@ export function createPlaybackService(video, callbacks) {
       return video.currentTime;
     },
     stop() {
-      if (hls) {
-        hls.destroy();
-        hls = null;
-      }
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
+      sourceUrl = "";
+      cleanupMedia();
     },
     destroy() {
       if (destroyed) {
         return;
       }
       destroyed = true;
+      sourceUrl = "";
       listeners.forEach(function (removeListener) {
         removeListener();
       });
-      if (hls) {
-        hls.destroy();
-        hls = null;
-      }
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
+      cleanupMedia();
     }
   };
 }
