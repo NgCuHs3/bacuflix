@@ -1,10 +1,8 @@
 const KEY_ROWS = [
-  ["a", "b", "c", "d", "e", "f"],
-  ["g", "h", "i", "j", "k", "l"],
-  ["m", "n", "o", "p", "q", "r"],
-  ["s", "t", "u", "v", "w", "x"],
-  ["y", "z", "0", "1", "2", "3"],
-  ["4", "5", "6", "7", "8", "9"]
+  ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+  ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+  ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
+  ["z", "x", "c", "v", "b", "n", "m"]
 ];
 
 const QUICK_TAGS = [
@@ -26,7 +24,7 @@ export function createTvSearchKeyboard(container, callbacks) {
   let isOpenState = false;
   let activeSection = "grid"; // "actions" | "grid" | "tags" | "footer"
   let actionCol = 0; // 0: space, 1: backspace, 2: clear
-  let gridRow = 0;
+  let gridRow = 1; // Default to Q row
   let gridCol = 0;
   let tagIndex = 0;
 
@@ -39,7 +37,7 @@ export function createTvSearchKeyboard(container, callbacks) {
 
   const badge = document.createElement("span");
   badge.className = "tv-kb-badge";
-  badge.textContent = "BÀN PHÍM TV";
+  badge.textContent = "BÀN PHÍM TV (QWERTY)";
 
   const hint = document.createElement("span");
   hint.className = "tv-kb-hint";
@@ -55,17 +53,26 @@ export function createTvSearchKeyboard(container, callbacks) {
   previewIcon.className = "tv-kb-preview-icon";
   previewIcon.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>';
 
+  const previewContent = document.createElement("div");
+  previewContent.className = "tv-kb-preview-content";
+
   const previewText = document.createElement("span");
-  previewText.className = "tv-kb-preview-text is-placeholder";
-  previewText.textContent = "Nhập tên phim, diễn viên...";
+  previewText.className = "tv-kb-preview-text";
 
   const cursor = document.createElement("span");
   cursor.className = "tv-kb-cursor";
   cursor.setAttribute("aria-hidden", "true");
 
+  const previewPlaceholder = document.createElement("span");
+  previewPlaceholder.className = "tv-kb-preview-placeholder";
+  previewPlaceholder.textContent = "Nhập tên phim, diễn viên...";
+
+  previewContent.appendChild(previewText);
+  previewContent.appendChild(cursor);
+  previewContent.appendChild(previewPlaceholder);
+
   previewBox.appendChild(previewIcon);
-  previewBox.appendChild(previewText);
-  previewBox.appendChild(cursor);
+  previewBox.appendChild(previewContent);
 
   header.appendChild(headerTop);
   header.appendChild(previewBox);
@@ -116,12 +123,14 @@ export function createTvSearchKeyboard(container, callbacks) {
     clearAll();
   });
 
-  // Main character grid (6x6)
+  // Main QWERTY character rows
   const keysGrid = document.createElement("div");
-  keysGrid.className = "tv-kb-grid";
+  keysGrid.className = "tv-kb-qwerty";
   const gridButtons = [];
 
   KEY_ROWS.forEach(function (rowChars, rIdx) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "tv-kb-row";
     const rowArr = [];
     rowChars.forEach(function (ch, cIdx) {
       const btn = document.createElement("button");
@@ -140,9 +149,10 @@ export function createTvSearchKeyboard(container, callbacks) {
         e.stopPropagation();
         appendChar(ch);
       });
-      keysGrid.appendChild(btn);
+      rowEl.appendChild(btn);
       rowArr.push(btn);
     });
+    keysGrid.appendChild(rowEl);
     gridButtons.push(rowArr);
   });
 
@@ -206,14 +216,18 @@ export function createTvSearchKeyboard(container, callbacks) {
   container.appendChild(panel);
 
   function updatePreviewUI() {
-    if (currentValue) {
+    if (currentValue && currentValue.length > 0) {
       previewText.textContent = currentValue;
-      previewText.classList.remove("is-placeholder");
+      previewText.hidden = false;
+      previewPlaceholder.hidden = true;
     } else {
-      previewText.textContent = "Nhập tên phim, diễn viên...";
-      previewText.classList.add("is-placeholder");
+      previewText.textContent = "";
+      previewText.hidden = true;
+      previewPlaceholder.hidden = false;
     }
   }
+
+  updatePreviewUI();
 
   function setQuery(val, notify) {
     currentValue = val || "";
@@ -256,6 +270,8 @@ export function createTvSearchKeyboard(container, callbacks) {
     } else if (activeSection === "grid") {
       const r = Math.max(0, Math.min(gridButtons.length - 1, gridRow));
       const c = Math.max(0, Math.min(gridButtons[r].length - 1, gridCol));
+      gridRow = r;
+      gridCol = c;
       const target = gridButtons[r][c];
       if (target) {
         target.focus({ preventScroll: true });
@@ -281,8 +297,8 @@ export function createTvSearchKeyboard(container, callbacks) {
     container.classList.add("is-keyboard-open");
     if (focusKey) {
       activeSection = "grid";
-      gridRow = 0;
-      gridCol = 0;
+      gridRow = 1; // Row 1: Q W E R T Y U I O P
+      gridCol = 0; // 'Q'
       focusCurrentTarget();
     }
   }
@@ -322,7 +338,6 @@ export function createTvSearchKeyboard(container, callbacks) {
 
     const dir = key.direction;
     if (!dir) {
-      // Allow physical keyboard typing while custom keyboard is focused
       if (event && event.key && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
         appendChar(event.key);
         return true;
@@ -360,11 +375,12 @@ export function createTvSearchKeyboard(container, callbacks) {
       if (dir === "down") {
         activeSection = "grid";
         gridRow = 0;
-        gridCol = Math.min(5, actionCol * 2);
+        gridCol = Math.min(KEY_ROWS[0].length - 1, actionCol * 3 + 1);
         focusCurrentTarget();
         return true;
       }
     } else if (activeSection === "grid") {
+      const rowLen = KEY_ROWS[gridRow].length;
       if (dir === "left") {
         if (gridCol > 0) {
           gridCol -= 1;
@@ -375,7 +391,7 @@ export function createTvSearchKeyboard(container, callbacks) {
         return true;
       }
       if (dir === "right") {
-        if (gridCol < 5) {
+        if (gridCol < rowLen - 1) {
           gridCol += 1;
           focusCurrentTarget();
         }
@@ -383,28 +399,33 @@ export function createTvSearchKeyboard(container, callbacks) {
       }
       if (dir === "up") {
         if (gridRow > 0) {
+          const prevLen = KEY_ROWS[gridRow - 1].length;
+          const offset = Math.floor((prevLen - rowLen) / 2);
           gridRow -= 1;
+          gridCol = Math.max(0, Math.min(prevLen - 1, gridCol + offset));
           focusCurrentTarget();
         } else {
           activeSection = "actions";
-          actionCol = Math.min(2, Math.floor(gridCol / 2));
+          actionCol = Math.min(2, Math.floor((gridCol / rowLen) * 3));
           focusCurrentTarget();
         }
         return true;
       }
       if (dir === "down") {
         if (gridRow < KEY_ROWS.length - 1) {
+          const nextLen = KEY_ROWS[gridRow + 1].length;
+          const offset = Math.floor((rowLen - nextLen) / 2);
           gridRow += 1;
+          gridCol = Math.max(0, Math.min(nextLen - 1, gridCol - offset));
           focusCurrentTarget();
         } else {
           activeSection = "tags";
-          tagIndex = Math.min(2, Math.floor(gridCol / 2));
+          tagIndex = Math.min(2, Math.floor((gridCol / rowLen) * 3));
           focusCurrentTarget();
         }
         return true;
       }
     } else if (activeSection === "tags") {
-      // Tags are laid out in 3 columns x 2 rows
       const tagCols = 3;
       const tRow = Math.floor(tagIndex / tagCols);
       const tCol = tagIndex % tagCols;
@@ -432,7 +453,8 @@ export function createTvSearchKeyboard(container, callbacks) {
         } else {
           activeSection = "grid";
           gridRow = KEY_ROWS.length - 1;
-          gridCol = Math.min(5, tCol * 2);
+          const bottomRowLen = KEY_ROWS[gridRow].length;
+          gridCol = Math.min(bottomRowLen - 1, tCol * 2 + 1);
           focusCurrentTarget();
         }
         return true;
