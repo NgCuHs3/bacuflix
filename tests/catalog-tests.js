@@ -527,4 +527,47 @@ assert.ok(homeCss.includes(".movie-card--selected"), "CSS must support .movie-ca
 assert.ok(homeCss.includes("prefers-reduced-motion: reduce"), "CSS must respect prefers-reduced-motion");
 assert.ok(homeCss.includes("transition: transform 150ms"), "CSS must animate only transform with 120-180ms duration");
 
+// BACUFlix Multi-Platform UI Redesign verification
+const globalCss = fs.readFileSync("css/global.css", "utf8");
+assert.ok(globalCss.includes("#08090D"), "Global CSS must define primary background token #08090D");
+assert.ok(globalCss.includes("#14151B"), "Global CSS must define secondary background token #14151B");
+assert.ok(globalCss.includes("#E50920"), "Global CSS must define primary accent token #E50920");
+
+const heroSource = fs.readFileSync("js/home/hero-carousel.js", "utf8");
+assert.ok(heroSource.includes("hero-btn-mylist"), "Hero section must include '+ Thêm vào danh sách' button");
+assert.ok(heroSource.includes("hero-btn-play"), "Hero section must include 'Xem ngay' primary CTA button");
+assert.ok(heroSource.includes("hero-quality-badge"), "Hero section must include red FHD quality badge");
+
+const carouselSource = fs.readFileSync("js/home/movie-carousel.js", "utf8");
+assert.ok(carouselSource.includes("createMovieCarouselSection"), "movie-carousel.js must export createMovieCarouselSection");
+assert.ok(carouselSource.includes("createContinueWatchingSection"), "movie-carousel.js must export createContinueWatchingSection");
+assert.ok(carouselSource.includes("createGenreSection"), "movie-carousel.js must export createGenreSection");
+assert.ok(carouselSource.includes("top10-rank-number"), "Top 10 carousel must render giant rank numbers 1-10");
+
+assert.ok(homeSource.includes("app-sidebar"), "Home screen must render left sidebar navigation for Desktop and Smart TV");
+assert.ok(homeSource.includes("mobile-bottom-nav"), "Home screen must render fixed bottom navigation bar for Mobile");
+assert.ok(homeSource.includes("tv-status-widget"), "Home screen must render Smart TV status widget (Wi-Fi + Clock)");
+assert.ok(homeSource.includes("Phim mới cập nhật"), "Home screen must include 'Phim mới cập nhật' carousel");
+assert.ok(homeSource.includes("Top 10 hôm nay"), "Home screen must include 'Top 10 hôm nay' carousel");
+assert.ok(homeSource.includes("Phim thịnh hành"), "Home screen must include 'Phim thịnh hành' carousel");
+assert.ok(homeSource.includes("Phim đề xuất"), "Home screen must include 'Phim đề xuất' carousel");
+assert.ok(homeSource.includes("Phim bộ nổi bật"), "Home screen must include 'Phim bộ nổi bật' carousel");
+
+// Watch History Service unit tests
+import { getWatchHistory, saveWatchProgress, removeWatchHistory, clearWatchHistory } from "../js/services/watch-history-service.js";
+clearWatchHistory();
+assert.equal(getWatchHistory().length, 0, "Watch history should start empty");
+saveWatchProgress({
+  slug: "test-movie-1",
+  title: "Phim Thử Nghiệm 1",
+  poster: "https://phimimg.com/test1.jpg",
+  episodeCurrent: "Tập 5",
+  currentEpisodeIndex: 4
+}, 450, 1000);
+const historyAfterSave = getWatchHistory();
+assert.equal(historyAfterSave.length, 1, "Watch history must store saved movie");
+assert.equal(historyAfterSave[0].progressPercent, 45, "Watch history must compute progress percentage");
+removeWatchHistory("test-movie-1");
+assert.equal(getWatchHistory().length, 0, "Watch history item must be removable");
+
 console.log("All unit, subtitle, player UI, and keyboard navigation tests passed.");

@@ -171,6 +171,48 @@ export function createKkphimApi() {
       });
     },
 
+    getMoviesByCategory(categorySlug, page, limit) {
+      const slug = (categorySlug || "phim-bo").trim();
+      const pageNum = page && page > 0 ? page : 1;
+      const limitNum = limit && limit > 0 ? limit : 24;
+      const url = BASE_URL + "/v1/api/danh-sach/" + encodeURIComponent(slug) + "?page=" + pageNum + "&limit=" + limitNum;
+      return fetchJson(url).then(function (res) {
+        const data = res && res.data ? res.data : {};
+        const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const movies = rawItems.map(function (item) {
+          return normalizeMovie(item, cdn);
+        }).filter(Boolean);
+        return {
+          movies: movies,
+          cdn: cdn,
+          pagination: data.params ? data.params.pagination : null,
+          title: data.titlePage || "Danh sách phim"
+        };
+      });
+    },
+
+    getMoviesByGenre(genreSlug, page, limit) {
+      const slug = (genreSlug || "hanh-dong").trim();
+      const pageNum = page && page > 0 ? page : 1;
+      const limitNum = limit && limit > 0 ? limit : 24;
+      const url = BASE_URL + "/v1/api/the-loai/" + encodeURIComponent(slug) + "?page=" + pageNum + "&limit=" + limitNum;
+      return fetchJson(url).then(function (res) {
+        const data = res && res.data ? res.data : {};
+        const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const movies = rawItems.map(function (item) {
+          return normalizeMovie(item, cdn);
+        }).filter(Boolean);
+        return {
+          movies: movies,
+          cdn: cdn,
+          pagination: data.params ? data.params.pagination : null,
+          title: data.titlePage || "Thể loại phim"
+        };
+      });
+    },
+
     searchMovies(keyword, limit, page) {
       const kw = (keyword || "").trim();
       if (!kw) {

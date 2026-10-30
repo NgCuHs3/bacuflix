@@ -6,6 +6,7 @@ import { activateFocusedElement, focusNext } from "../navigation/remote-navigati
 import { formatTime } from "../utils/format-time.js";
 import { currentDevice } from "../utils/device.js";
 import { buildEpisodeUrl, copyTextToClipboard } from "../utils/url.js";
+import { saveWatchProgress } from "../services/watch-history-service.js";
 
 const PLAY_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>';
 const PAUSE_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 5.5A1.5 1.5 0 0 1 7.5 4h1A1.5 1.5 0 0 1 10 5.5v13A1.5 1.5 0 0 1 8.5 20h-1A1.5 1.5 0 0 1 6 18.5v-13zm8 0A1.5 1.5 0 0 1 15.5 4h1a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v-13z"/></svg>';
@@ -795,6 +796,13 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       if (key.isRepeat) {
         return true;
       }
+      if (controlsVisible || stage.classList.contains("controls-visible")) {
+        window.clearTimeout(controlsTimer);
+        hideControls(true);
+        if (key.isEscape) {
+          return true;
+        }
+      }
       seekController.commitPreview();
       onBackRequest();
       return true;
@@ -924,6 +932,8 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     }, 500);
   }
 
+  let lastHistorySaveTime = 0;
+
   const playback = createPlaybackService(video, {
     onStatus(message) {
       showStatus(message, message === "Loading stream...");
@@ -943,6 +953,11 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       }
       if (!seekController.isScrubbing()) {
         updateSubtitleDisplay();
+      }
+      const now = Date.now();
+      if (now - lastHistorySaveTime > 12000 && video.currentTime > 5) {
+        lastHistorySaveTime = now;
+        saveWatchProgress(currentMovie, video.currentTime, video.duration);
       }
     },
     onAutoplayBlocked() {
@@ -1300,6 +1315,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   initSubtitles();
   updateFullscreenControl();
   updateNextButtonState();
+  saveWatchProgress(currentMovie, 0, 2700);
   showLoader("Loading movie...");
   playback.start(movie.m3u8);
   togglePlayButton.focus();
@@ -1311,6 +1327,9 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     destroy() {
       if (disposed) {
         return;
+      }
+      if (video && video.currentTime > 3) {
+        saveWatchProgress(currentMovie, video.currentTime, video.duration);
       }
       disposed = true;
       hideLoader();

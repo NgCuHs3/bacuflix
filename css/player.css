@@ -1,4 +1,4 @@
-﻿.video-stage {
+.video-stage {
   position: relative;
   width: 100%;
   height: 100%;
@@ -745,26 +745,34 @@ video {
   outline-offset: 4px;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   .topbar,
   .bottom-bar {
-    padding-right: 20px;
-    padding-left: 20px;
+    padding-right: 14px;
+    padding-left: 14px;
   }
 
   .topbar {
-    min-height: 76px;
+    min-height: 68px;
+    gap: 10px;
   }
 
   .brand {
-    font-size: 26px;
+    font-size: 22px;
+    flex-shrink: 0;
   }
 
   .brand img {
-    width: 38px;
-    height: 38px;
-    margin-right: 9px;
+    width: 32px;
+    height: 32px;
+    margin-right: 7px;
     border-radius: 8px;
+  }
+
+  .now-playing {
+    flex: 1;
+    min-width: 0;
+    max-width: 62%;
   }
 
   .stream-label {
@@ -785,52 +793,57 @@ video {
     width: calc(100% - 16px);
     max-width: 500px;
     margin: 0 auto;
-    padding: 6px 10px 5px;
+    padding: 6px 6px 5px;
     border-radius: 8px;
     background: rgba(14, 14, 18, 0.48);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  #volume-down-button,
+  #volume-up-button,
+  .control-divider,
+  .control-spacer {
+    display: none !important;
   }
 
   .control-row {
-    min-height: 38px;
-    gap: 4px;
-    justify-content: center;
+    width: 100%;
+    min-height: 40px;
+    gap: 2px;
+    justify-content: space-between;
+    box-sizing: border-box;
   }
 
-  .control-button {
-    min-width: 44px;
-    min-height: 36px;
-    padding: 2px 4px;
-    flex: 0 0 auto;
-  }
-
-  .compact-control {
-    min-width: 40px;
-  }
-
+  .control-button,
+  .compact-control,
   #fullscreen-button {
-    width: 60px;
-    min-width: 60px;
-    max-width: 60px;
-    min-height: 36px;
-    padding: 2px 2px;
-    flex: 0 0 60px;
-  }
-
-  #fullscreen-button .fullscreen-symbol {
-    width: 20px;
-    height: 20px;
-  }
-
-  #fullscreen-button .control-caption {
-    font-size: 10px;
+    flex: 1 1 0 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    min-height: 38px;
+    margin: 0 !important;
+    padding: 2px 1px !important;
+    box-sizing: border-box;
+    overflow: hidden;
   }
 
   .primary-control {
-    min-width: 50px;
-    min-height: 38px;
-    margin: 0 4px;
+    flex: 1.15 1 0 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    min-height: 40px;
+    margin: 0 2px !important;
+    padding: 2px 2px !important;
+  }
+
+  #fullscreen-button .fullscreen-symbol {
+    width: 18px;
+    height: 18px;
   }
 
   .primary-control .control-symbol {
@@ -844,42 +857,45 @@ video {
 
   .control-symbol {
     min-height: 18px;
-    font-size: 16px;
+    font-size: 15px;
   }
 
   .subtitle-symbol {
-    font-size: 10px;
+    font-size: 9.5px;
     padding: 1px 3px;
     border-width: 1.5px;
-    margin-bottom: 1px;
+    margin-bottom: 0;
   }
 
-  .control-caption {
-    font-size: 8.5px;
-    margin-top: 1px;
-  }
-
-  .control-divider {
-    height: 18px;
-    margin: 0 4px;
-  }
-
-  .control-spacer {
-    display: none;
+  .control-caption,
+  #fullscreen-button .control-caption {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    font-size: 8px;
+    line-height: 1.15;
+    margin-top: 2px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .remote-hint {
     margin-top: 2px;
-    font-size: 9px;
+    font-size: 8.5px;
     opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .timeline {
-    gap: 8px;
+    gap: 6px;
   }
 
   .time-label {
-    min-width: 36px;
+    min-width: 34px;
     font-size: 11px;
     height: 20px;
     line-height: 20px;
@@ -887,6 +903,7 @@ video {
 
   #seek-bar {
     height: 20px;
+    margin: 0 4px;
     background-size: 100% 5px;
   }
 
@@ -897,23 +914,23 @@ video {
   }
 
   .now-playing-title {
-    font-size: 19px;
+    font-size: 16px;
   }
 
   .eyebrow {
-    font-size: 10px;
+    font-size: 9.5px;
   }
 
   .status {
-    top: 88px;
-    left: 20px;
-    max-width: calc(100% - 40px);
+    top: 76px;
+    left: 14px;
+    max-width: calc(100% - 28px);
   }
 
   .play-button {
     min-width: 208px;
-    min-height: 58px;
-    font-size: 17px;
+    min-height: 54px;
+    font-size: 16px;
   }
 }
 
@@ -923,31 +940,36 @@ video {
   }
 
   .live-dot {
-    width: 10px;
-    height: 10px;
-    margin-right: 0;
+    width: 8px;
+    height: 8px;
+    margin-right: 4px;
   }
 
   .now-playing-title {
-    font-size: 16px;
+    font-size: 14px;
   }
 
   .eyebrow {
-    font-size: 9px;
+    font-size: 8.5px;
   }
 
   .control-panel {
-    padding-right: 6px;
-    padding-left: 6px;
+    padding-right: 4px;
+    padding-left: 4px;
   }
 
   .time-label {
-    min-width: 34px;
+    min-width: 32px;
     font-size: 10px;
   }
 
   .control-symbol {
-    font-size: 18px;
+    font-size: 15px;
+  }
+
+  .control-caption,
+  #fullscreen-button .control-caption {
+    font-size: 7.5px;
   }
 }
 
@@ -1273,14 +1295,78 @@ video {
     transform: rotate(90deg) translate(0, -100%);
     overflow: hidden;
   }
+
+  #volume-down-button,
+  #volume-up-button,
+  .control-divider,
+  .control-spacer {
+    display: none !important;
+  }
+
+  .control-panel {
+    bottom: max(12px, calc(8px + env(safe-area-inset-bottom, 0px)));
+    width: calc(100% - 16px);
+    max-width: 500px;
+    padding: 6px 6px 5px;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  .control-row {
+    width: 100%;
+    min-height: 40px;
+    gap: 2px;
+    justify-content: space-between;
+    box-sizing: border-box;
+  }
+
+  .control-button,
+  .compact-control,
+  #fullscreen-button {
+    flex: 1 1 0 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    min-height: 38px;
+    margin: 0 !important;
+    padding: 2px 1px !important;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  .primary-control {
+    flex: 1.15 1 0 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    min-height: 40px;
+    margin: 0 2px !important;
+    padding: 2px 2px !important;
+  }
+
+  .control-caption,
+  #fullscreen-button .control-caption {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    font-size: 8px;
+    line-height: 1.15;
+    margin-top: 2px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 /* Device-specific UI adaptations (Mobile, TV, Desktop) */
 
 /* 1. Mobile devices: ultra-compact, sleek, unobtrusive */
 [data-device="mobile"] #volume-down-button,
-[data-device="mobile"] #volume-up-button {
-  display: none; /* Mobile phones use hardware side buttons */
+[data-device="mobile"] #volume-up-button,
+[data-device="mobile"] .control-divider,
+[data-device="mobile"] .control-spacer {
+  display: none !important; /* Mobile phones use hardware side buttons */
 }
 
 [data-device="mobile"] .control-panel {
@@ -1288,26 +1374,29 @@ video {
   bottom: max(6px, 1.4vh);
   width: calc(100% - 16px);
   max-width: 480px;
-  padding: 6px 10px 5px;
+  padding: 6px 6px 5px;
   border-radius: 8px;
   background: rgba(14, 14, 18, 0.48);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 [data-device="mobile"] .timeline {
   margin-bottom: 4px;
-  gap: 8px;
+  gap: 6px;
 }
 
 [data-device="mobile"] .time-label {
-  min-width: 38px;
+  min-width: 34px;
   font-size: 11px;
 }
 
 [data-device="mobile"] #seek-bar {
-  height: 26px;
+  height: 24px;
+  margin: 0 4px;
   background-size: 100% 5px;
 }
 
@@ -1318,44 +1407,41 @@ video {
 }
 
 [data-device="mobile"] .control-row {
-  min-height: 38px;
-  gap: 4px;
-  justify-content: center;
+  width: 100%;
+  min-height: 40px;
+  gap: 2px;
+  justify-content: space-between;
+  box-sizing: border-box;
 }
 
-[data-device="mobile"] .control-button {
-  min-width: 44px;
-  min-height: 36px;
-  padding: 2px 4px;
+[data-device="mobile"] .control-button,
+[data-device="mobile"] .compact-control,
+[data-device="mobile"] #fullscreen-button {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  min-height: 38px;
+  margin: 0 !important;
+  padding: 2px 1px !important;
+  box-sizing: border-box;
+  overflow: hidden;
   touch-action: manipulation;
 }
 
-[data-device="mobile"] .compact-control {
-  min-width: 40px;
-}
-
-[data-device="mobile"] #fullscreen-button {
-  width: 60px;
-  min-width: 60px;
-  max-width: 60px;
-  min-height: 36px;
-  padding: 2px 2px;
-  flex: 0 0 60px;
+[data-device="mobile"] .primary-control {
+  flex: 1.15 1 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  min-height: 40px;
+  margin: 0 2px !important;
+  padding: 2px 2px !important;
 }
 
 [data-device="mobile"] #fullscreen-button .fullscreen-symbol {
-  width: 20px;
-  height: 20px;
-}
-
-[data-device="mobile"] #fullscreen-button .control-caption {
-  font-size: 10px;
-}
-
-[data-device="mobile"] .primary-control {
-  min-width: 50px;
-  min-height: 38px;
-  margin: 0 4px;
+  width: 18px;
+  height: 18px;
 }
 
 [data-device="mobile"] .primary-control .control-symbol {
@@ -1364,7 +1450,7 @@ video {
 
 [data-device="mobile"] .control-symbol {
   min-height: 18px;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 [data-device="mobile"] .control-icon {
@@ -1372,20 +1458,27 @@ video {
   height: 18px;
 }
 
-[data-device="mobile"] .control-caption {
-  font-size: 8.5px;
-  margin-top: 1px;
-}
-
-[data-device="mobile"] .control-divider {
-  height: 18px;
-  margin: 0 4px;
+[data-device="mobile"] .control-caption,
+[data-device="mobile"] #fullscreen-button .control-caption {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  font-size: 8px;
+  line-height: 1.15;
+  margin-top: 2px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 [data-device="mobile"] .remote-hint {
-  font-size: 9.5px;
+  font-size: 8.5px;
   margin-top: 2px;
   color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 [data-device="mobile"] .player-loader {

@@ -1,10 +1,15 @@
 :root {
   color-scheme: dark;
   font-family: 'Be Vietnam Pro', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background: #080809;
-  color: #fff;
-  --flix-red: #e50924;
-  --flix-red-bright: #ff263f;
+  background: #08090D;
+  color: #FFFFFF;
+  --flix-bg-primary: #08090D;
+  --flix-bg-secondary: #14151B;
+  --flix-red: #E50920;
+  --flix-red-bright: #FF1F35;
+  --flix-text-primary: #FFFFFF;
+  --flix-text-secondary: #A1A1AA;
+  --flix-border: rgba(255, 255, 255, 0.08);
 }
 
 * {
@@ -18,7 +23,10 @@ body,
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: #080809;
+  background: #08090D;
+  color: #FFFFFF;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 button {
@@ -27,6 +35,6 @@ button {
 
 button:focus-visible,
 a:focus-visible {
-  outline: 3px solid #fff;
-  outline-offset: 4px;
+  outline: 3px solid #FFFFFF;
+  outline-offset: 3px;
 }
