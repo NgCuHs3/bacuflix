@@ -4,8 +4,8 @@ A Samsung Tizen TV web app with an original BACUFlix identity, a remote-operated
 home library, and an HLS player. The TV must be able to reach the stream and
 support its video format.
 
-The TV launcher icon is an original 512 x 512 BACUFlix design, and the app
-name shown on the TV is BACUFlix.
+The TV launcher uses an original 1024 x 512 BACUFlix icon with a horizontal
+wordmark, and the app name shown on the TV is BACUFlix.
 
 ## Build and deploy
 
