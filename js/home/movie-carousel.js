@@ -67,9 +67,15 @@ export function createCarouselMovieCard(movie, options) {
   img.decoding = "async";
   img.width = 220;
   img.height = 330;
-  const posterUrl = (!movie.poster || movie.poster === fallbackPoster) ? fallbackPoster : movie.poster;
+  const posterUrl = (!movie.poster || movie.poster === fallbackPoster) ? (movie.thumb || fallbackPoster) : movie.poster;
+  let triedThumb = false;
   let usedFallback = posterUrl === fallbackPoster;
   img.addEventListener("error", function onErr() {
+    if (!triedThumb && movie.thumb && movie.thumb !== posterUrl) {
+      triedThumb = true;
+      img.src = movie.thumb;
+      return;
+    }
     if (usedFallback) {
       img.removeEventListener("error", onErr);
       return;
@@ -78,7 +84,13 @@ export function createCarouselMovieCard(movie, options) {
     img.classList.add("is-fallback");
     img.src = fallbackPoster;
   });
-  lazyLoadImage(img, posterUrl);
+
+  if (rank > 0 && rank <= 4) {
+    img.loading = "lazy";
+    img.src = posterUrl;
+  } else {
+    lazyLoadImage(img, posterUrl);
+  }
 
   const shade = document.createElement("div");
   shade.className = "carousel-poster-shade";

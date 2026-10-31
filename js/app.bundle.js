@@ -646,7 +646,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
 
   function attachCardPoster(entry) {
     if (entry && entry.image && !entry.imageAttached && entry.posterUrl) {
-      lazyLoadImage(entry.image, entry.posterUrl);
+      entry.image.src = entry.posterUrl;
       entry.imageAttached = true;
     }
   }
@@ -1554,6 +1554,22 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     cachedColumnsCount = layout.cols;
     const totalRows = Math.ceil(cards.length / layout.cols);
 
+    if (!cachedGridTop) {
+      cachedGridTop = grid.offsetTop || 300;
+    }
+    const viewportHeight = screen.clientHeight || window.innerHeight || 1080;
+    const scrollTop = screen.scrollTop || 0;
+
+    // When on the home screen ("new" tab) with carousels visible, do not mount bottom grid until viewport nears it
+    if (activeTab === "new" && !homeCarouselsContainer.hidden && (scrollTop + viewportHeight + 400 < cachedGridTop) && typeof forceTargetRow !== "number") {
+      topSpacer.style.display = "none";
+      bottomSpacer.style.display = "none";
+      mountRange(-1, -1, layout.cols);
+      currentStartRow = -1;
+      currentEndRow = -1;
+      return;
+    }
+
     if (cards.length <= 24) {
       topSpacer.style.display = "none";
       bottomSpacer.style.display = "none";
@@ -1563,11 +1579,6 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       return;
     }
 
-    if (!cachedGridTop) {
-      cachedGridTop = grid.offsetTop || 300;
-    }
-    const viewportHeight = screen.clientHeight || window.innerHeight || 1080;
-    const scrollTop = screen.scrollTop || 0;
     const relativeScroll = Math.max(0, scrollTop - cachedGridTop);
 
     const bufferRows = 3;
@@ -2192,7 +2203,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   function loadInitialHomeCarousels() {
     refreshContinueWatching();
 
-    // 1. Trending + Hero + Top 10
+    // 1. Trending + Hero + Top 10 (Highest priority for initial above-the-fold viewport)
     googleTrendingService.getTrending(false).then(function (res) {
       if (destroyed) {
         return;
@@ -2219,29 +2230,39 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       console.warn("Lỗi tải hero & top 10:", err);
     });
 
-    // 2. Recommended Movies (phim-le)
-    kkphimApi.getMoviesByCategory("phim-le", 1, 16).then(function (res) {
+    // 2. Recommended Movies (phim-le) - Staggered by 350ms to prevent connection pool choking
+    window.setTimeout(function () {
       if (destroyed) {
         return;
       }
-      const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
-      recommendedCarousel.setMovies(movies);
-    }).catch(function () {
-      kkphimApi.getHome().then(function (res) {
-        if (!destroyed && res && res.movies) {
-          recommendedCarousel.setMovies(res.movies);
+      kkphimApi.getMoviesByCategory("phim-le", 1, 14).then(function (res) {
+        if (destroyed) {
+          return;
         }
-      }).catch(function () {});
-    });
+        const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
+        recommendedCarousel.setMovies(movies);
+      }).catch(function () {
+        kkphimApi.getHome().then(function (res) {
+          if (!destroyed && res && res.movies) {
+            recommendedCarousel.setMovies(res.movies);
+          }
+        }).catch(function () {});
+      });
+    }, 350);
 
-    // 3. Featured Series (phim-bo)
-    kkphimApi.getMoviesByCategory("phim-bo", 1, 16).then(function (res) {
+    // 3. Featured Series (phim-bo) - Staggered by 700ms
+    window.setTimeout(function () {
       if (destroyed) {
         return;
       }
-      const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
-      seriesCarousel.setMovies(movies);
-    }).catch(function () {});
+      kkphimApi.getMoviesByCategory("phim-bo", 1, 14).then(function (res) {
+        if (destroyed) {
+          return;
+        }
+        const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
+        seriesCarousel.setMovies(movies);
+      }).catch(function () {});
+    }, 700);
   }
 
   function onWindowResize() {
@@ -4650,8 +4671,8 @@ function createHeroCarousel(parentContainer, actionsHandler) {
       }
       if (iconEl) {
         iconEl.innerHTML = isNowFav
-          ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
-          : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
+          ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+          : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
       }
     }
     if (favBtn) {
@@ -4706,8 +4727,8 @@ function createHeroCarousel(parentContainer, actionsHandler) {
           '<button type="button" class="home-action secondary-home-action hero-btn hero-action-btn hero-btn-detail hero-btn-mylist' + (favActive ? ' is-favorite' : '') + '" aria-pressed="' + (favActive ? 'true' : 'false') + '" aria-label="Thêm vào danh sách">' +
             '<span class="hero-mylist-icon" aria-hidden="true">' +
               (favActive
-                ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
-                : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>') +
+                ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+                : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>') +
             '</span>' +
             '<span class="hero-mylist-label">' + (favActive ? 'Đã trong danh sách' : 'Thêm vào danh sách') + '</span>' +
             '<span class="hero-mobile-action-caption">Thêm vào</span>' +
@@ -4963,9 +4984,15 @@ function createCarouselMovieCard(movie, options) {
   img.decoding = "async";
   img.width = 220;
   img.height = 330;
-  const posterUrl = (!movie.poster || movie.poster === fallbackPoster) ? fallbackPoster : movie.poster;
+  const posterUrl = (!movie.poster || movie.poster === fallbackPoster) ? (movie.thumb || fallbackPoster) : movie.poster;
+  let triedThumb = false;
   let usedFallback = posterUrl === fallbackPoster;
   img.addEventListener("error", function onErr() {
+    if (!triedThumb && movie.thumb && movie.thumb !== posterUrl) {
+      triedThumb = true;
+      img.src = movie.thumb;
+      return;
+    }
     if (usedFallback) {
       img.removeEventListener("error", onErr);
       return;
@@ -4974,7 +5001,13 @@ function createCarouselMovieCard(movie, options) {
     img.classList.add("is-fallback");
     img.src = fallbackPoster;
   });
-  lazyLoadImage(img, posterUrl);
+
+  if (rank > 0 && rank <= 4) {
+    img.loading = "lazy";
+    img.src = posterUrl;
+  } else {
+    lazyLoadImage(img, posterUrl);
+  }
 
   const shade = document.createElement("div");
   shade.className = "carousel-poster-shade";
@@ -5439,7 +5472,7 @@ function getObserver() {
         img.src = url;
       }
     });
-  }, { rootMargin: "400px 800px 400px 800px" });
+  }, { rootMargin: "120px 80px 120px 80px" });
   return observer;
 }
 

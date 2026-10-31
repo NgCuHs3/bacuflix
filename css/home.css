@@ -764,14 +764,29 @@
   font-weight: 700;
 }
 
-.hero-btn svg {
+.hero-btn-play svg {
   margin-right: 8px;
   flex-shrink: 0;
 }
 
+.hero-btn-mylist {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .hero-btn-mylist .hero-mylist-icon {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-right: 8px;
+  line-height: 1;
+}
+
+.hero-btn-mylist .hero-mylist-icon svg {
+  display: block;
+  margin: 0 !important;
+  flex-shrink: 0;
 }
 
 .hero-btn-mylist.is-favorite {
@@ -2610,29 +2625,67 @@
 
   .hero-btn-mylist {
     position: relative;
-    flex-direction: column;
-    width: 44px;
-    height: 44px;
-    margin-right: 14px;
-    padding: 0;
-    border-radius: 50%;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    margin-right: 14px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
     background: rgba(20, 21, 27, 0.85);
     border: 1px solid rgba(255, 255, 255, 0.22);
+    box-sizing: border-box;
   }
 
   .hero-btn-mylist .hero-mylist-icon {
-    margin-right: 0;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: 1 !important;
+  }
+
+  .hero-btn-mylist .hero-mylist-icon svg {
+    display: block !important;
+    margin: 0 auto !important;
   }
 
   .hero-btn-mylist .hero-mylist-label {
-    display: none;
+    display: none !important;
   }
 
   .hero-btn-fav {
     position: relative;
-    flex-direction: column;
-    width: 44px;
-    height: 44px;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    box-sizing: border-box;
+  }
+
+  .hero-btn-fav .hero-fav-icon {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: 1 !important;
+  }
+
+  .hero-btn-fav .hero-fav-icon svg {
+    display: block !important;
+    margin: 0 auto !important;
   }
 
   .hero-mobile-action-caption {
@@ -2940,15 +2993,33 @@ body[data-device="tv"] .hero-btn-play {
 
 [data-device="tv"] .hero-btn-mylist,
 body[data-device="tv"] .hero-btn-mylist {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   width: 52px !important;
   height: 52px !important;
+  min-width: 52px !important;
   padding: 0 !important;
   border-radius: 50% !important;
+  box-sizing: border-box;
 }
 
 [data-device="tv"] .hero-btn-mylist .hero-mylist-icon,
 body[data-device="tv"] .hero-btn-mylist .hero-mylist-icon {
-  margin-right: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1 !important;
+}
+
+[data-device="tv"] .hero-btn-mylist .hero-mylist-icon svg,
+body[data-device="tv"] .hero-btn-mylist .hero-mylist-icon svg {
+  display: block !important;
+  margin: 0 auto !important;
 }
 
 [data-device="tv"] .hero-btn-mylist .hero-mylist-label,
@@ -2958,9 +3029,33 @@ body[data-device="tv"] .hero-btn-mylist .hero-mylist-label {
 
 [data-device="tv"] .hero-btn-fav,
 body[data-device="tv"] .hero-btn-fav {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   width: 52px !important;
   height: 52px !important;
+  min-width: 52px !important;
+  padding: 0 !important;
   border-radius: 50% !important;
+  box-sizing: border-box;
+}
+
+[data-device="tv"] .hero-btn-fav .hero-fav-icon,
+body[data-device="tv"] .hero-btn-fav .hero-fav-icon {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1 !important;
+}
+
+[data-device="tv"] .hero-btn-fav .hero-fav-icon svg,
+body[data-device="tv"] .hero-btn-fav .hero-fav-icon svg {
+  display: block !important;
+  margin: 0 auto !important;
 }
 
 [data-device="tv"] .home-carousel-section,

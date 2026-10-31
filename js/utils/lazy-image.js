@@ -17,7 +17,7 @@ function getObserver() {
         img.src = url;
       }
     });
-  }, { rootMargin: "400px 800px 400px 800px" });
+  }, { rootMargin: "120px 80px 120px 80px" });
   return observer;
 }
 

@@ -312,7 +312,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
 
   function attachCardPoster(entry) {
     if (entry && entry.image && !entry.imageAttached && entry.posterUrl) {
-      lazyLoadImage(entry.image, entry.posterUrl);
+      entry.image.src = entry.posterUrl;
       entry.imageAttached = true;
     }
   }
@@ -1220,6 +1220,22 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     cachedColumnsCount = layout.cols;
     const totalRows = Math.ceil(cards.length / layout.cols);
 
+    if (!cachedGridTop) {
+      cachedGridTop = grid.offsetTop || 300;
+    }
+    const viewportHeight = screen.clientHeight || window.innerHeight || 1080;
+    const scrollTop = screen.scrollTop || 0;
+
+    // When on the home screen ("new" tab) with carousels visible, do not mount bottom grid until viewport nears it
+    if (activeTab === "new" && !homeCarouselsContainer.hidden && (scrollTop + viewportHeight + 400 < cachedGridTop) && typeof forceTargetRow !== "number") {
+      topSpacer.style.display = "none";
+      bottomSpacer.style.display = "none";
+      mountRange(-1, -1, layout.cols);
+      currentStartRow = -1;
+      currentEndRow = -1;
+      return;
+    }
+
     if (cards.length <= 24) {
       topSpacer.style.display = "none";
       bottomSpacer.style.display = "none";
@@ -1229,11 +1245,6 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       return;
     }
 
-    if (!cachedGridTop) {
-      cachedGridTop = grid.offsetTop || 300;
-    }
-    const viewportHeight = screen.clientHeight || window.innerHeight || 1080;
-    const scrollTop = screen.scrollTop || 0;
     const relativeScroll = Math.max(0, scrollTop - cachedGridTop);
 
     const bufferRows = 3;
@@ -1858,7 +1869,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
   function loadInitialHomeCarousels() {
     refreshContinueWatching();
 
-    // 1. Trending + Hero + Top 10
+    // 1. Trending + Hero + Top 10 (Highest priority for initial above-the-fold viewport)
     googleTrendingService.getTrending(false).then(function (res) {
       if (destroyed) {
         return;
@@ -1885,29 +1896,39 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       console.warn("Lỗi tải hero & top 10:", err);
     });
 
-    // 2. Recommended Movies (phim-le)
-    kkphimApi.getMoviesByCategory("phim-le", 1, 16).then(function (res) {
+    // 2. Recommended Movies (phim-le) - Staggered by 350ms to prevent connection pool choking
+    window.setTimeout(function () {
       if (destroyed) {
         return;
       }
-      const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
-      recommendedCarousel.setMovies(movies);
-    }).catch(function () {
-      kkphimApi.getHome().then(function (res) {
-        if (!destroyed && res && res.movies) {
-          recommendedCarousel.setMovies(res.movies);
+      kkphimApi.getMoviesByCategory("phim-le", 1, 14).then(function (res) {
+        if (destroyed) {
+          return;
         }
-      }).catch(function () {});
-    });
+        const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
+        recommendedCarousel.setMovies(movies);
+      }).catch(function () {
+        kkphimApi.getHome().then(function (res) {
+          if (!destroyed && res && res.movies) {
+            recommendedCarousel.setMovies(res.movies);
+          }
+        }).catch(function () {});
+      });
+    }, 350);
 
-    // 3. Featured Series (phim-bo)
-    kkphimApi.getMoviesByCategory("phim-bo", 1, 16).then(function (res) {
+    // 3. Featured Series (phim-bo) - Staggered by 700ms
+    window.setTimeout(function () {
       if (destroyed) {
         return;
       }
-      const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
-      seriesCarousel.setMovies(movies);
-    }).catch(function () {});
+      kkphimApi.getMoviesByCategory("phim-bo", 1, 14).then(function (res) {
+        if (destroyed) {
+          return;
+        }
+        const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
+        seriesCarousel.setMovies(movies);
+      }).catch(function () {});
+    }, 700);
   }
 
   function onWindowResize() {
