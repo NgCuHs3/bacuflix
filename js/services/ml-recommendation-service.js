@@ -4,7 +4,7 @@ import { fetchGoogleSuggestions, extractKeywords } from "./google-trending-servi
 
 const ML_INTERACTIONS_KEY = "kkphim_ml_interactions";
 const ML_CACHE_KEY = "kkphim_ml_recommendations_cache";
-const ML_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const ML_CACHE_TTL_MS = 10 * 1000; // 10 seconds auto-refresh cycle
 const HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000; // 14 days exponential time decay
 
 const VIETNAMESE_STOPWORDS = new Set([

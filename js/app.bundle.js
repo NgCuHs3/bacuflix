@@ -558,6 +558,9 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
 
   let toastTimer = 0;
   let clockTimer = 0;
+  let mlModelIntervalTimer = 0;
+  let isMlRunning = false;
+  let lastRenderedRecommendedSig = "";
   let searchDebounceTimer = 0;
   let destroyed = false;
   let refreshing = false;
@@ -2395,22 +2398,41 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     });
   }
 
-  function refreshMlRecommendations(force) {
-    if (destroyed) {
+  function refreshMlRecommendations(force, isBackgroundTick) {
+    if (destroyed || isMlRunning) {
       return;
     }
+    if (isBackgroundTick && typeof document !== "undefined" && document.hidden) {
+      return;
+    }
+    isMlRunning = true;
     mlRecommendationService.getRecommendations({ force: Boolean(force), limit: 24 }).then(function (res) {
+      isMlRunning = false;
       if (destroyed) {
         return;
       }
       const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
       if (movies.length) {
         latestRecommendedMovies = movies.slice();
-        recommendedCarousel.setMovies(movies.slice(0, 14));
-        if (activeTab === "recommended") {
-          render({ movies: movies, errors: [], diagnostics: [], failedAll: false });
+        const nextSig = movies.slice(0, 14).map(function (m) {
+          return (m.slug || m.id) + ":" + (m.mlMatchPercent || "");
+        }).join("|");
+        const activeEl = typeof document !== "undefined" ? document.activeElement : null;
+        const focusInsideRecCarousel = Boolean(
+          isBackgroundTick &&
+          activeEl &&
+          recommendedCarousel &&
+          recommendedCarousel.element &&
+          recommendedCarousel.element.contains(activeEl)
+        );
+        if (nextSig !== lastRenderedRecommendedSig && !focusInsideRecCarousel) {
+          lastRenderedRecommendedSig = nextSig;
+          recommendedCarousel.setMovies(movies.slice(0, 14));
+          if (activeTab === "recommended" && !isBackgroundTick) {
+            render({ movies: movies, errors: [], diagnostics: [], failedAll: false });
+          }
         }
-      } else {
+      } else if (!latestRecommendedMovies.length) {
         return kkphimApi.getMoviesByCategory("phim-le", 1, 14).then(function (fallbackRes) {
           if (!destroyed && fallbackRes && Array.isArray(fallbackRes.movies)) {
             latestRecommendedMovies = fallbackRes.movies.slice();
@@ -2419,6 +2441,10 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         });
       }
     }).catch(function () {
+      isMlRunning = false;
+      if (latestRecommendedMovies.length) {
+        return;
+      }
       kkphimApi.getHome().then(function (res) {
         if (!destroyed && res && res.movies) {
           latestRecommendedMovies = res.movies.slice();
@@ -2458,13 +2484,23 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       console.warn("Lỗi tải hero & top 10:", err);
     });
 
-    // 2. Machine Learning Personalized Recommendations - Automatically runs ML model & searches API
+    // 2. Machine Learning Personalized Recommendations - Automatically runs ML model & searches API, then re-evaluates every 10s
     window.setTimeout(function () {
       if (destroyed) {
         return;
       }
-      refreshMlRecommendations(false);
+      refreshMlRecommendations(false, false);
     }, 300);
+
+    if (mlModelIntervalTimer) {
+      window.clearInterval(mlModelIntervalTimer);
+    }
+    mlModelIntervalTimer = window.setInterval(function () {
+      if (destroyed) {
+        return;
+      }
+      refreshMlRecommendations(true, true);
+    }, 10000);
 
     // 3. Featured Series (phim-bo) - Staggered by 700ms
     window.setTimeout(function () {
@@ -2957,6 +2993,10 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       if (clockTimer) {
         window.clearInterval(clockTimer);
         clockTimer = 0;
+      }
+      if (mlModelIntervalTimer) {
+        window.clearInterval(mlModelIntervalTimer);
+        mlModelIntervalTimer = 0;
       }
       clearGrid();
       window.removeEventListener("resize", onWindowResize);
@@ -4153,7 +4193,7 @@ var fetchGoogleSuggestions = requireModule("js/services/google-trending-service.
 var extractKeywords = requireModule("js/services/google-trending-service.js")["extractKeywords"];
 const ML_INTERACTIONS_KEY = "kkphim_ml_interactions";
 const ML_CACHE_KEY = "kkphim_ml_recommendations_cache";
-const ML_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const ML_CACHE_TTL_MS = 10 * 1000; // 10 seconds auto-refresh cycle
 const HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000; // 14 days exponential time decay
 
 const VIETNAMESE_STOPWORDS = new Set([
