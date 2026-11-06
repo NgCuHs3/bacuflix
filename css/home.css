@@ -1675,12 +1675,17 @@
 
 .catalog-badge {
   display: inline-block;
+  max-width: 100%;
   padding: 2.5px 7px;
   border-radius: 4px;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
 

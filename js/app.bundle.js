@@ -561,7 +561,10 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   let searchDebounceTimer = 0;
   let destroyed = false;
   let refreshing = false;
-  let activeTab = "new"; // "new" | "movies" | "tvshows" | "trending" | "favorites" | "history" | "genre" | "search"
+  let loadTabSeq = 0;
+  let pendingScrollToGrid = false;
+  let latestRecommendedMovies = [];
+  let activeTab = "new"; // "new" | "movies" | "tvshows" | "trending" | "recommended" | "favorites" | "history" | "genre" | "search"
   let activeGenre = null;
   let previousTab = "new";
   let currentSearchQuery = "";
@@ -1324,9 +1327,8 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     },
     onViewAll: function (cfg) {
       if (cfg.targetTab) {
+        pendingScrollToGrid = true;
         switchTab(cfg.targetTab);
-        const gridTop = heading.offsetTop || 420;
-        screen.scrollTo({ top: Math.max(0, gridTop - 90), behavior: "smooth" });
       }
     }
   };
@@ -1488,7 +1490,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   const recommendedCarousel = createMovieCarouselSection({
     id: "recommended",
     title: "Phim đề xuất",
-    targetTab: "movies",
+    targetTab: "recommended",
     maxItems: 14
   }, sharedCarouselCallbacks);
 
@@ -1964,7 +1966,19 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       const isHeaderActive = (tabButtons && tabButtons.includes(active)) || active === searchInput || (sidebar && sidebar.contains(active)) || (tvKeyboard && tvKeyboard.contains(active));
       const isHeroActive = heroCarousel.element && heroCarousel.element.contains(active);
 
-      if (hasHero) {
+      if (pendingScrollToGrid) {
+        pendingScrollToGrid = false;
+        setSelectedCard(targetCard || cards[0], !detailModal.isOpen() && !isHeaderActive);
+        if (hasHero) {
+          const gridTop = catalogSectionWrap.offsetTop || heading.offsetTop || 420;
+          screen.scrollTo({ top: Math.max(0, gridTop - 84), behavior: "smooth" });
+        } else {
+          screen.scrollTop = 0;
+          if (typeof window !== "undefined") {
+            window.scrollTo(0, 0);
+          }
+        }
+      } else if (hasHero) {
         setSelectedCard(targetCard || cards[0], false);
         if (!detailModal.isOpen() && !isHeaderActive && !isHeroActive) {
           const heroBtns = heroCarousel.getFocusableElements();
@@ -2038,6 +2052,17 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       promise = kkphimApi.getMoviesByCategory("phim-bo", nextPage, 24);
     } else if (activeTab === "trending") {
       promise = kkphimApi.getTrending(nextPage);
+    } else if (activeTab === "recommended") {
+      const profile = mlRecommendationService.trainModel();
+      const topGenre = (profile && profile.rankedGenres && profile.rankedGenres[0] && profile.rankedGenres[0].slug) || "hanh-dong";
+      promise = kkphimApi.getMoviesByGenre(topGenre, nextPage, 24).then(function (res) {
+        const rawList = (res && Array.isArray(res.movies)) ? res.movies : [];
+        const scoredList = rawList.map(function (m) {
+          const ev = mlRecommendationService.scoreMovie(m, profile);
+          return Object.assign({}, m, { mlScore: ev.score, mlMatchPercent: ev.matchPercent });
+        }).sort(function (a, b) { return (b.mlScore || 0) - (a.mlScore || 0); });
+        return { movies: scoredList };
+      });
     } else if (activeTab === "genre" && activeGenre) {
       promise = kkphimApi.getMoviesByGenre(activeGenre.slug, nextPage, 24);
     } else if (activeTab === "search") {
@@ -2195,6 +2220,12 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       heading.textContent = "Phim bộ & TV Show";
     } else if (tabId === "trending") {
       heading.textContent = "Phim đang thịnh hành";
+    } else if (tabId === "recommended") {
+      heading.textContent = "Phim đề xuất cho bạn";
+      screen.scrollTop = 0;
+      if (typeof window !== "undefined") {
+        window.scrollTo(0, 0);
+      }
     } else if (tabId === "favorites") {
       heading.textContent = "Danh sách của tôi";
     } else if (tabId === "history") {
@@ -2255,9 +2286,11 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   }
 
   function loadTab(tabId, force) {
-    if (refreshing || destroyed) {
+    if (destroyed) {
       return;
     }
+    loadTabSeq += 1;
+    const reqSeq = loadTabSeq;
     refreshing = true;
     message.classList.remove("is-error");
 
@@ -2288,6 +2321,20 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       promise = googleTrendingService.getTrending(force).then(function (res) {
         return { movies: res.movies || [], errors: [], diagnostics: [], failedAll: false };
       });
+    } else if (tabId === "recommended") {
+      promise = mlRecommendationService.getRecommendations({ force: Boolean(force), limit: 24 }).then(function (res) {
+        const list = (res && Array.isArray(res.movies)) ? res.movies : [];
+        if (list.length > 0) {
+          latestRecommendedMovies = list.slice();
+          return { movies: list, errors: [], diagnostics: [], failedAll: false };
+        }
+        if (latestRecommendedMovies.length > 0) {
+          return { movies: latestRecommendedMovies.slice(), errors: [], diagnostics: [], failedAll: false };
+        }
+        return kkphimApi.getMoviesByCategory("phim-le", 1, 24).then(function (fallbackRes) {
+          return { movies: (fallbackRes && fallbackRes.movies) || [], errors: [], diagnostics: [], failedAll: false };
+        });
+      });
     } else if (tabId === "genre" && activeGenre) {
       promise = kkphimApi.getMoviesByGenre(activeGenre.slug, 1, 24).then(function (res) {
         return { movies: res.movies || [], errors: [], diagnostics: [], failedAll: false };
@@ -2313,11 +2360,11 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     }
 
     promise.then(function (result) {
-      if (!destroyed) {
+      if (!destroyed && reqSeq === loadTabSeq && activeTab === tabId) {
         render(result);
       }
     }).catch(function (error) {
-      if (!destroyed) {
+      if (!destroyed && reqSeq === loadTabSeq && activeTab === tabId) {
         render({
           movies: [],
           errors: [{ message: error.message || "Không thể tải dữ liệu phim." }],
@@ -2326,6 +2373,9 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         });
       }
     }).then(function () {
+      if (reqSeq !== loadTabSeq) {
+        return;
+      }
       refreshing = false;
       if (!destroyed && !detailModal.isOpen()) {
         if (!screen.contains(document.activeElement)) {
@@ -2349,16 +2399,21 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     if (destroyed) {
       return;
     }
-    mlRecommendationService.getRecommendations({ force: Boolean(force), limit: 14 }).then(function (res) {
+    mlRecommendationService.getRecommendations({ force: Boolean(force), limit: 24 }).then(function (res) {
       if (destroyed) {
         return;
       }
       const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
       if (movies.length) {
-        recommendedCarousel.setMovies(movies);
+        latestRecommendedMovies = movies.slice();
+        recommendedCarousel.setMovies(movies.slice(0, 14));
+        if (activeTab === "recommended") {
+          render({ movies: movies, errors: [], diagnostics: [], failedAll: false });
+        }
       } else {
         return kkphimApi.getMoviesByCategory("phim-le", 1, 14).then(function (fallbackRes) {
           if (!destroyed && fallbackRes && Array.isArray(fallbackRes.movies)) {
+            latestRecommendedMovies = fallbackRes.movies.slice();
             recommendedCarousel.setMovies(fallbackRes.movies);
           }
         });
@@ -2366,6 +2421,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     }).catch(function () {
       kkphimApi.getHome().then(function (res) {
         if (!destroyed && res && res.movies) {
+          latestRecommendedMovies = res.movies.slice();
           recommendedCarousel.setMovies(res.movies);
         }
       }).catch(function () {});
@@ -2519,7 +2575,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
           switchTab(previousTab || "new");
           return true;
         }
-        if (activeTab === "genre") {
+        if (activeTab === "genre" || activeTab === "recommended") {
           switchTab("new");
           return true;
         }
@@ -4904,11 +4960,11 @@ function getMlRecommendations(kkphimApi, options) {
       const finalMovies = scored.slice(0, maxResults);
       const topGenres = (profile.rankedGenres || []).slice(0, 3).map(function (g) { return g.slug; });
 
-      if (finalMovies.length > 0) {
+      if (scored.length > 0) {
         memoryRecommendationCache = {
           timestamp: Date.now(),
           signature: signature,
-          movies: finalMovies,
+          movies: scored,
           queries: queries,
           topGenres: topGenres
         };

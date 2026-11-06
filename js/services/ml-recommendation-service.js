@@ -815,11 +815,11 @@ export function getMlRecommendations(kkphimApi, options) {
       const finalMovies = scored.slice(0, maxResults);
       const topGenres = (profile.rankedGenres || []).slice(0, 3).map(function (g) { return g.slug; });
 
-      if (finalMovies.length > 0) {
+      if (scored.length > 0) {
         memoryRecommendationCache = {
           timestamp: Date.now(),
           signature: signature,
-          movies: finalMovies,
+          movies: scored,
           queries: queries,
           topGenres: topGenres
         };
