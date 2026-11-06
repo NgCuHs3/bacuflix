@@ -1,6 +1,7 @@
 import { createPlaybackService } from "./playback-service.js";
 import { createSeekController } from "./seek-controller.js";
 import { createSubtitleService } from "./subtitle-service.js";
+import { createMediaSessionManager } from "./media-session-manager.js";
 import { getActiveSubtitleText } from "./subtitle-parser.js";
 import { activateFocusedElement, focusNext } from "../navigation/remote-navigation.js";
 import { formatTime } from "../utils/format-time.js";
@@ -805,6 +806,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       }
     }
     playback.start(streamUrl);
+    mediaSessionManager.updateMetadata(currentMovie);
     scheduleHide(3000);
   }
 
@@ -1053,6 +1055,9 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       playButton.hidden = true;
       stage.classList.add("playback-error");
       showStatus(message, true);
+      if (mediaSessionManager) {
+        mediaSessionManager.notifyError();
+      }
       scheduleHide();
     },
     onPlaying() {
@@ -1122,6 +1127,63 @@ export function createPlayerScreen(root, movie, onBackRequest) {
         playback.seek(time);
       }
       scheduleHide();
+    }
+  });
+
+  const mediaSessionManager = createMediaSessionManager({
+    video: video,
+    controller: {
+      play: function () {
+        playButton.hidden = true;
+        autoplayBlocked = false;
+        playback.play();
+      },
+      pause: function () {
+        playback.pause();
+      },
+      stop: function () {
+        if (video && video.currentTime > 3 && !pendingResumeTime) {
+          saveWatchProgress(currentMovie, video.currentTime, video.duration);
+        }
+        playback.pause();
+      },
+      seekBy: function (deltaSeconds) {
+        seekController.seekBy(deltaSeconds);
+      },
+      seekTo: function (targetSeconds) {
+        pendingSeekTime = targetSeconds;
+        ignoreTimelineUntil = Date.now() + 1200;
+        playback.seek(targetSeconds);
+        updateTimeline();
+        updateSubtitleDisplay(targetSeconds);
+      },
+      nextTrack: function () {
+        if (episodesList && currentEpisodeIndex + 1 < episodesList.length) {
+          playEpisode(currentEpisodeIndex + 1);
+        }
+      },
+      previousTrack: function () {
+        if (episodesList && currentEpisodeIndex > 0) {
+          playEpisode(currentEpisodeIndex - 1);
+        } else {
+          playback.seek(0);
+          updateTimeline();
+        }
+      },
+      getCurrentTime: function () {
+        return getEffectiveCurrentTime();
+      },
+      getDuration: function () {
+        const range = playback.getRange();
+        return (range && range.end > range.start) ? (range.end - range.start) : (Number.isFinite(video.duration) ? video.duration : 0);
+      },
+      getNavigationState: function () {
+        const hasMultiple = Boolean(episodesList && episodesList.length > 1);
+        return {
+          hasPrev: hasMultiple && currentEpisodeIndex > 0,
+          hasNext: hasMultiple && (currentEpisodeIndex + 1 < episodesList.length)
+        };
+      }
     }
   });
 
@@ -1426,6 +1488,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   pendingResumeTime = resolveResumeTimeForEpisode(currentEpisodeIndex);
   saveWatchProgress(currentMovie, pendingResumeTime > 0 ? pendingResumeTime : 0, 2700);
   showLoader("Loading movie...");
+  mediaSessionManager.updateMetadata(currentMovie);
   playback.start(movie.m3u8);
   togglePlayButton.focus();
   scheduleHide();
@@ -1441,6 +1504,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
         saveWatchProgress(currentMovie, video.currentTime, video.duration);
       }
       disposed = true;
+      mediaSessionManager.destroy();
       hideLoader();
       unlockLandscape();
       if (nativeFullscreen) {
