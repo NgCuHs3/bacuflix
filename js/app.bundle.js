@@ -3926,8 +3926,11 @@ function extractKeywords(suggestions) {
 
   for (let i = 0; i < suggestions.length; i += 1) {
     let s = String(suggestions[i] || "").toLowerCase().trim();
-    s = s.replace(/^(xem\s+phim|phim)\s+/, "").trim();
-    s = s.replace(/\s+(tập\s+\d+|tap\s+\d+|vietsub|thuyết minh|thuyet minh|lồng tiếng|long tieng|full|hd|phần\s+\d+|phan\s+\d+|mới nhất|motphim).*$/, "").trim();
+    if (/có bao nhiêu tập|co bao nhieu tap|lịch chiếu|lich chieu|review|tóm tắt|tom tat|diễn viên|dien vien|kết thúc|ket thuc|là ai|la ai/.test(s)) {
+      continue;
+    }
+    s = s.replace(/^(xem\s+phim|phim\s+bộ|phim\s+lẻ|phim\s+hoạt\s+hình|phim)\s+/, "").trim();
+    s = s.replace(/\s+(tập\s+\d+|tap\s+\d+|\d+\s*tập|\d+$|vietsub|thuyết minh|thuyet minh|lồng tiếng|long tieng|full|hd|fhd|3d|2d|anime|hoạt hình 3d|hoat hinh 3d|phần\s+\d+|phan\s+\d+|mới nhất|moi nhat|motphim|hhkungfu|yanhh|phimmoi|subnhanh|chillhay|rophim|bilutv|vieon|fpt).*$/, "").trim();
 
     let isIgnored = false;
     for (let j = 0; j < IGNORE_PATTERNS.length; j += 1) {
@@ -3985,7 +3988,7 @@ function fetchGoogleSuggestions(seed) {
         resolve([]);
       };
 
-      script.src = "https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&q=" + query + "&callback=" + cbName;
+      script.src = "https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&ie=utf-8&oe=utf-8&q=" + query + "&callback=" + cbName;
       (document.head || document.body || document.documentElement).appendChild(script);
     });
   }
@@ -3999,7 +4002,7 @@ function fetchGoogleSuggestions(seed) {
     return Promise.resolve([]);
   }
 
-  return fetchFn("https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&q=" + query)
+  return fetchFn("https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&ie=utf-8&oe=utf-8&q=" + query)
     .then(function (res) {
       if (!res.ok) {
         return [];
@@ -4146,6 +4149,8 @@ return {getCachedTrending: getCachedTrending, saveCachedTrending: saveCachedTren
 registerModule("js/services/ml-recommendation-service.js", function (requireModule) {
 var getWatchHistory = requireModule("js/services/watch-history-service.js")["getWatchHistory"];
 var getFavorites = requireModule("js/services/favorites-service.js")["getFavorites"];
+var fetchGoogleSuggestions = requireModule("js/services/google-trending-service.js")["fetchGoogleSuggestions"];
+var extractKeywords = requireModule("js/services/google-trending-service.js")["extractKeywords"];
 const ML_INTERACTIONS_KEY = "kkphim_ml_interactions";
 const ML_CACHE_KEY = "kkphim_ml_recommendations_cache";
 const ML_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
@@ -4769,6 +4774,222 @@ function trainUserPreferenceModel(customHistory, customFavorites, customInteract
   };
 }
 
+function buildHistoryGoogleSeeds(customHistory, customFavorites, customInteractions, userProfile) {
+  const history = Array.isArray(customHistory) ? customHistory : getWatchHistory();
+  const favorites = Array.isArray(customFavorites) ? customFavorites : getFavorites();
+  const interactions = Array.isArray(customInteractions) ? customInteractions : getInteractionsList();
+  const profile = userProfile || trainUserPreferenceModel(history, favorites, interactions);
+
+  const seeds = [];
+  const seenNorm = new Set();
+
+  function addSeed(rawSeed) {
+    if (!rawSeed || typeof rawSeed !== "string") {
+      return;
+    }
+    const clean = rawSeed.replace(/\s+/g, " ").trim();
+    if (clean.length < 4) {
+      return;
+    }
+    const norm = stripVietnameseAccents(clean).toLowerCase();
+    if (seenNorm.has(norm)) {
+      return;
+    }
+    seenNorm.add(norm);
+    seeds.push(clean);
+  }
+
+  // 1. Build Google Suggest seeds from recent Watch History titles, prefixes, genres, and actors
+  history.slice(0, 5).forEach(function (item) {
+    if (!item) {
+      return;
+    }
+    const rawTitle = item.seriesTitle || (item.title ? String(item.title).split(" - ")[0] : "");
+    const cleanedTitle = rawTitle.replace(/\([^)]*\)/g, "").trim();
+    if (cleanedTitle.length >= 2) {
+      const tokens = tokenizeMovieText(cleanedTitle);
+      if (tokens.unigrams.length >= 2) {
+        addSeed("phim " + tokens.unigrams[0] + " ");
+      }
+      if (tokens.bigrams.length > 0 && tokens.unigrams.length > 2) {
+        addSeed("phim " + tokens.bigrams[0] + " ");
+      }
+      addSeed("phim " + cleanedTitle + " ");
+    }
+    if (Array.isArray(item.categories) && item.categories.length >= 2) {
+      const c0 = typeof item.categories[0] === "string" ? item.categories[0] : (item.categories[0] && item.categories[0].name ? item.categories[0].name : "");
+      const c1 = typeof item.categories[1] === "string" ? item.categories[1] : (item.categories[1] && item.categories[1].name ? item.categories[1].name : "");
+      if (c0 && c1) {
+        addSeed("phim " + c0.toLowerCase() + " " + c1.toLowerCase() + " ");
+      }
+    }
+    if (Array.isArray(item.actors) && item.actors.length > 0 && item.actors[0].length >= 4) {
+      addSeed("phim " + item.actors[0] + " ");
+    }
+  });
+
+  // 2. Build seeds from Favorites
+  favorites.slice(0, 3).forEach(function (fav) {
+    if (!fav) {
+      return;
+    }
+    const favTitle = (fav.title || fav.name || "").replace(/\([^)]*\)/g, "").trim();
+    if (favTitle.length >= 2) {
+      addSeed("phim " + favTitle + " ");
+      const tokens = tokenizeMovieText(favTitle);
+      if (tokens.bigrams.length > 0) {
+        addSeed("phim " + tokens.bigrams[0] + " ");
+      }
+    }
+  });
+
+  // 3. Build seeds from recent User Searches / Interactions
+  interactions.slice(0, 4).forEach(function (inter) {
+    if (!inter) {
+      return;
+    }
+    if (inter.type === "search" && inter.query) {
+      const q = String(inter.query).trim();
+      addSeed(q.toLowerCase().indexOf("phim") === 0 ? (q + " ") : ("phim " + q + " "));
+    } else if (inter.title) {
+      const tokens = tokenizeMovieText(inter.title);
+      if (tokens.bigrams.length > 0) {
+        addSeed("phim " + tokens.bigrams[0] + " ");
+      }
+    }
+  });
+
+  // 4. Add top latent genre seed for discovery
+  if (profile.rankedGenres && profile.rankedGenres.length > 0) {
+    const topGenre = GENRE_PRIORS_AND_KEYWORDS.find(function (g) {
+      return g.slug === profile.rankedGenres[0].slug;
+    });
+    if (topGenre && topGenre.searchSeed) {
+      addSeed("phim " + topGenre.searchSeed + " ");
+    }
+  }
+
+  if (!seeds.length) {
+    return ["phim bo hay ", "phim moi ", "phim hanh dong ", "phim co trang "];
+  }
+
+  return seeds.slice(0, 5);
+}
+
+function enrichProfileWithGoogleKeywords(userProfile, googleKeywords) {
+  const profile = userProfile || trainUserPreferenceModel();
+  if (!Array.isArray(googleKeywords) || !googleKeywords.length) {
+    return profile;
+  }
+
+  const rawWeights = Object.assign(Object.create(null), profile.rawWeights || {});
+  const googleExpandedSet = new Set(profile.googleExpandedKeywords || []);
+
+  googleKeywords.forEach(function (kw, idx) {
+    if (!kw || typeof kw !== "string") {
+      return;
+    }
+    const cleanKw = kw.trim();
+    if (cleanKw.length < 3) {
+      return;
+    }
+    googleExpandedSet.add(cleanKw.toLowerCase());
+    const rankWeight = Math.max(0.45, 1.35 - idx * 0.1);
+    const tokens = tokenizeMovieText(cleanKw);
+
+    tokens.unigrams.forEach(function (u) {
+      const key = "term:" + u;
+      rawWeights[key] = (rawWeights[key] || 0) + rankWeight * 0.95;
+      const unacc = stripVietnameseAccents(u);
+      if (unacc !== u && unacc.length >= 3) {
+        const asciiKey = "term_ascii:" + unacc;
+        rawWeights[asciiKey] = (rawWeights[asciiKey] || 0) + rankWeight * 0.65;
+      }
+    });
+
+    tokens.bigrams.forEach(function (bg) {
+      const key = "bigram:" + bg;
+      rawWeights[key] = (rawWeights[key] || 0) + rankWeight * 1.65;
+    });
+
+    inferLatentGenres({ title: cleanKw }).forEach(function (g) {
+      const gKey = "genre:" + g.slug;
+      rawWeights[gKey] = (rawWeights[gKey] || 0) + g.weight * rankWeight * 1.4;
+    });
+  });
+
+  // Re-normalize L2 User Centroid Vector with Google-enriched features
+  let normSq = 0;
+  const fKeys = Object.keys(rawWeights);
+  for (let i = 0; i < fKeys.length; i += 1) {
+    const val = rawWeights[fKeys[i]];
+    normSq += val * val;
+  }
+  const l2Norm = normSq > 0 ? Math.sqrt(normSq) : 1;
+  const normalizedVector = Object.create(null);
+  for (let i = 0; i < fKeys.length; i += 1) {
+    const k = fKeys[i];
+    normalizedVector[k] = rawWeights[k] / l2Norm;
+  }
+
+  profile.rawWeights = rawWeights;
+  profile.vector = normalizedVector;
+  profile.l2Norm = l2Norm;
+  profile.googleExpandedKeywords = Array.from(googleExpandedSet);
+  return profile;
+}
+
+function fetchGoogleRelatedQueriesFromHistory(userProfile, options) {
+  const customHistory = options && options.history ? options.history : null;
+  const customFavorites = options && options.favorites ? options.favorites : null;
+  const customInteractions = options && options.interactions ? options.interactions : null;
+  const suggestFn = (options && typeof options.suggestFn === "function") ? options.suggestFn : fetchGoogleSuggestions;
+  const maxKeywords = (options && options.maxKeywords > 0) ? options.maxKeywords : 8;
+
+  const profile = userProfile || trainUserPreferenceModel(customHistory, customFavorites, customInteractions);
+  const seeds = buildHistoryGoogleSeeds(customHistory, customFavorites, customInteractions, profile);
+
+  return Promise.all(seeds.map(function (seed) {
+    return Promise.resolve(suggestFn(seed)).catch(function () {
+      return [];
+    });
+  })).then(function (suggestionLists) {
+    const rawSuggestions = [];
+    suggestionLists.forEach(function (list) {
+      if (Array.isArray(list)) {
+        rawSuggestions.push.apply(rawSuggestions, list);
+      }
+    });
+
+    const extracted = extractKeywords(rawSuggestions);
+    const cleanedKeywords = [];
+    const seen = new Set();
+
+    for (let i = 0; i < extracted.length && cleanedKeywords.length < maxKeywords; i += 1) {
+      const kw = String(extracted[i] || "").trim();
+      const norm = stripVietnameseAccents(kw).toLowerCase();
+      if (kw.length >= 3 && !VIETNAMESE_STOPWORDS.has(norm) && !seen.has(norm)) {
+        seen.add(norm);
+        cleanedKeywords.push(kw);
+      }
+    }
+
+    enrichProfileWithGoogleKeywords(profile, cleanedKeywords);
+
+    return {
+      seeds: seeds,
+      googleKeywords: cleanedKeywords,
+      enrichedProfile: profile
+    };
+  }).catch(function () {
+    return {
+      seeds: seeds,
+      googleKeywords: [],
+      enrichedProfile: profile
+    };
+  });
+}
+
 function predictSearchQueries(userProfile, maxQueries) {
   const limit = maxQueries && maxQueries > 0 ? maxQueries : 5;
   const profile = userProfile || trainUserPreferenceModel();
@@ -4837,6 +5058,21 @@ function scoreMovieWithModel(movie, userProfile) {
   const movieNorm = movieNormSq > 0 ? Math.sqrt(movieNormSq) : 1;
   const cosineSim = profile.isColdStart ? 0.45 : (dotProduct / movieNorm);
 
+  // Google Query Expansion Match Bonus (when movie title/origin matches Google related queries)
+  let googleExpansionBonus = 0;
+  if (movie.googleQueryMatched) {
+    googleExpansionBonus += 0.09;
+  } else if (Array.isArray(profile.googleExpandedKeywords) && profile.googleExpandedKeywords.length > 0) {
+    const titleNorm = stripVietnameseAccents((movie.seriesTitle || movie.title || "") + " " + (movie.originTitle || "")).toLowerCase();
+    for (let g = 0; g < profile.googleExpandedKeywords.length; g += 1) {
+      const gNorm = stripVietnameseAccents(profile.googleExpandedKeywords[g]).toLowerCase();
+      if (gNorm.length >= 4 && titleNorm.indexOf(gNorm) !== -1) {
+        googleExpansionBonus += 0.07;
+        break;
+      }
+    }
+  }
+
   // Quality & Recency Prior
   let qualityPrior = 0;
   const yr = parseInt(movie.year, 10);
@@ -4860,7 +5096,7 @@ function scoreMovieWithModel(movie, userProfile) {
     noveltyAdjustment -= 0.12;
   }
 
-  const rawScore = Math.max(0.05, cosineSim * 0.78 + Math.min(0.22, genreAffinityBonus) + qualityPrior + noveltyAdjustment);
+  const rawScore = Math.max(0.05, cosineSim * 0.78 + Math.min(0.22, genreAffinityBonus) + googleExpansionBonus + qualityPrior + noveltyAdjustment);
 
   // Calibrated sigmoid mapping into [82%, 99%] match percentage
   const calibrated = 1 / (1 + Math.exp(-4.2 * (rawScore - 0.22)));
@@ -4891,6 +5127,8 @@ function getMlRecommendations(kkphimApi, options) {
       return Promise.resolve({
         movies: memoryRecommendationCache.movies.slice(0, maxResults),
         queries: memoryRecommendationCache.queries,
+        googleQueries: memoryRecommendationCache.googleQueries || [],
+        googleSeeds: memoryRecommendationCache.googleSeeds || [],
         topGenres: memoryRecommendationCache.topGenres,
         isColdStart: profile.isColdStart,
         isCached: true
@@ -4898,103 +5136,163 @@ function getMlRecommendations(kkphimApi, options) {
     }
   }
 
-  const queries = predictSearchQueries(profile, 4);
-  const topGenreSlug = (profile.rankedGenres && profile.rankedGenres.length > 0)
-    ? profile.rankedGenres[0].slug
-    : "hanh-dong";
+  return fetchGoogleRelatedQueriesFromHistory(profile, options).then(function (googleEnrichment) {
+    const googleKeywords = (googleEnrichment && Array.isArray(googleEnrichment.googleKeywords))
+      ? googleEnrichment.googleKeywords
+      : [];
+    const googleSeeds = (googleEnrichment && Array.isArray(googleEnrichment.googleSeeds || googleEnrichment.seeds))
+      ? (googleEnrichment.googleSeeds || googleEnrichment.seeds)
+      : [];
 
-  const searchTasks = queries.map(function (kw) {
-    if (!kkphimApi || typeof kkphimApi.searchMovies !== "function") {
-      return Promise.resolve([]);
-    }
-    return kkphimApi.searchMovies(kw, 8, 1).then(function (res) {
-      return (res && Array.isArray(res.movies)) ? res.movies : [];
-    }).catch(function () {
-      return [];
-    });
-  });
+    const baseQueries = predictSearchQueries(profile, 4);
+    const mergedQueries = [];
+    const seenQueryNorm = new Set();
+    const googleQueryNormSet = new Set();
 
-  if (kkphimApi && typeof kkphimApi.getMoviesByGenre === "function") {
-    searchTasks.push(
-      kkphimApi.getMoviesByGenre(topGenreSlug, 1, 12).then(function (res) {
-        return (res && Array.isArray(res.movies)) ? res.movies : [];
-      }).catch(function () {
-        return [];
-      })
-    );
-  }
-
-  return Promise.all(searchTasks).then(function (resultsLists) {
-    const candidateMap = new Map();
-    resultsLists.forEach(function (list) {
-      if (!Array.isArray(list)) {
+    function addCombinedQuery(q, isFromGoogle) {
+      if (!q || typeof q !== "string") {
         return;
       }
-      list.forEach(function (movie) {
-        if (!movie) {
-          return;
+      const clean = q.trim();
+      const norm = stripVietnameseAccents(clean).toLowerCase();
+      if (!clean || seenQueryNorm.has(norm)) {
+        return;
+      }
+      seenQueryNorm.add(norm);
+      if (isFromGoogle) {
+        googleQueryNormSet.add(norm);
+      }
+      mergedQueries.push(clean);
+    }
+
+    // Interleave on-device ML queries and Google-expanded related movie queries
+    baseQueries.slice(0, 3).forEach(function (q) {
+      addCombinedQuery(q, false);
+    });
+    googleKeywords.slice(0, 4).forEach(function (gq) {
+      addCombinedQuery(gq, true);
+    });
+    baseQueries.slice(3).forEach(function (q) {
+      addCombinedQuery(q, false);
+    });
+
+    const activeQueries = mergedQueries.slice(0, 7);
+    const topGenreSlug = (profile.rankedGenres && profile.rankedGenres.length > 0)
+      ? profile.rankedGenres[0].slug
+      : "hanh-dong";
+
+    const searchTasks = activeQueries.map(function (kw) {
+      if (!kkphimApi || typeof kkphimApi.searchMovies !== "function") {
+        return Promise.resolve([]);
+      }
+      const kwNorm = stripVietnameseAccents(kw).toLowerCase();
+      const isGoogleSource = googleQueryNormSet.has(kwNorm);
+      return kkphimApi.searchMovies(kw, 6, 1).then(function (res) {
+        const list = (res && Array.isArray(res.movies)) ? res.movies : [];
+        if (!isGoogleSource) {
+          return list;
         }
-        const key = movie.slug || movie.id;
-        if (key && !candidateMap.has(key)) {
-          candidateMap.set(key, movie);
-        }
+        return list.map(function (m) {
+          return Object.assign({}, m, { googleQueryMatched: kw });
+        });
+      }).catch(function () {
+        return [];
       });
     });
 
-    let candidates = Array.from(candidateMap.values());
+    if (kkphimApi && typeof kkphimApi.getMoviesByGenre === "function") {
+      searchTasks.push(
+        kkphimApi.getMoviesByGenre(topGenreSlug, 1, 12).then(function (res) {
+          return (res && Array.isArray(res.movies)) ? res.movies : [];
+        }).catch(function () {
+          return [];
+        })
+      );
+    }
 
-    function finalizeCandidates(movieList) {
-      const scored = movieList.map(function (movie) {
-        const evaluation = scoreMovieWithModel(movie, profile);
-        const enriched = Object.assign({}, movie, {
-          mlScore: evaluation.score,
-          mlMatchPercent: evaluation.matchPercent
+    return Promise.all(searchTasks).then(function (resultsLists) {
+      const candidateMap = new Map();
+      resultsLists.forEach(function (list) {
+        if (!Array.isArray(list)) {
+          return;
+        }
+        list.forEach(function (movie) {
+          if (!movie) {
+            return;
+          }
+          const key = movie.slug || movie.id;
+          if (!key) {
+            return;
+          }
+          if (!candidateMap.has(key)) {
+            candidateMap.set(key, movie);
+          } else if (movie.googleQueryMatched && !candidateMap.get(key).googleQueryMatched) {
+            candidateMap.set(key, Object.assign({}, candidateMap.get(key), {
+              googleQueryMatched: movie.googleQueryMatched
+            }));
+          }
         });
-        return enriched;
       });
 
-      scored.sort(function (a, b) {
-        return b.mlScore - a.mlScore;
-      });
+      const candidates = Array.from(candidateMap.values());
 
-      const finalMovies = scored.slice(0, maxResults);
-      const topGenres = (profile.rankedGenres || []).slice(0, 3).map(function (g) { return g.slug; });
+      function finalizeCandidates(movieList) {
+        const scored = movieList.map(function (movie) {
+          const evaluation = scoreMovieWithModel(movie, profile);
+          const enriched = Object.assign({}, movie, {
+            mlScore: evaluation.score,
+            mlMatchPercent: evaluation.matchPercent
+          });
+          return enriched;
+        });
 
-      if (scored.length > 0) {
-        memoryRecommendationCache = {
-          timestamp: Date.now(),
-          signature: signature,
-          movies: scored,
-          queries: queries,
-          topGenres: topGenres
+        scored.sort(function (a, b) {
+          return b.mlScore - a.mlScore;
+        });
+
+        const finalMovies = scored.slice(0, maxResults);
+        const topGenres = (profile.rankedGenres || []).slice(0, 3).map(function (g) { return g.slug; });
+
+        if (scored.length > 0) {
+          memoryRecommendationCache = {
+            timestamp: Date.now(),
+            signature: signature,
+            movies: scored,
+            queries: activeQueries,
+            googleQueries: googleKeywords,
+            googleSeeds: googleSeeds,
+            topGenres: topGenres
+          };
+        }
+
+        return {
+          movies: finalMovies,
+          queries: activeQueries,
+          googleQueries: googleKeywords,
+          googleSeeds: googleSeeds,
+          topGenres: topGenres,
+          isColdStart: profile.isColdStart,
+          isCached: false
         };
       }
 
-      return {
-        movies: finalMovies,
-        queries: queries,
-        topGenres: topGenres,
-        isColdStart: profile.isColdStart,
-        isCached: false
-      };
-    }
+      if (candidates.length >= 10 || !kkphimApi || typeof kkphimApi.getMoviesByCategory !== "function") {
+        return finalizeCandidates(candidates);
+      }
 
-    if (candidates.length >= 10 || !kkphimApi || typeof kkphimApi.getMoviesByCategory !== "function") {
-      return finalizeCandidates(candidates);
-    }
-
-    // Fallback enrichment if search returned fewer than 10 items
-    return kkphimApi.getMoviesByCategory("phim-le", 1, 14).then(function (res) {
-      const extra = (res && Array.isArray(res.movies)) ? res.movies : [];
-      extra.forEach(function (m) {
-        const key = m && (m.slug || m.id);
-        if (key && !candidateMap.has(key)) {
-          candidateMap.set(key, m);
-        }
+      // Fallback enrichment if search returned fewer than 10 items
+      return kkphimApi.getMoviesByCategory("phim-le", 1, 14).then(function (res) {
+        const extra = (res && Array.isArray(res.movies)) ? res.movies : [];
+        extra.forEach(function (m) {
+          const key = m && (m.slug || m.id);
+          if (key && !candidateMap.has(key)) {
+            candidateMap.set(key, m);
+          }
+        });
+        return finalizeCandidates(Array.from(candidateMap.values()));
+      }).catch(function () {
+        return finalizeCandidates(candidates);
       });
-      return finalizeCandidates(Array.from(candidateMap.values()));
-    }).catch(function () {
-      return finalizeCandidates(candidates);
     });
   });
 }
@@ -5003,6 +5301,9 @@ function createMlRecommendationService(kkphimApi) {
   return {
     trainModel: trainUserPreferenceModel,
     predictQueries: predictSearchQueries,
+    buildGoogleSeeds: buildHistoryGoogleSeeds,
+    expandWithGoogle: fetchGoogleRelatedQueriesFromHistory,
+    enrichProfileWithGoogle: enrichProfileWithGoogleKeywords,
     scoreMovie: scoreMovieWithModel,
     extractFeatures: extractMovieFeatures,
     inferGenres: inferLatentGenres,
@@ -5015,7 +5316,7 @@ function createMlRecommendationService(kkphimApi) {
   };
 }
 
-return {stripVietnameseAccents: stripVietnameseAccents, tokenizeMovieText: tokenizeMovieText, inferLatentGenres: inferLatentGenres, extractMovieFeatures: extractMovieFeatures, invalidateMlRecommendationCache: invalidateMlRecommendationCache, recordUserMovieInteraction: recordUserMovieInteraction, recordUserSearchQuery: recordUserSearchQuery, trainUserPreferenceModel: trainUserPreferenceModel, predictSearchQueries: predictSearchQueries, scoreMovieWithModel: scoreMovieWithModel, getMlRecommendations: getMlRecommendations, createMlRecommendationService: createMlRecommendationService};
+return {stripVietnameseAccents: stripVietnameseAccents, tokenizeMovieText: tokenizeMovieText, inferLatentGenres: inferLatentGenres, extractMovieFeatures: extractMovieFeatures, invalidateMlRecommendationCache: invalidateMlRecommendationCache, recordUserMovieInteraction: recordUserMovieInteraction, recordUserSearchQuery: recordUserSearchQuery, trainUserPreferenceModel: trainUserPreferenceModel, buildHistoryGoogleSeeds: buildHistoryGoogleSeeds, enrichProfileWithGoogleKeywords: enrichProfileWithGoogleKeywords, fetchGoogleRelatedQueriesFromHistory: fetchGoogleRelatedQueriesFromHistory, predictSearchQueries: predictSearchQueries, scoreMovieWithModel: scoreMovieWithModel, getMlRecommendations: getMlRecommendations, createMlRecommendationService: createMlRecommendationService};
 });
 registerModule("js/home/movie-detail-modal.js", function (requireModule) {
 var isFavorite = requireModule("js/services/favorites-service.js")["isFavorite"];

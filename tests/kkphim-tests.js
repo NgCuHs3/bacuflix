@@ -192,9 +192,11 @@ async function testLiveApi() {
   const mlRes = await mlService.getRecommendations({ force: true, limit: 10 });
   assert.ok(mlRes.movies && mlRes.movies.length > 0, "ML recommendation service must return movies from API");
   assert.ok(Array.isArray(mlRes.queries) && mlRes.queries.length > 0, "ML recommendation service must generate search queries");
+  assert.ok(Array.isArray(mlRes.googleSeeds) && mlRes.googleSeeds.length > 0, "ML recommendation service must generate Google Suggest seeds from watch history");
+  assert.ok(Array.isArray(mlRes.googleQueries), "ML recommendation service must return googleQueries array");
   assert.ok(typeof mlRes.movies[0].mlScore === "number", "Recommended movie must have mlScore");
   assert.ok(typeof mlRes.movies[0].mlMatchPercent === "number", "Recommended movie must have mlMatchPercent");
-  console.log("✓ ML Recommendation Engine returned " + mlRes.movies.length + " movies using queries: [" + mlRes.queries.join(", ") + "].");
+  console.log("✓ ML Recommendation Engine returned " + mlRes.movies.length + " movies using queries: [" + mlRes.queries.join(", ") + "] (Google queries: [" + mlRes.googleQueries.join(", ") + "]).");
   clearWatchHistory();
 
   // 7. Verify bundle file syntax

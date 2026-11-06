@@ -73,8 +73,11 @@ export function extractKeywords(suggestions) {
 
   for (let i = 0; i < suggestions.length; i += 1) {
     let s = String(suggestions[i] || "").toLowerCase().trim();
-    s = s.replace(/^(xem\s+phim|phim)\s+/, "").trim();
-    s = s.replace(/\s+(tập\s+\d+|tap\s+\d+|vietsub|thuyết minh|thuyet minh|lồng tiếng|long tieng|full|hd|phần\s+\d+|phan\s+\d+|mới nhất|motphim).*$/, "").trim();
+    if (/có bao nhiêu tập|co bao nhieu tap|lịch chiếu|lich chieu|review|tóm tắt|tom tat|diễn viên|dien vien|kết thúc|ket thuc|là ai|la ai/.test(s)) {
+      continue;
+    }
+    s = s.replace(/^(xem\s+phim|phim\s+bộ|phim\s+lẻ|phim\s+hoạt\s+hình|phim)\s+/, "").trim();
+    s = s.replace(/\s+(tập\s+\d+|tap\s+\d+|\d+\s*tập|\d+$|vietsub|thuyết minh|thuyet minh|lồng tiếng|long tieng|full|hd|fhd|3d|2d|anime|hoạt hình 3d|hoat hinh 3d|phần\s+\d+|phan\s+\d+|mới nhất|moi nhat|motphim|hhkungfu|yanhh|phimmoi|subnhanh|chillhay|rophim|bilutv|vieon|fpt).*$/, "").trim();
 
     let isIgnored = false;
     for (let j = 0; j < IGNORE_PATTERNS.length; j += 1) {
@@ -132,7 +135,7 @@ export function fetchGoogleSuggestions(seed) {
         resolve([]);
       };
 
-      script.src = "https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&q=" + query + "&callback=" + cbName;
+      script.src = "https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&ie=utf-8&oe=utf-8&q=" + query + "&callback=" + cbName;
       (document.head || document.body || document.documentElement).appendChild(script);
     });
   }
@@ -146,7 +149,7 @@ export function fetchGoogleSuggestions(seed) {
     return Promise.resolve([]);
   }
 
-  return fetchFn("https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&q=" + query)
+  return fetchFn("https://suggestqueries.google.com/complete/search?client=chrome&hl=vi&gl=vn&ie=utf-8&oe=utf-8&q=" + query)
     .then(function (res) {
       if (!res.ok) {
         return [];
