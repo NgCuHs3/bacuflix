@@ -6,7 +6,7 @@ import { activateFocusedElement, focusNext } from "../navigation/remote-navigati
 import { formatTime } from "../utils/format-time.js";
 import { currentDevice } from "../utils/device.js";
 import { buildEpisodeUrl, copyTextToClipboard } from "../utils/url.js";
-import { saveWatchProgress } from "../services/watch-history-service.js";
+import { saveWatchProgress, getEpisodeResumeInfo } from "../services/watch-history-service.js";
 
 const PLAY_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>';
 const PAUSE_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 5.5A1.5 1.5 0 0 1 7.5 4h1A1.5 1.5 0 0 1 10 5.5v13A1.5 1.5 0 0 1 8.5 20h-1A1.5 1.5 0 0 1 6 18.5v-13zm8 0A1.5 1.5 0 0 1 15.5 4h1a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v-13z"/></svg>';
@@ -178,6 +178,51 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   let seekCommitTimer = 0;
   let lastDirectCommitTime = 0;
   let lastDirectCommitValue = "";
+  let pendingResumeTime = 0;
+
+  function resolveResumeTimeForEpisode(epIndex) {
+    if (typeof currentMovie.resumeTime === "number" && currentMovie.resumeTime > 5) {
+      const explicitTime = Math.floor(currentMovie.resumeTime);
+      currentMovie.resumeTime = 0;
+      return explicitTime;
+    }
+    const slug = currentMovie.slug || currentMovie.id;
+    const resumeInfo = getEpisodeResumeInfo(slug, epIndex);
+    if (resumeInfo && typeof resumeInfo.currentTime === "number" && resumeInfo.currentTime > 5) {
+      return resumeInfo.currentTime;
+    }
+    return 0;
+  }
+
+  function applyPendingResume() {
+    if (disposed || !pendingResumeTime || pendingResumeTime <= 5) {
+      return;
+    }
+    const range = playback.getRange();
+    const dur = (range && range.end > range.start) ? range.end : (Number.isFinite(video.duration) ? video.duration : 0);
+    if (dur <= 0 && video.readyState < 1) {
+      return;
+    }
+    let targetTime = pendingResumeTime;
+    if (dur > 30 && targetTime >= dur - 12) {
+      pendingResumeTime = 0;
+      return;
+    }
+    if (dur > 0) {
+      targetTime = Math.max(0, Math.min(dur - 5, targetTime));
+    }
+    try {
+      video.currentTime = targetTime;
+      if (Math.abs(video.currentTime - targetTime) < 3 || video.seeking) {
+        const resumedAt = targetTime;
+        pendingResumeTime = 0;
+        pendingSeekTime = resumedAt;
+        ignoreTimelineUntil = Date.now() + 1200;
+        updateTimeline();
+        showStatus("Đã tiếp tục phát từ " + formatTime(resumedAt));
+      }
+    } catch (_) {}
+  }
 
   function getEffectiveCurrentTime() {
     if (pendingSeekTime !== null && Date.now() < ignoreTimelineUntil) {
@@ -700,6 +745,9 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     if (index < 0 || !episodesList || index >= episodesList.length || disposed) {
       return;
     }
+    if (video && video.currentTime > 3) {
+      saveWatchProgress(currentMovie, video.currentTime, video.duration);
+    }
     cancelAutoNext();
     seekController.cancel();
     window.clearTimeout(seekCommitTimer);
@@ -717,8 +765,11 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     const seriesTitle = currentMovie.seriesTitle || (currentMovie.title ? currentMovie.title.split(" - ")[0] : "Phim");
     const newFullTitle = seriesTitle + " - " + ep.name;
     currentMovie.title = newFullTitle;
+    currentMovie.episodeName = ep.name;
     currentMovie.m3u8 = streamUrl;
     currentMovie.currentEpisodeIndex = index;
+    pendingResumeTime = resolveResumeTimeForEpisode(index);
+    saveWatchProgress(currentMovie, pendingResumeTime > 0 ? pendingResumeTime : 0, 2700);
     if (nowPlayingTitle) {
       nowPlayingTitle.textContent = newFullTitle;
     }
@@ -985,7 +1036,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
         updateSubtitleDisplay();
       }
       const now = Date.now();
-      if (now - lastHistorySaveTime > 12000 && video.currentTime > 5) {
+      if (now - lastHistorySaveTime > 4000 && video.currentTime > 3 && !pendingResumeTime) {
         lastHistorySaveTime = now;
         saveWatchProgress(currentMovie, video.currentTime, video.duration);
       }
@@ -1011,6 +1062,7 @@ export function createPlayerScreen(root, movie, onBackRequest) {
       playButton.hidden = true;
       stage.classList.remove("playback-error");
       status.dataset.visible = "false";
+      applyPendingResume();
       scheduleHide();
       if (!seekController.isScrubbing()) {
         updateSubtitleDisplay();
@@ -1286,15 +1338,30 @@ export function createPlayerScreen(root, movie, onBackRequest) {
     if (video.readyState >= 3) {
       hideLoader();
     }
+    if (video.currentTime > 3 && !pendingResumeTime) {
+      lastHistorySaveTime = Date.now();
+      saveWatchProgress(currentMovie, video.currentTime, video.duration);
+    }
+  });
+  listen(video, "pause", function () {
+    if (video.currentTime > 3 && !pendingResumeTime) {
+      lastHistorySaveTime = Date.now();
+      saveWatchProgress(currentMovie, video.currentTime, video.duration);
+    }
+  });
+  listen(video, "loadedmetadata", function () {
+    applyPendingResume();
   });
   listen(video, "waiting", function () {
     showLoader("Buffering...");
   });
   listen(video, "canplay", function () {
     hideLoader();
+    applyPendingResume();
   });
   listen(video, "playing", function () {
     hideLoader();
+    applyPendingResume();
   });
   listen(video, "loadstart", function () {
     showLoader("Loading movie...");
@@ -1339,6 +1406,14 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   listen(document, "visibilitychange", function () {
     if (document.hidden) {
       seekController.commitPreview();
+      if (video && video.currentTime > 3 && !pendingResumeTime) {
+        saveWatchProgress(currentMovie, video.currentTime, video.duration);
+      }
+    }
+  });
+  listen(window, "pagehide", function () {
+    if (video && video.currentTime > 3 && !pendingResumeTime) {
+      saveWatchProgress(currentMovie, video.currentTime, video.duration);
     }
   });
 
@@ -1348,7 +1423,8 @@ export function createPlayerScreen(root, movie, onBackRequest) {
   initSubtitles();
   updateFullscreenControl();
   updateNextButtonState();
-  saveWatchProgress(currentMovie, 0, 2700);
+  pendingResumeTime = resolveResumeTimeForEpisode(currentEpisodeIndex);
+  saveWatchProgress(currentMovie, pendingResumeTime > 0 ? pendingResumeTime : 0, 2700);
   showLoader("Loading movie...");
   playback.start(movie.m3u8);
   togglePlayButton.focus();

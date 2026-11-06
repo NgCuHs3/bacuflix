@@ -554,7 +554,7 @@ assert.ok(homeSource.includes("Phim đề xuất"), "Home screen must include 'P
 assert.ok(homeSource.includes("Phim bộ nổi bật"), "Home screen must include 'Phim bộ nổi bật' carousel");
 
 // Watch History Service unit tests
-import { getWatchHistory, saveWatchProgress, removeWatchHistory, clearWatchHistory } from "../js/services/watch-history-service.js";
+import { getWatchHistory, saveWatchProgress, getEpisodeResumeInfo, removeWatchHistory, clearWatchHistory } from "../js/services/watch-history-service.js";
 clearWatchHistory();
 assert.equal(getWatchHistory().length, 0, "Watch history should start empty");
 saveWatchProgress({
@@ -567,7 +567,76 @@ saveWatchProgress({
 const historyAfterSave = getWatchHistory();
 assert.equal(historyAfterSave.length, 1, "Watch history must store saved movie");
 assert.equal(historyAfterSave[0].progressPercent, 45, "Watch history must compute progress percentage");
+
+// Verify that calling saveWatchProgress with 0 on player startup does NOT wipe out saved 450s timestamp
+saveWatchProgress({
+  slug: "test-movie-1",
+  title: "Phim Thử Nghiệm 1",
+  currentEpisodeIndex: 4
+}, 0, 2700);
+const resumeEp4 = getEpisodeResumeInfo("test-movie-1", 4);
+assert.ok(resumeEp4, "Should return resume info for episode index 4");
+assert.equal(resumeEp4.currentTime, 450, "Timestamp 450s must be preserved even after 0s initial open call");
+
+// Verify multi-episode independent timestamp tracking
+saveWatchProgress({
+  slug: "test-movie-1",
+  title: "Phim Thử Nghiệm 1",
+  episodeName: "Tập 6",
+  currentEpisodeIndex: 5
+}, 720, 1800);
+assert.equal(getEpisodeResumeInfo("test-movie-1", 5).currentTime, 720, "Episode 6 must store 720s");
+assert.equal(getEpisodeResumeInfo("test-movie-1", 4).currentTime, 450, "Episode 5 must still retain 450s");
+
 removeWatchHistory("test-movie-1");
 assert.equal(getWatchHistory().length, 0, "Watch history item must be removable");
+
+// ML Recommendation Engine unit tests
+import { trainUserPreferenceModel, predictSearchQueries, scoreMovieWithModel, inferLatentGenres } from "../js/services/ml-recommendation-service.js";
+const inferredAction = inferLatentGenres({ title: "Đội Đặc Nhiệm Truy Sát Tội Phạm Võ Thuật" });
+assert.ok(inferredAction.some((g) => g.slug === "hanh-dong"), "Should classify action movie into hanh-dong genre");
+
+const mockHistory = [
+  {
+    slug: "dau-pha-thuong-khung",
+    title: "Đấu Phá Thương Khung",
+    categories: ["Cổ Trang", "Tiên Hiệp"],
+    currentTime: 900,
+    duration: 1200,
+    progressPercent: 75,
+    updatedAt: Date.now()
+  }
+];
+const mockFavs = [
+  {
+    slug: "the-gioi-hoan-my",
+    title: "Thế Giới Hoàn Mỹ",
+    categories: ["Cổ Trang", "Hoạt Hình"],
+    addedAt: Date.now()
+  }
+];
+const trainedProfile = trainUserPreferenceModel(mockHistory, mockFavs, []);
+assert.equal(trainedProfile.isColdStart, false, "Profile with history & favorites should not be cold start");
+assert.ok(trainedProfile.rankedGenres.length > 0, "Trained profile must rank preferred genres");
+assert.equal(trainedProfile.rankedGenres[0].slug, "co-trang", "Top preferred genre should be co-trang");
+
+const predictedQueries = predictSearchQueries(trainedProfile, 4);
+assert.ok(predictedQueries.length > 0, "Model must predict search queries from user taste");
+
+const matchingMovieScore = scoreMovieWithModel({
+  slug: "pham-nhan-tu-tien",
+  title: "Phàm Nhân Tu Tiên Cổ Trang",
+  categories: ["Cổ Trang"],
+  year: "2026",
+  quality: "FHD"
+}, trainedProfile);
+const unrelatedMovieScore = scoreMovieWithModel({
+  slug: "bong-de-kinh-di",
+  title: "Bóng Đè Ác Quỷ Kinh Dị",
+  categories: ["Kinh Dị"],
+  year: "2021",
+  quality: "HD"
+}, trainedProfile);
+assert.ok(matchingMovieScore.score > unrelatedMovieScore.score, "ML model must score matching genre/topic movie higher than unrelated movie");
 
 console.log("All unit, subtitle, player UI, and keyboard navigation tests passed.");

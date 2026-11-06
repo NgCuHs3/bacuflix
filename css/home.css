@@ -2067,6 +2067,7 @@
 
 .movie-detail-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin-bottom: 20px;
@@ -2093,6 +2094,20 @@
 .movie-detail-btn:focus {
   background: rgba(255, 255, 255, 0.18);
   border-color: #FFFFFF;
+}
+
+.movie-detail-resume-btn {
+  background: var(--home-accent);
+  border-color: var(--home-accent);
+  color: #FFFFFF;
+  box-shadow: 0 4px 16px rgba(229, 9, 32, 0.4);
+}
+
+.movie-detail-resume-btn:hover,
+.movie-detail-resume-btn:focus {
+  background: var(--home-accent-hover);
+  border-color: #FFFFFF;
+  transform: scale(1.03);
 }
 
 .movie-detail-fav-btn.is-favorite {
@@ -2191,6 +2206,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.movie-episode-btn.is-watched-episode {
+  border-color: rgba(229, 9, 32, 0.45);
+  background: rgba(229, 9, 32, 0.14);
+}
+
+.movie-episode-btn.is-current-episode {
+  border-color: var(--home-accent);
+  background: rgba(229, 9, 32, 0.26);
+  color: #FFFFFF;
 }
 
 .movie-episode-btn:hover,

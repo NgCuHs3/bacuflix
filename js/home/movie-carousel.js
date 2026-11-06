@@ -1,6 +1,7 @@
 import { fallbackPoster } from "../config/catalog-sources.js";
 import { isFavorite, toggleFavorite } from "../services/favorites-service.js";
 import { lazyLoadImage } from "../utils/lazy-image.js";
+import { formatTime } from "../utils/format-time.js";
 
 export const GENRE_CATEGORIES = [
   {
@@ -147,7 +148,10 @@ export function createCarouselMovieCard(movie, options) {
 
   const metaEl = document.createElement("p");
   metaEl.className = "carousel-card-meta";
-  if (movie.episodeCurrent) {
+  if (movie.mlMatchPercent) {
+    const tail = movie.episodeCurrent || movie.year || movie.lang || "Đề xuất";
+    metaEl.textContent = movie.mlMatchPercent + "% phù hợp • " + tail;
+  } else if (movie.episodeCurrent) {
     metaEl.textContent = movie.episodeCurrent + (movie.year ? (" • " + movie.year) : "");
   } else if (movie.year) {
     metaEl.textContent = movie.year + (movie.lang ? (" • " + movie.lang) : "");
@@ -386,6 +390,9 @@ export function createContinueWatchingSection(callbacks) {
 
       const thumbUrl = item.thumb || item.poster || fallbackPoster;
       const progressPct = Math.max(5, Math.min(98, Number(item.progress) || 25));
+      const timeLabel = (typeof item.currentTime === "number" && item.currentTime > 5)
+        ? ("Xem tiếp " + formatTime(item.currentTime) + " • " + (item.remainingText || "Đang xem"))
+        : (item.remainingText || "Đang xem");
 
       card.innerHTML = "" +
         '<div class="continue-thumb-wrap">' +
@@ -402,7 +409,7 @@ export function createContinueWatchingSection(callbacks) {
         '</div>' +
         '<div class="continue-card-info">' +
           '<h3 class="continue-card-title">' + (item.title || "Phim") + '</h3>' +
-          '<p class="continue-card-meta">' + (item.remainingText || "Đang xem") + '</p>' +
+          '<p class="continue-card-meta">' + timeLabel + '</p>' +
         '</div>';
 
       const img = card.querySelector(".continue-thumb-img");

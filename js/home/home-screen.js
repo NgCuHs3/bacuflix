@@ -4,12 +4,14 @@ import { createKkphimApi } from "../services/kkphim-api.js";
 import { isFavorite, toggleFavorite, getFavorites } from "../services/favorites-service.js";
 import { getWatchHistory, removeWatchHistory } from "../services/watch-history-service.js";
 import { createGoogleTrendingService } from "../services/google-trending-service.js";
+import { createMlRecommendationService, recordUserSearchQuery, invalidateMlRecommendationCache } from "../services/ml-recommendation-service.js";
 import { createMovieDetailModal } from "./movie-detail-modal.js";
 import { createHeroCarousel } from "./hero-carousel.js";
 import { createMovieCarouselSection, createContinueWatchingSection, createGenreSection } from "./movie-carousel.js";
 import { createTvSearchKeyboard } from "./tv-search-keyboard.js";
 import { currentDevice } from "../utils/device.js";
 import { lazyLoadImage, cancelLazyImage } from "../utils/lazy-image.js";
+import { formatTime } from "../utils/format-time.js";
 
 const PLACEHOLDER_POSTER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
@@ -105,6 +107,11 @@ function makeMovieCard(movie, actionsHandler) {
   title.textContent = movie.title;
 
   const metaParts = [];
+  if (typeof movie.currentTime === "number" && movie.currentTime > 5) {
+    metaParts.push("Xem tiếp " + formatTime(movie.currentTime));
+  } else if (movie.mlMatchPercent) {
+    metaParts.push(movie.mlMatchPercent + "% phù hợp");
+  }
   if (movie.episodeCurrent) {
     metaParts.push(movie.episodeCurrent);
   }
@@ -202,6 +209,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
 
   const kkphimApi = createKkphimApi();
   const googleTrendingService = createGoogleTrendingService(kkphimApi);
+  const mlRecommendationService = createMlRecommendationService(kkphimApi);
 
   let toastTimer = 0;
   let clockTimer = 0;
@@ -250,6 +258,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
   }
 
   function handleGlobalFavoriteChanged(_movie, _isFav) {
+    invalidateMlRecommendationCache();
     heroCarousel.refreshFavoriteStates();
     carouselSections.forEach(function (sec) {
       if (sec && typeof sec.updateFavoriteStates === "function") {
@@ -257,6 +266,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       }
     });
     updateCardFavStates();
+    refreshMlRecommendations(true);
     if (activeTab === "favorites") {
       loadTab("favorites", true);
     }
@@ -342,6 +352,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     },
     onClose: function () {
       refreshContinueWatching();
+      refreshMlRecommendations(false);
       if (selectedCardEntry) {
         setSelectedCard(selectedCardEntry, true);
       }
@@ -992,21 +1003,131 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     maxItems: 10
   }, sharedCarouselCallbacks);
 
+  function resumeWatchHistoryItem(item) {
+    if (!item) {
+      return;
+    }
+    const epIndex = typeof item.currentEpisodeIndex === "number" ? item.currentEpisodeIndex : 0;
+    const savedTime = (typeof item.currentTime === "number" && item.currentTime > 5) ? item.currentTime : 0;
+
+    if (item.m3u8 && Array.isArray(item.episodesList) && item.episodesList.length > 0) {
+      const epName = item.episodeName || (item.episodesList[epIndex] && item.episodesList[epIndex].name) || ("Tập " + (epIndex + 1));
+      const seriesTitle = item.seriesTitle || item.title || "Phim";
+      actionsHandler.onSelect({
+        id: (item.slug || item.id) + "-" + epIndex,
+        slug: item.slug || item.id,
+        seriesTitle: seriesTitle,
+        originTitle: item.originTitle || "",
+        episodeName: epName,
+        title: seriesTitle + " - " + epName,
+        poster: item.poster,
+        thumb: item.thumb || item.poster,
+        year: item.year || "",
+        quality: item.quality || "",
+        lang: item.lang || "",
+        type: item.type || "",
+        categories: Array.isArray(item.categories) ? item.categories : [],
+        countries: Array.isArray(item.countries) ? item.countries : [],
+        actors: Array.isArray(item.actors) ? item.actors : [],
+        m3u8: item.m3u8,
+        fallbackEmbed: item.fallbackEmbed || "",
+        playbackEnabled: true,
+        source: item.source || "KKPhim",
+        episodesList: item.episodesList,
+        currentEpisodeIndex: epIndex,
+        resumeTime: savedTime,
+        serverName: item.serverName || "Vietsub"
+      });
+      return;
+    }
+
+    const slug = item.slug || item.id;
+    if (slug && kkphimApi && typeof kkphimApi.getMovieDetail === "function") {
+      kkphimApi.getMovieDetail(slug).then(function (data) {
+        if (destroyed || !data || !data.movie) {
+          return;
+        }
+        const episodes = data.episodes || [];
+        const currentServer = episodes[0];
+        const serverData = (currentServer && Array.isArray(currentServer.server_data)) ? currentServer.server_data : [];
+        if (!serverData.length) {
+          openMovieItem(item);
+          return;
+        }
+        const safeIdx = Math.max(0, Math.min(serverData.length - 1, epIndex));
+        const epObj = serverData[safeIdx];
+        const streamUrl = epObj.link_m3u8 || epObj.link_embed || item.m3u8;
+        if (!streamUrl) {
+          openMovieItem(item);
+          return;
+        }
+        const serverName = currentServer ? currentServer.server_name : "Vietsub";
+        actionsHandler.onSelect({
+          id: data.movie.slug + "-" + (epObj.slug || safeIdx),
+          slug: data.movie.slug,
+          seriesTitle: data.movie.title,
+          originTitle: data.movie.originTitle || "",
+          episodeName: epObj.name,
+          title: data.movie.title + " - " + epObj.name,
+          poster: data.movie.poster,
+          thumb: data.movie.thumb || data.movie.poster,
+          year: data.movie.year || "",
+          quality: data.movie.quality || "",
+          lang: data.movie.lang || "",
+          type: data.movie.type || "",
+          categories: Array.isArray(data.movie.categories) ? data.movie.categories : [],
+          countries: Array.isArray(data.movie.countries) ? data.movie.countries : [],
+          actors: Array.isArray(data.movie.actors) ? data.movie.actors : [],
+          m3u8: streamUrl,
+          fallbackEmbed: epObj.link_embed || "",
+          playbackEnabled: true,
+          source: "KKPhim · " + serverName,
+          episodesList: serverData.map(function (epItem, idx) {
+            return {
+              index: idx,
+              name: epItem.name,
+              slug: epItem.slug || String(idx),
+              m3u8: epItem.link_m3u8 || epItem.link_embed,
+              fallbackEmbed: epItem.link_embed || ""
+            };
+          }),
+          currentEpisodeIndex: safeIdx,
+          resumeTime: savedTime,
+          serverName: serverName
+        });
+      }).catch(function () {
+        if (item.m3u8) {
+          actionsHandler.onSelect(Object.assign({}, item, {
+            playbackEnabled: true,
+            resumeTime: savedTime
+          }));
+        } else {
+          openMovieItem(item);
+        }
+      });
+      return;
+    }
+
+    openMovieItem({
+      slug: item.slug || item.id,
+      id: item.id || item.slug,
+      title: item.title,
+      poster: item.poster,
+      currentEpisodeIndex: epIndex,
+      playbackEnabled: true
+    });
+  }
+
   // Section 3: Tiếp tục xem (Continue Watching)
   const continueWatchingSection = createContinueWatchingSection({
     onResumeItem: function (item) {
-      openMovieItem({
-        slug: item.slug || item.id,
-        id: item.id || item.slug,
-        title: item.title,
-        poster: item.poster,
-        currentEpisodeIndex: typeof item.currentEpisodeIndex === "number" ? item.currentEpisodeIndex : 0,
-        playbackEnabled: true
-      });
+      resumeWatchHistoryItem(item);
     },
     onRemoveItem: function (item) {
       removeWatchHistory(item.slug || item.id);
+      invalidateMlRecommendationCache();
       refreshContinueWatching();
+      refreshMlRecommendations(true);
     }
   });
 
@@ -1733,6 +1854,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     if (!kw) {
       return;
     }
+    recordUserSearchQuery(kw);
     if (activeTab !== "search") {
       previousTab = activeTab;
     }
@@ -1866,6 +1988,33 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     });
   }
 
+  function refreshMlRecommendations(force) {
+    if (destroyed) {
+      return;
+    }
+    mlRecommendationService.getRecommendations({ force: Boolean(force), limit: 14 }).then(function (res) {
+      if (destroyed) {
+        return;
+      }
+      const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
+      if (movies.length) {
+        recommendedCarousel.setMovies(movies);
+      } else {
+        return kkphimApi.getMoviesByCategory("phim-le", 1, 14).then(function (fallbackRes) {
+          if (!destroyed && fallbackRes && Array.isArray(fallbackRes.movies)) {
+            recommendedCarousel.setMovies(fallbackRes.movies);
+          }
+        });
+      }
+    }).catch(function () {
+      kkphimApi.getHome().then(function (res) {
+        if (!destroyed && res && res.movies) {
+          recommendedCarousel.setMovies(res.movies);
+        }
+      }).catch(function () {});
+    });
+  }
+
   function loadInitialHomeCarousels() {
     refreshContinueWatching();
 
@@ -1896,25 +2045,13 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       console.warn("Lỗi tải hero & top 10:", err);
     });
 
-    // 2. Recommended Movies (phim-le) - Staggered by 350ms to prevent connection pool choking
+    // 2. Machine Learning Personalized Recommendations - Automatically runs ML model & searches API
     window.setTimeout(function () {
       if (destroyed) {
         return;
       }
-      kkphimApi.getMoviesByCategory("phim-le", 1, 14).then(function (res) {
-        if (destroyed) {
-          return;
-        }
-        const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
-        recommendedCarousel.setMovies(movies);
-      }).catch(function () {
-        kkphimApi.getHome().then(function (res) {
-          if (!destroyed && res && res.movies) {
-            recommendedCarousel.setMovies(res.movies);
-          }
-        }).catch(function () {});
-      });
-    }, 350);
+      refreshMlRecommendations(false);
+    }, 300);
 
     // 3. Featured Series (phim-bo) - Staggered by 700ms
     window.setTimeout(function () {

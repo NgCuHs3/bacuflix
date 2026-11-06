@@ -20,6 +20,8 @@ global.window = {
 import { buildImageUrl, normalizeMovie, createKkphimApi } from "../js/services/kkphim-api.js";
 import { createFavoritesService, getFavorites, saveFavorites, addFavorite, removeFavorite, toggleFavorite, isFavorite } from "../js/services/favorites-service.js";
 import { createGoogleTrendingService, extractKeywords, getCachedTrending, saveCachedTrending, clearTrendingCache, fetchGoogleTrending } from "../js/services/google-trending-service.js";
+import { createMlRecommendationService } from "../js/services/ml-recommendation-service.js";
+import { saveWatchProgress, clearWatchHistory } from "../js/services/watch-history-service.js";
 
 console.log("Starting KKPhim API, Favorites and Google Trending unit tests...");
 
@@ -176,11 +178,32 @@ async function testLiveApi() {
     console.log("✓ getMovieDetail('" + testSlug + "') returned " + detailRes.episodes.length + " server(s) with m3u8 source: " + (firstEp.link_m3u8 ? "YES" : "NO"));
   }
 
-  // 6. Verify bundle file syntax
+  // 6. Test Machine Learning Recommendation Service -> API Search Pipeline
+  console.log("Testing ML Recommendation Engine -> API search pipeline...");
+  clearWatchHistory();
+  saveWatchProgress({
+    slug: "the-gioi-hoan-my",
+    title: "Thế Giới Hoàn Mỹ",
+    categories: ["Cổ Trang", "Hoạt Hình"],
+    currentTime: 600,
+    duration: 1200
+  }, 600, 1200);
+  const mlService = createMlRecommendationService(api);
+  const mlRes = await mlService.getRecommendations({ force: true, limit: 10 });
+  assert.ok(mlRes.movies && mlRes.movies.length > 0, "ML recommendation service must return movies from API");
+  assert.ok(Array.isArray(mlRes.queries) && mlRes.queries.length > 0, "ML recommendation service must generate search queries");
+  assert.ok(typeof mlRes.movies[0].mlScore === "number", "Recommended movie must have mlScore");
+  assert.ok(typeof mlRes.movies[0].mlMatchPercent === "number", "Recommended movie must have mlMatchPercent");
+  console.log("✓ ML Recommendation Engine returned " + mlRes.movies.length + " movies using queries: [" + mlRes.queries.join(", ") + "].");
+  clearWatchHistory();
+
+  // 7. Verify bundle file syntax
   const bundleContent = fs.readFileSync("js/app.bundle.js", "utf8");
   assert.ok(bundleContent.includes("createKkphimApi"), "Bundle must include createKkphimApi");
   assert.ok(bundleContent.includes("createFavoritesService"), "Bundle must include createFavoritesService");
   assert.ok(bundleContent.includes("createGoogleTrendingService"), "Bundle must include createGoogleTrendingService");
+  assert.ok(bundleContent.includes("createMlRecommendationService"), "Bundle must include createMlRecommendationService");
+  assert.ok(bundleContent.includes("getEpisodeResumeInfo"), "Bundle must include getEpisodeResumeInfo");
   assert.ok(bundleContent.includes("createMovieDetailModal"), "Bundle must include createMovieDetailModal");
   assert.ok(bundleContent.includes("createHeroCarousel"), "Bundle must include createHeroCarousel");
   assert.ok(bundleContent.includes("home-nav-tabs"), "Bundle must include home-nav-tabs");

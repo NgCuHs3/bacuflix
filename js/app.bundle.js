@@ -188,9 +188,18 @@ function playEpisodeFromData(movie, episodes, epParam) {
     id: movie.slug + "-" + (epObj.slug || targetIndex),
     slug: movie.slug,
     seriesTitle: movie.title,
+    originTitle: movie.originTitle || "",
     episodeName: epObj.name,
     title: movie.title + " - " + epObj.name,
     poster: movie.poster,
+    thumb: movie.thumb || movie.poster,
+    year: movie.year || "",
+    quality: movie.quality || "",
+    lang: movie.lang || "",
+    type: movie.type || "",
+    categories: Array.isArray(movie.categories) ? movie.categories : [],
+    countries: Array.isArray(movie.countries) ? movie.countries : [],
+    actors: Array.isArray(movie.actors) ? movie.actors : [],
     m3u8: streamUrl,
     fallbackEmbed: epObj.link_embed || "",
     playbackEnabled: true,
@@ -336,6 +345,9 @@ var getFavorites = requireModule("js/services/favorites-service.js")["getFavorit
 var getWatchHistory = requireModule("js/services/watch-history-service.js")["getWatchHistory"];
 var removeWatchHistory = requireModule("js/services/watch-history-service.js")["removeWatchHistory"];
 var createGoogleTrendingService = requireModule("js/services/google-trending-service.js")["createGoogleTrendingService"];
+var createMlRecommendationService = requireModule("js/services/ml-recommendation-service.js")["createMlRecommendationService"];
+var recordUserSearchQuery = requireModule("js/services/ml-recommendation-service.js")["recordUserSearchQuery"];
+var invalidateMlRecommendationCache = requireModule("js/services/ml-recommendation-service.js")["invalidateMlRecommendationCache"];
 var createMovieDetailModal = requireModule("js/home/movie-detail-modal.js")["createMovieDetailModal"];
 var createHeroCarousel = requireModule("js/home/hero-carousel.js")["createHeroCarousel"];
 var createMovieCarouselSection = requireModule("js/home/movie-carousel.js")["createMovieCarouselSection"];
@@ -345,6 +357,7 @@ var createTvSearchKeyboard = requireModule("js/home/tv-search-keyboard.js")["cre
 var currentDevice = requireModule("js/utils/device.js")["currentDevice"];
 var lazyLoadImage = requireModule("js/utils/lazy-image.js")["lazyLoadImage"];
 var cancelLazyImage = requireModule("js/utils/lazy-image.js")["cancelLazyImage"];
+var formatTime = requireModule("js/utils/format-time.js")["formatTime"];
 const PLACEHOLDER_POSTER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
 function makeMovieCard(movie, actionsHandler) {
@@ -439,6 +452,11 @@ function makeMovieCard(movie, actionsHandler) {
   title.textContent = movie.title;
 
   const metaParts = [];
+  if (typeof movie.currentTime === "number" && movie.currentTime > 5) {
+    metaParts.push("Xem tiếp " + formatTime(movie.currentTime));
+  } else if (movie.mlMatchPercent) {
+    metaParts.push(movie.mlMatchPercent + "% phù hợp");
+  }
   if (movie.episodeCurrent) {
     metaParts.push(movie.episodeCurrent);
   }
@@ -536,6 +554,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
 
   const kkphimApi = createKkphimApi();
   const googleTrendingService = createGoogleTrendingService(kkphimApi);
+  const mlRecommendationService = createMlRecommendationService(kkphimApi);
 
   let toastTimer = 0;
   let clockTimer = 0;
@@ -584,6 +603,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   }
 
   function handleGlobalFavoriteChanged(_movie, _isFav) {
+    invalidateMlRecommendationCache();
     heroCarousel.refreshFavoriteStates();
     carouselSections.forEach(function (sec) {
       if (sec && typeof sec.updateFavoriteStates === "function") {
@@ -591,6 +611,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       }
     });
     updateCardFavStates();
+    refreshMlRecommendations(true);
     if (activeTab === "favorites") {
       loadTab("favorites", true);
     }
@@ -676,6 +697,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     },
     onClose: function () {
       refreshContinueWatching();
+      refreshMlRecommendations(false);
       if (selectedCardEntry) {
         setSelectedCard(selectedCardEntry, true);
       }
@@ -1326,21 +1348,131 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     maxItems: 10
   }, sharedCarouselCallbacks);
 
+  function resumeWatchHistoryItem(item) {
+    if (!item) {
+      return;
+    }
+    const epIndex = typeof item.currentEpisodeIndex === "number" ? item.currentEpisodeIndex : 0;
+    const savedTime = (typeof item.currentTime === "number" && item.currentTime > 5) ? item.currentTime : 0;
+
+    if (item.m3u8 && Array.isArray(item.episodesList) && item.episodesList.length > 0) {
+      const epName = item.episodeName || (item.episodesList[epIndex] && item.episodesList[epIndex].name) || ("Tập " + (epIndex + 1));
+      const seriesTitle = item.seriesTitle || item.title || "Phim";
+      actionsHandler.onSelect({
+        id: (item.slug || item.id) + "-" + epIndex,
+        slug: item.slug || item.id,
+        seriesTitle: seriesTitle,
+        originTitle: item.originTitle || "",
+        episodeName: epName,
+        title: seriesTitle + " - " + epName,
+        poster: item.poster,
+        thumb: item.thumb || item.poster,
+        year: item.year || "",
+        quality: item.quality || "",
+        lang: item.lang || "",
+        type: item.type || "",
+        categories: Array.isArray(item.categories) ? item.categories : [],
+        countries: Array.isArray(item.countries) ? item.countries : [],
+        actors: Array.isArray(item.actors) ? item.actors : [],
+        m3u8: item.m3u8,
+        fallbackEmbed: item.fallbackEmbed || "",
+        playbackEnabled: true,
+        source: item.source || "KKPhim",
+        episodesList: item.episodesList,
+        currentEpisodeIndex: epIndex,
+        resumeTime: savedTime,
+        serverName: item.serverName || "Vietsub"
+      });
+      return;
+    }
+
+    const slug = item.slug || item.id;
+    if (slug && kkphimApi && typeof kkphimApi.getMovieDetail === "function") {
+      kkphimApi.getMovieDetail(slug).then(function (data) {
+        if (destroyed || !data || !data.movie) {
+          return;
+        }
+        const episodes = data.episodes || [];
+        const currentServer = episodes[0];
+        const serverData = (currentServer && Array.isArray(currentServer.server_data)) ? currentServer.server_data : [];
+        if (!serverData.length) {
+          openMovieItem(item);
+          return;
+        }
+        const safeIdx = Math.max(0, Math.min(serverData.length - 1, epIndex));
+        const epObj = serverData[safeIdx];
+        const streamUrl = epObj.link_m3u8 || epObj.link_embed || item.m3u8;
+        if (!streamUrl) {
+          openMovieItem(item);
+          return;
+        }
+        const serverName = currentServer ? currentServer.server_name : "Vietsub";
+        actionsHandler.onSelect({
+          id: data.movie.slug + "-" + (epObj.slug || safeIdx),
+          slug: data.movie.slug,
+          seriesTitle: data.movie.title,
+          originTitle: data.movie.originTitle || "",
+          episodeName: epObj.name,
+          title: data.movie.title + " - " + epObj.name,
+          poster: data.movie.poster,
+          thumb: data.movie.thumb || data.movie.poster,
+          year: data.movie.year || "",
+          quality: data.movie.quality || "",
+          lang: data.movie.lang || "",
+          type: data.movie.type || "",
+          categories: Array.isArray(data.movie.categories) ? data.movie.categories : [],
+          countries: Array.isArray(data.movie.countries) ? data.movie.countries : [],
+          actors: Array.isArray(data.movie.actors) ? data.movie.actors : [],
+          m3u8: streamUrl,
+          fallbackEmbed: epObj.link_embed || "",
+          playbackEnabled: true,
+          source: "KKPhim · " + serverName,
+          episodesList: serverData.map(function (epItem, idx) {
+            return {
+              index: idx,
+              name: epItem.name,
+              slug: epItem.slug || String(idx),
+              m3u8: epItem.link_m3u8 || epItem.link_embed,
+              fallbackEmbed: epItem.link_embed || ""
+            };
+          }),
+          currentEpisodeIndex: safeIdx,
+          resumeTime: savedTime,
+          serverName: serverName
+        });
+      }).catch(function () {
+        if (item.m3u8) {
+          actionsHandler.onSelect(Object.assign({}, item, {
+            playbackEnabled: true,
+            resumeTime: savedTime
+          }));
+        } else {
+          openMovieItem(item);
+        }
+      });
+      return;
+    }
+
+    openMovieItem({
+      slug: item.slug || item.id,
+      id: item.id || item.slug,
+      title: item.title,
+      poster: item.poster,
+      currentEpisodeIndex: epIndex,
+      playbackEnabled: true
+    });
+  }
+
   // Section 3: Tiếp tục xem (Continue Watching)
   const continueWatchingSection = createContinueWatchingSection({
     onResumeItem: function (item) {
-      openMovieItem({
-        slug: item.slug || item.id,
-        id: item.id || item.slug,
-        title: item.title,
-        poster: item.poster,
-        currentEpisodeIndex: typeof item.currentEpisodeIndex === "number" ? item.currentEpisodeIndex : 0,
-        playbackEnabled: true
-      });
+      resumeWatchHistoryItem(item);
     },
     onRemoveItem: function (item) {
       removeWatchHistory(item.slug || item.id);
+      invalidateMlRecommendationCache();
       refreshContinueWatching();
+      refreshMlRecommendations(true);
     }
   });
 
@@ -2067,6 +2199,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     if (!kw) {
       return;
     }
+    recordUserSearchQuery(kw);
     if (activeTab !== "search") {
       previousTab = activeTab;
     }
@@ -2200,6 +2333,33 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
     });
   }
 
+  function refreshMlRecommendations(force) {
+    if (destroyed) {
+      return;
+    }
+    mlRecommendationService.getRecommendations({ force: Boolean(force), limit: 14 }).then(function (res) {
+      if (destroyed) {
+        return;
+      }
+      const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
+      if (movies.length) {
+        recommendedCarousel.setMovies(movies);
+      } else {
+        return kkphimApi.getMoviesByCategory("phim-le", 1, 14).then(function (fallbackRes) {
+          if (!destroyed && fallbackRes && Array.isArray(fallbackRes.movies)) {
+            recommendedCarousel.setMovies(fallbackRes.movies);
+          }
+        });
+      }
+    }).catch(function () {
+      kkphimApi.getHome().then(function (res) {
+        if (!destroyed && res && res.movies) {
+          recommendedCarousel.setMovies(res.movies);
+        }
+      }).catch(function () {});
+    });
+  }
+
   function loadInitialHomeCarousels() {
     refreshContinueWatching();
 
@@ -2230,25 +2390,13 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       console.warn("Lỗi tải hero & top 10:", err);
     });
 
-    // 2. Recommended Movies (phim-le) - Staggered by 350ms to prevent connection pool choking
+    // 2. Machine Learning Personalized Recommendations - Automatically runs ML model & searches API
     window.setTimeout(function () {
       if (destroyed) {
         return;
       }
-      kkphimApi.getMoviesByCategory("phim-le", 1, 14).then(function (res) {
-        if (destroyed) {
-          return;
-        }
-        const movies = (res && Array.isArray(res.movies)) ? res.movies : [];
-        recommendedCarousel.setMovies(movies);
-      }).catch(function () {
-        kkphimApi.getHome().then(function (res) {
-          if (!destroyed && res && res.movies) {
-            recommendedCarousel.setMovies(res.movies);
-          }
-        }).catch(function () {});
-      });
-    }, 350);
+      refreshMlRecommendations(false);
+    }, 300);
 
     // 3. Featured Series (phim-bo) - Staggered by 700ms
     window.setTimeout(function () {
@@ -3382,6 +3530,113 @@ function saveWatchHistoryList(list) {
   }
 }
 
+function getWatchHistoryItem(slug) {
+  if (!slug) {
+    return null;
+  }
+  const list = getWatchHistory();
+  for (let i = 0; i < list.length; i += 1) {
+    const item = list[i];
+    if (item && (item.slug === slug || item.id === slug)) {
+      return item;
+    }
+  }
+  return null;
+}
+
+function getEpisodeResumeInfo(slug, episodeIndex) {
+  const item = getWatchHistoryItem(slug);
+  if (!item) {
+    return null;
+  }
+  const targetEpIdx = typeof episodeIndex === "number"
+    ? episodeIndex
+    : (typeof item.currentEpisodeIndex === "number" ? item.currentEpisodeIndex : 0);
+  const epKey = "ep_" + targetEpIdx;
+
+  let curTime = 0;
+  let durTime = 0;
+  let epName = item.episodeName || ("Tập " + (targetEpIdx + 1));
+
+  if (item.episodeProgress && item.episodeProgress[epKey]) {
+    const epData = item.episodeProgress[epKey];
+    curTime = typeof epData.currentTime === "number" ? epData.currentTime : 0;
+    durTime = typeof epData.duration === "number" ? epData.duration : 0;
+    if (epData.episodeName) {
+      epName = epData.episodeName;
+    }
+  } else if (
+    typeof episodeIndex !== "number" ||
+    item.currentEpisodeIndex === targetEpIdx ||
+    typeof item.currentEpisodeIndex !== "number"
+  ) {
+    curTime = typeof item.currentTime === "number" ? item.currentTime : 0;
+    durTime = typeof item.duration === "number" ? item.duration : 0;
+  }
+
+  if (!Number.isFinite(curTime) || curTime <= 5) {
+    return null;
+  }
+
+  // If the user already watched right up to the end of the episode (within last 12s), do not resume at the credits
+  if (Number.isFinite(durTime) && durTime > 60 && curTime >= durTime - 12) {
+    return null;
+  }
+
+  const progressPercent = durTime > 0
+    ? Math.max(5, Math.min(98, Math.round((curTime / durTime) * 100)))
+    : (item.progressPercent || 15);
+
+  return {
+    slug: item.slug || item.id,
+    episodeIndex: targetEpIdx,
+    episodeName: epName,
+    currentTime: Math.floor(curTime),
+    duration: Math.floor(durTime),
+    progressPercent: progressPercent
+  };
+}
+
+function enrichWatchHistoryMetadata(movie) {
+  if (!movie || (!movie.slug && !movie.id)) {
+    return false;
+  }
+  const slug = movie.slug || movie.id;
+  const list = getWatchHistory();
+  const idx = list.findIndex(function (item) {
+    return item && (item.slug === slug || item.id === slug);
+  });
+  if (idx < 0) {
+    return false;
+  }
+  const entry = list[idx];
+  let changed = false;
+  if (Array.isArray(movie.categories) && movie.categories.length && (!entry.categories || !entry.categories.length)) {
+    entry.categories = movie.categories.slice();
+    changed = true;
+  }
+  if (Array.isArray(movie.countries) && movie.countries.length && (!entry.countries || !entry.countries.length)) {
+    entry.countries = movie.countries.slice();
+    changed = true;
+  }
+  if (Array.isArray(movie.actors) && movie.actors.length && (!entry.actors || !entry.actors.length)) {
+    entry.actors = movie.actors.slice(0, 10);
+    changed = true;
+  }
+  if (movie.originTitle && !entry.originTitle) {
+    entry.originTitle = movie.originTitle;
+    changed = true;
+  }
+  if (movie.type && !entry.type) {
+    entry.type = movie.type;
+    changed = true;
+  }
+  if (changed) {
+    saveWatchHistoryList(list);
+  }
+  return changed;
+}
+
 function saveWatchProgress(movie, currentTimeSec, durationSec) {
   if (!movie || (!movie.slug && !movie.id)) {
     return false;
@@ -3393,35 +3648,93 @@ function saveWatchProgress(movie, currentTimeSec, durationSec) {
   });
   const prev = existingIdx >= 0 ? list[existingIdx] : null;
 
-  const curTime = (typeof currentTimeSec === "number" && Number.isFinite(currentTimeSec) && currentTimeSec >= 0)
-    ? Math.floor(currentTimeSec)
-    : (prev && typeof prev.currentTime === "number" ? prev.currentTime : 120);
-  const durTime = (typeof durationSec === "number" && Number.isFinite(durationSec) && durationSec > 0)
-    ? Math.floor(durationSec)
-    : (prev && typeof prev.duration === "number" && prev.duration > 0 ? prev.duration : 2700);
+  const epIndex = typeof movie.currentEpisodeIndex === "number"
+    ? movie.currentEpisodeIndex
+    : (prev && typeof prev.currentEpisodeIndex === "number" ? prev.currentEpisodeIndex : 0);
+  const epKey = "ep_" + epIndex;
+  const prevEpData = (prev && prev.episodeProgress && prev.episodeProgress[epKey])
+    ? prev.episodeProgress[epKey]
+    : (prev && prev.currentEpisodeIndex === epIndex ? { currentTime: prev.currentTime, duration: prev.duration } : null);
+
+  let curTime;
+  if (typeof currentTimeSec === "number" && Number.isFinite(currentTimeSec) && currentTimeSec > 0) {
+    curTime = Math.floor(currentTimeSec);
+  } else if (prevEpData && typeof prevEpData.currentTime === "number" && prevEpData.currentTime > 0) {
+    curTime = Math.floor(prevEpData.currentTime);
+  } else if (typeof currentTimeSec === "number" && currentTimeSec === 0) {
+    curTime = 0;
+  } else {
+    curTime = (prev && typeof prev.currentTime === "number") ? prev.currentTime : 120;
+  }
+
+  let durTime;
+  if (
+    typeof durationSec === "number" &&
+    Number.isFinite(durationSec) &&
+    durationSec > 0 &&
+    (currentTimeSec > 0 || !prevEpData || !prevEpData.duration)
+  ) {
+    durTime = Math.floor(durationSec);
+  } else if (prevEpData && typeof prevEpData.duration === "number" && prevEpData.duration > 0) {
+    durTime = Math.floor(prevEpData.duration);
+  } else if (prev && typeof prev.duration === "number" && prev.duration > 0) {
+    durTime = Math.floor(prev.duration);
+  } else {
+    durTime = 2700;
+  }
 
   const progress = durTime > 0 ? Math.max(5, Math.min(98, Math.round((curTime / durTime) * 100))) : 15;
-  const remainingMin = Math.max(1, Math.round((durTime - curTime) / 60));
+  const remainingMin = Math.max(1, Math.round(Math.max(0, durTime - curTime) / 60));
 
   const seriesTitle = movie.seriesTitle || (prev && prev.seriesTitle) || (movie.title ? String(movie.title).split(" - ")[0] : "Phim");
-  const episodeName = movie.episodeName || movie.episodeCurrent || (prev && prev.episodeName) || "Tập 1";
+  const episodeName = movie.episodeName || movie.episodeCurrent || (prevEpData && prevEpData.episodeName) || (prev && prev.episodeName) || "Tập 1";
+
+  const episodeProgress = Object.assign({}, (prev && prev.episodeProgress) ? prev.episodeProgress : {});
+  episodeProgress[epKey] = {
+    episodeIndex: epIndex,
+    episodeName: episodeName,
+    currentTime: curTime,
+    duration: durTime,
+    progress: progress,
+    updatedAt: Date.now()
+  };
+
+  const categories = (Array.isArray(movie.categories) && movie.categories.length)
+    ? movie.categories.slice()
+    : (prev && Array.isArray(prev.categories) ? prev.categories : []);
+  const countries = (Array.isArray(movie.countries) && movie.countries.length)
+    ? movie.countries.slice()
+    : (prev && Array.isArray(prev.countries) ? prev.countries : []);
+  const actors = (Array.isArray(movie.actors) && movie.actors.length)
+    ? movie.actors.slice(0, 10)
+    : (prev && Array.isArray(prev.actors) ? prev.actors : []);
+  const episodesList = (Array.isArray(movie.episodesList) && movie.episodesList.length)
+    ? movie.episodesList.slice(0, 120)
+    : (prev && Array.isArray(prev.episodesList) ? prev.episodesList : []);
 
   const entry = {
     id: slug,
     slug: slug,
     title: seriesTitle,
     seriesTitle: seriesTitle,
+    originTitle: movie.originTitle || (prev && prev.originTitle) || "",
     episodeName: episodeName,
     episodeCurrent: episodeName,
-    currentEpisodeIndex: typeof movie.currentEpisodeIndex === "number" ? movie.currentEpisodeIndex : (prev && typeof prev.currentEpisodeIndex === "number" ? prev.currentEpisodeIndex : 0),
+    currentEpisodeIndex: epIndex,
     poster: movie.poster || (prev && prev.poster) || "icon.png",
     thumb: movie.thumb || movie.poster || (prev && (prev.thumb || prev.poster)) || "icon.png",
     year: movie.year || (prev && prev.year) || "2026",
     quality: movie.quality || (prev && prev.quality) || "FHD",
     lang: movie.lang || (prev && prev.lang) || "Vietsub",
+    type: movie.type || (prev && prev.type) || "",
+    categories: categories,
+    countries: countries,
+    actors: actors,
     m3u8: movie.m3u8 || (prev && prev.m3u8) || "",
     fallbackEmbed: movie.fallbackEmbed || (prev && prev.fallbackEmbed) || "",
     serverName: movie.serverName || (prev && prev.serverName) || "Vietsub",
+    episodesList: episodesList,
+    episodeProgress: episodeProgress,
     currentTime: curTime,
     duration: durTime,
     progress: progress,
@@ -3462,13 +3775,16 @@ function clearWatchHistory() {
 function createWatchHistoryService() {
   return {
     getAll: getWatchHistory,
+    getItem: getWatchHistoryItem,
+    getEpisodeResumeInfo: getEpisodeResumeInfo,
+    enrichMetadata: enrichWatchHistoryMetadata,
     saveProgress: saveWatchProgress,
     remove: removeWatchHistory,
     clear: clearWatchHistory
   };
 }
 
-return {getWatchHistory: getWatchHistory, saveWatchHistoryList: saveWatchHistoryList, saveWatchProgress: saveWatchProgress, removeWatchHistory: removeWatchHistory, clearWatchHistory: clearWatchHistory, createWatchHistoryService: createWatchHistoryService};
+return {getWatchHistory: getWatchHistory, saveWatchHistoryList: saveWatchHistoryList, getWatchHistoryItem: getWatchHistoryItem, getEpisodeResumeInfo: getEpisodeResumeInfo, enrichWatchHistoryMetadata: enrichWatchHistoryMetadata, saveWatchProgress: saveWatchProgress, removeWatchHistory: removeWatchHistory, clearWatchHistory: clearWatchHistory, createWatchHistoryService: createWatchHistoryService};
 });
 registerModule("js/services/google-trending-service.js", function (requireModule) {
 const CACHE_KEY = "kkphim_google_trending_cache";
@@ -3763,12 +4079,891 @@ function createGoogleTrendingService(kkphimApi) {
 
 return {getCachedTrending: getCachedTrending, saveCachedTrending: saveCachedTrending, clearTrendingCache: clearTrendingCache, extractKeywords: extractKeywords, fetchGoogleSuggestions: fetchGoogleSuggestions, fetchGoogleTrending: fetchGoogleTrending, createGoogleTrendingService: createGoogleTrendingService};
 });
+registerModule("js/services/ml-recommendation-service.js", function (requireModule) {
+var getWatchHistory = requireModule("js/services/watch-history-service.js")["getWatchHistory"];
+var getFavorites = requireModule("js/services/favorites-service.js")["getFavorites"];
+const ML_INTERACTIONS_KEY = "kkphim_ml_interactions";
+const ML_CACHE_KEY = "kkphim_ml_recommendations_cache";
+const ML_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000; // 14 days exponential time decay
+
+const VIETNAMESE_STOPWORDS = new Set([
+  "phim", "xem", "tap", "tập", "phan", "phần", "full", "hd", "fhd", "vietsub",
+  "thuyet", "thuyết", "minh", "long", "lồng", "tieng", "tiếng", "cua", "của",
+  "va", "và", "nhung", "những", "nguoi", "người", "trong", "ngoai", "ngoài",
+  "cho", "voi", "với", "khi", "mot", "một", "hai", "ba", "bon", "nam", "sau",
+  "bay", "tam", "chin", "muoi", "nam", "năm", "2020", "2021", "2022", "2023",
+  "2024", "2025", "2026", "2027", "the", "of", "and", "in", "to", "a", "is",
+  "season", "episode", "movie", "series", "online", "moi", "mới", "nhat", "nhất",
+  "bo", "bộ", "le", "lẻ", "hay", "hot", "ung", "ứng", "con", "còn", "phu", "phút",
+  "khong", "không", "duoc", "được", "den", "đến", "tu", "từ", "la", "là", "co", "có"
+]);
+
+// Keyword dictionary for Naive Bayes Latent Genre Classification
+const GENRE_PRIORS_AND_KEYWORDS = [
+  {
+    slug: "hanh-dong",
+    name: "Hành động",
+    searchSeed: "hành động",
+    keywords: [
+      "hành động", "hanh dong", "võ thuật", "vo thuat", "đặc vụ", "dac vu",
+      "sát thủ", "sat thu", "chiến", "chien", "truy sát", "truy sat", "biệt kích",
+      "biet kich", "hình sự", "hinh su", "cảnh sát", "canh sat", "tội phạm", "toi pham",
+      "băng đảng", "bang dang", "anh hùng", "anh hung", "iron man", "người sắt", "nguoi sat",
+      "john wick", "fast", "mission", "vây hãm", "vay ham", "báo thù", "bao thu", "trả thù"
+    ]
+  },
+  {
+    slug: "co-trang",
+    name: "Cổ trang",
+    searchSeed: "cổ trang",
+    keywords: [
+      "cổ trang", "co trang", "tiên hiệp", "tien hiep", "kiếm hiệp", "kiem hiep",
+      "tu tiên", "tu tien", "xuyên không", "xuyen khong", "trọng sinh", "trong sinh",
+      "vương gia", "vuong gia", "hoàng hậu", "hoang hau", "cung đấu", "cung dau",
+      "thần", "than", "giang hồ", "giang ho", "thiên cổ", "thien co", "đấu phá", "dau pha",
+      "thế giới hoàn mỹ", "the gioi hoan my", "phàm nhân", "pham nhan", "cẩm", "cam",
+      "hoa", "ngọc", "ngoc", "kim thoa", "trường tương tư", "truong tuong tu", "lâm giang"
+    ]
+  },
+  {
+    slug: "tinh-cam",
+    name: "Tình cảm",
+    searchSeed: "tình cảm",
+    keywords: [
+      "tình cảm", "tinh cam", "yêu", "yeu", "tình yêu", "tinh yeu", "lãng mạn", "lang man",
+      "ngôn tình", "ngon tinh", "hôn nhân", "hon nhan", "tổng tài", "tong tai",
+      "ngọt ngào", "ngot ngao", "em", "anh", "chồng", "chong", "vợ", "vo", "hẹn hò", "hen ho",
+      "thanh xuân", "thanh xuan", "mùa hè", "mua he", "trái tim", "trai tim", "ánh trăng", "anh trang"
+    ]
+  },
+  {
+    slug: "hai-huoc",
+    name: "Hài hước",
+    searchSeed: "hài hước",
+    keywords: [
+      "hài", "hai", "hài hước", "hai huoc", "vui", "cười", "cuoi", "báo thủ", "bao thu",
+      "gia đình", "gia dinh", "xóm", "xom", "làng", "lang", "quậy", "quay", "siêu lầy", "sieu lay"
+    ]
+  },
+  {
+    slug: "kinh-di",
+    name: "Kinh dị",
+    searchSeed: "kinh dị",
+    keywords: [
+      "kinh dị", "kinh di", "ma", "quỷ", "quy", "ác quỷ", "ac quy", "bóng đè", "bong de",
+      "nguyền", "nguyen", "xác sống", "xac song", "zombie", "máu", "mau", "rùng rợn",
+      "rung ron", "bí ẩn", "bi an", "ám ảnh", "am anh", "cô dâu ma", "co dau ma", "linh hồn"
+    ]
+  },
+  {
+    slug: "vien-tuong",
+    name: "Viễn tưởng",
+    searchSeed: "viễn tưởng",
+    keywords: [
+      "viễn tưởng", "vien tuong", "khoa học", "khoa hoc", "vũ trụ", "vu tru", "tương lai",
+      "tuong lai", "dị năng", "di nang", "siêu nhiên", "sieu nhien", "quái vật", "quai vat",
+      "robot", "ai", "không gian", "khong gian", "tận thế", "tan the", "avengers", "marvel",
+      "transformer", "hành tinh", "hanh tinh"
+    ]
+  },
+  {
+    slug: "hoat-hinh",
+    name: "Hoạt hình",
+    searchSeed: "hoạt hình",
+    keywords: [
+      "hoạt hình", "hoat hinh", "anime", "one piece", "naruto", "conan", "dragon ball",
+      "doraemon", "shin", "đấu la", "dau la", "vũ động", "vu dong", "tây hành", "tay hanh",
+      "3d", "donghua", "chú thuật", "chu thuat", "thanh gươm", "thanh guom"
+    ]
+  }
+];
+
+let cachedInteractions = null;
+let memoryRecommendationCache = null;
+
+function getStorage() {
+  if (typeof window !== "undefined" && window.localStorage) {
+    return window.localStorage;
+  }
+  return null;
+}
+
+function stripVietnameseAccents(str) {
+  if (!str) {
+    return "";
+  }
+  return String(str)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D");
+}
+
+function tokenizeMovieText(text) {
+  if (!text || typeof text !== "string") {
+    return { unigrams: [], bigrams: [], phrases: [] };
+  }
+  const cleaned = text
+    .toLowerCase()
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) {
+    return { unigrams: [], bigrams: [], phrases: [] };
+  }
+
+  const rawWords = cleaned.split(" ");
+  const unigrams = [];
+  const validWords = [];
+
+  for (let i = 0; i < rawWords.length; i += 1) {
+    const w = rawWords[i].trim();
+    const unaccented = stripVietnameseAccents(w);
+    const isStopword = VIETNAMESE_STOPWORDS.has(w) || (w === unaccented && VIETNAMESE_STOPWORDS.has(unaccented));
+    if (w.length >= 2 && !isStopword && !/^\d+$/.test(w)) {
+      unigrams.push(w);
+      validWords.push(w);
+    }
+  }
+
+  const bigrams = [];
+  const phrases = [];
+  if (validWords.length >= 2 && validWords.length <= 4) {
+    phrases.push(validWords.join(" "));
+  } else if (validWords.length > 4) {
+    phrases.push(validWords.slice(0, 3).join(" "));
+  }
+  for (let i = 0; i < validWords.length - 1; i += 1) {
+    const bg = validWords[i] + " " + validWords[i + 1];
+    bigrams.push(bg);
+    if (bg.length >= 5 && phrases.indexOf(bg) === -1) {
+      phrases.push(bg);
+    }
+  }
+  if (validWords.length === 1 && validWords[0].length >= 4) {
+    phrases.push(validWords[0]);
+  }
+
+  return {
+    unigrams: unigrams,
+    bigrams: bigrams,
+    phrases: phrases
+  };
+}
+
+function inferLatentGenres(movie) {
+  const matched = [];
+  const seen = new Set();
+
+  if (movie && Array.isArray(movie.categories)) {
+    for (let i = 0; i < movie.categories.length; i += 1) {
+      const cat = movie.categories[i];
+      const catName = typeof cat === "string" ? cat : (cat && cat.name ? cat.name : "");
+      const catNorm = stripVietnameseAccents(catName).toLowerCase();
+      for (let g = 0; g < GENRE_PRIORS_AND_KEYWORDS.length; g += 1) {
+        const gDef = GENRE_PRIORS_AND_KEYWORDS[g];
+        const gNorm = stripVietnameseAccents(gDef.name).toLowerCase();
+        if (catNorm.includes(gNorm) || catNorm.includes(gDef.slug.replace("-", " "))) {
+          if (!seen.has(gDef.slug)) {
+            seen.add(gDef.slug);
+            matched.push({ slug: gDef.slug, weight: 1.4 });
+          }
+        }
+      }
+    }
+  }
+
+  if (movie && movie.type === "hoathinh" && !seen.has("hoat-hinh")) {
+    seen.add("hoat-hinh");
+    matched.push({ slug: "hoat-hinh", weight: 1.5 });
+  }
+
+  const textBlob = [
+    movie && movie.title ? movie.title : "",
+    movie && movie.seriesTitle ? movie.seriesTitle : "",
+    movie && movie.originTitle ? movie.originTitle : "",
+    movie && movie.content ? String(movie.content).slice(0, 300) : ""
+  ].join(" ").toLowerCase();
+
+  const textUnaccented = stripVietnameseAccents(textBlob);
+
+  for (let g = 0; g < GENRE_PRIORS_AND_KEYWORDS.length; g += 1) {
+    const gDef = GENRE_PRIORS_AND_KEYWORDS[g];
+    let hitCount = 0;
+    for (let k = 0; k < gDef.keywords.length; k += 1) {
+      const kw = gDef.keywords[k];
+      if (textBlob.includes(kw) || textUnaccented.includes(kw)) {
+        hitCount += 1;
+      }
+    }
+    if (hitCount > 0 && !seen.has(gDef.slug)) {
+      seen.add(gDef.slug);
+      matched.push({
+        slug: gDef.slug,
+        weight: Math.min(1.5, 0.75 + hitCount * 0.25)
+      });
+    }
+  }
+
+  return matched;
+}
+
+function extractMovieFeatures(movie) {
+  const features = Object.create(null);
+  if (!movie || typeof movie !== "object") {
+    return features;
+  }
+
+  function addFeature(key, value) {
+    if (!key || !Number.isFinite(value)) {
+      return;
+    }
+    features[key] = (features[key] || 0) + value;
+  }
+
+  const rawTitle = movie.seriesTitle || (movie.title ? String(movie.title).split(" - ")[0] : "");
+  const titleTokens = tokenizeMovieText(rawTitle);
+  const originTokens = tokenizeMovieText(movie.originTitle || "");
+
+  // 1. Title Unigrams & Bigrams (TF-IDF style weighting: bigrams carry higher specificity)
+  titleTokens.unigrams.forEach(function (u) {
+    addFeature("term:" + u, 1.0);
+    const unacc = stripVietnameseAccents(u);
+    if (unacc !== u && unacc.length >= 3) {
+      addFeature("term_ascii:" + unacc, 0.7);
+    }
+  });
+
+  titleTokens.bigrams.forEach(function (bg) {
+    addFeature("bigram:" + bg, 1.8);
+  });
+
+  originTokens.unigrams.forEach(function (u) {
+    if (u.length >= 3) {
+      addFeature("origin:" + u, 0.9);
+    }
+  });
+
+  originTokens.bigrams.forEach(function (bg) {
+    addFeature("origin_bg:" + bg, 1.4);
+  });
+
+  // 2. Latent & Explicit Genres
+  const genres = inferLatentGenres(movie);
+  genres.forEach(function (g) {
+    addFeature("genre:" + g.slug, g.weight * 2.2);
+  });
+
+  // 3. Countries
+  if (Array.isArray(movie.countries)) {
+    movie.countries.forEach(function (c) {
+      const cName = stripVietnameseAccents(typeof c === "string" ? c : (c && c.name ? c.name : "")).toLowerCase().trim();
+      if (cName) {
+        addFeature("country:" + cName, 1.5);
+      }
+    });
+  }
+
+  // 4. Actors
+  if (Array.isArray(movie.actors)) {
+    movie.actors.slice(0, 6).forEach(function (actor) {
+      const aName = String(actor || "").toLowerCase().trim();
+      if (aName && aName.length >= 3) {
+        addFeature("actor:" + aName, 1.6);
+      }
+    });
+  }
+
+  // 5. Movie Type (series vs single vs hoathinh)
+  if (movie.type) {
+    addFeature("type:" + String(movie.type).toLowerCase(), 1.2);
+  } else if (movie.episodeCurrent && /tập|tap|\d+\/\d+/i.test(movie.episodeCurrent)) {
+    addFeature("type:series", 0.9);
+  }
+
+  // 6. Language preference (Vietsub / Thuyết minh / Lồng tiếng)
+  if (movie.lang) {
+    const langNorm = stripVietnameseAccents(movie.lang).toLowerCase();
+    if (langNorm.includes("thuyet minh")) {
+      addFeature("lang:thuyet-minh", 1.1);
+    }
+    if (langNorm.includes("long tieng")) {
+      addFeature("lang:long-tieng", 1.1);
+    }
+    if (langNorm.includes("vietsub")) {
+      addFeature("lang:vietsub", 0.8);
+    }
+  }
+
+  // 7. Release Year Era
+  const yr = parseInt(movie.year, 10);
+  if (!isNaN(yr) && yr > 1980) {
+    if (yr >= 2025) {
+      addFeature("era:2025_plus", 1.0);
+    } else if (yr >= 2020) {
+      addFeature("era:2020_2024", 0.8);
+    } else {
+      addFeature("era:classic", 0.7);
+    }
+  }
+
+  return features;
+}
+
+function getInteractionsList() {
+  if (cachedInteractions !== null) {
+    return cachedInteractions;
+  }
+  const storage = getStorage();
+  if (!storage) {
+    cachedInteractions = [];
+    return cachedInteractions;
+  }
+  try {
+    const raw = storage.getItem(ML_INTERACTIONS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    cachedInteractions = Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    cachedInteractions = [];
+  }
+  return cachedInteractions;
+}
+
+function saveInteractionsList(list) {
+  cachedInteractions = Array.isArray(list) ? list.slice(0, 50) : [];
+  const storage = getStorage();
+  if (!storage) {
+    return;
+  }
+  try {
+    storage.setItem(ML_INTERACTIONS_KEY, JSON.stringify(cachedInteractions));
+  } catch (_) {}
+}
+
+function invalidateMlRecommendationCache() {
+  memoryRecommendationCache = null;
+  const storage = getStorage();
+  if (storage) {
+    try {
+      storage.removeItem(ML_CACHE_KEY);
+    } catch (_) {}
+  }
+}
+
+function recordUserMovieInteraction(movie, interactionType) {
+  if (!movie || (!movie.slug && !movie.id && !movie.title)) {
+    return;
+  }
+  const list = getInteractionsList();
+  const slug = movie.slug || movie.id || "";
+  const seriesTitle = movie.seriesTitle || (movie.title ? String(movie.title).split(" - ")[0] : "");
+  const filtered = list.filter(function (item) {
+    return !(item && slug && item.slug === slug);
+  });
+  filtered.unshift({
+    type: interactionType || "view",
+    slug: slug,
+    title: seriesTitle,
+    originTitle: movie.originTitle || "",
+    categories: Array.isArray(movie.categories) ? movie.categories.slice(0, 6) : [],
+    countries: Array.isArray(movie.countries) ? movie.countries.slice(0, 4) : [],
+    actors: Array.isArray(movie.actors) ? movie.actors.slice(0, 5) : [],
+    movieType: movie.type || "",
+    year: movie.year || "",
+    lang: movie.lang || "",
+    timestamp: Date.now()
+  });
+  saveInteractionsList(filtered);
+  invalidateMlRecommendationCache();
+}
+
+function recordUserSearchQuery(keyword) {
+  const kw = String(keyword || "").trim();
+  if (kw.length < 2) {
+    return;
+  }
+  const list = getInteractionsList();
+  const filtered = list.filter(function (item) {
+    return !(item && item.type === "search" && String(item.query).toLowerCase() === kw.toLowerCase());
+  });
+  filtered.unshift({
+    type: "search",
+    query: kw,
+    timestamp: Date.now()
+  });
+  saveInteractionsList(filtered);
+  invalidateMlRecommendationCache();
+}
+
+function computeTimeDecay(timestampMs) {
+  if (!timestampMs || !Number.isFinite(timestampMs)) {
+    return 0.85;
+  }
+  const elapsed = Math.max(0, Date.now() - timestampMs);
+  return Math.max(0.25, Math.exp(-elapsed / HALF_LIFE_MS));
+}
+
+function trainUserPreferenceModel(customHistory, customFavorites, customInteractions) {
+  const history = Array.isArray(customHistory) ? customHistory : getWatchHistory();
+  const favorites = Array.isArray(customFavorites) ? customFavorites : getFavorites();
+  const interactions = Array.isArray(customInteractions) ? customInteractions : getInteractionsList();
+
+  const rawWeights = Object.create(null);
+  const genreScores = Object.create(null);
+  const queryCandidates = [];
+  const seenQuerySet = new Set();
+  const watchedSlugs = new Set();
+  const completedSlugs = new Set();
+  const favoriteSlugs = new Set();
+
+  function addWeight(featureKey, delta) {
+    if (!featureKey || !Number.isFinite(delta)) {
+      return;
+    }
+    rawWeights[featureKey] = (rawWeights[featureKey] || 0) + delta;
+    if (featureKey.indexOf("genre:") === 0) {
+      const gSlug = featureKey.slice(6);
+      genreScores[gSlug] = (genreScores[gSlug] || 0) + delta;
+    }
+  }
+
+  function pushQueryCandidate(phrase, score) {
+    if (!phrase || typeof phrase !== "string") {
+      return;
+    }
+    const clean = phrase.trim();
+    const norm = clean.toLowerCase();
+    if (clean.length < 2 || VIETNAMESE_STOPWORDS.has(norm) || seenQuerySet.has(norm)) {
+      return;
+    }
+    seenQuerySet.add(norm);
+    queryCandidates.push({ query: clean, score: score });
+  }
+
+  // 1. Train on Watch History (Implicit Feedback: Watch duration + completion ratio + recency)
+  history.forEach(function (item, idx) {
+    if (!item) {
+      return;
+    }
+    const slug = item.slug || item.id;
+    if (slug) {
+      watchedSlugs.add(slug);
+      if ((item.progressPercent && item.progressPercent >= 90) || (item.duration > 60 && item.currentTime >= item.duration - 30)) {
+        completedSlugs.add(slug);
+      }
+    }
+
+    const progressRatio = Math.max(0.1, Math.min(1, (Number(item.progressPercent || item.progress) || 25) / 85));
+    const watchBonus = (item.currentTime && item.currentTime > 300) ? 0.5 : 0;
+    const rankDecay = Math.max(0.4, 1 - idx * 0.04);
+    const timeDecay = computeTimeDecay(item.updatedAt);
+    const sampleWeight = (1.1 + 1.5 * progressRatio + watchBonus) * timeDecay * rankDecay;
+
+    const itemFeatures = extractMovieFeatures(item);
+    const keys = Object.keys(itemFeatures);
+    for (let k = 0; k < keys.length; k += 1) {
+      const fKey = keys[k];
+      addWeight(fKey, itemFeatures[fKey] * sampleWeight);
+    }
+
+    const titleText = item.seriesTitle || (item.title ? String(item.title).split(" - ")[0] : "");
+    const tokens = tokenizeMovieText(titleText);
+    if (tokens.phrases.length > 0) {
+      pushQueryCandidate(tokens.phrases[0], sampleWeight * 2.2);
+    }
+    if (tokens.bigrams.length > 0) {
+      pushQueryCandidate(tokens.bigrams[0], sampleWeight * 1.9);
+    } else if (tokens.unigrams.length > 0) {
+      pushQueryCandidate(tokens.unigrams[0], sampleWeight * 1.4);
+    }
+    if (Array.isArray(item.actors) && item.actors.length > 0 && item.actors[0].length >= 4) {
+      pushQueryCandidate(item.actors[0], sampleWeight * 1.5);
+    }
+  });
+
+  // 2. Train on Favorites (Explicit Positive Feedback: High positive weight)
+  favorites.forEach(function (fav, idx) {
+    if (!fav) {
+      return;
+    }
+    const slug = fav.slug || fav.id;
+    if (slug) {
+      favoriteSlugs.add(slug);
+    }
+    const timeDecay = computeTimeDecay(fav.addedAt);
+    const rankDecay = Math.max(0.5, 1 - idx * 0.03);
+    const sampleWeight = 2.6 * timeDecay * rankDecay;
+
+    const favFeatures = extractMovieFeatures(fav);
+    const keys = Object.keys(favFeatures);
+    for (let k = 0; k < keys.length; k += 1) {
+      const fKey = keys[k];
+      addWeight(fKey, favFeatures[fKey] * sampleWeight);
+    }
+
+    const titleText = fav.title || fav.name || "";
+    const tokens = tokenizeMovieText(titleText);
+    if (tokens.bigrams.length > 0) {
+      pushQueryCandidate(tokens.bigrams[0], sampleWeight * 2.3);
+    } else if (tokens.phrases.length > 0) {
+      pushQueryCandidate(tokens.phrases[0], sampleWeight * 2.0);
+    } else if (tokens.unigrams.length > 0) {
+      pushQueryCandidate(tokens.unigrams[0], sampleWeight * 1.5);
+    }
+  });
+
+  // 3. Train on User Interactions (Search Queries & Detail Modal Views)
+  interactions.forEach(function (inter, idx) {
+    if (!inter) {
+      return;
+    }
+    const timeDecay = computeTimeDecay(inter.timestamp);
+    const rankDecay = Math.max(0.35, 1 - idx * 0.05);
+
+    if (inter.type === "search" && inter.query) {
+      const sWeight = 1.6 * timeDecay * rankDecay;
+      pushQueryCandidate(inter.query, sWeight * 2.4);
+      const qTokens = tokenizeMovieText(inter.query);
+      qTokens.unigrams.forEach(function (u) {
+        addWeight("term:" + u, sWeight * 1.3);
+      });
+      qTokens.bigrams.forEach(function (bg) {
+        addWeight("bigram:" + bg, sWeight * 1.9);
+      });
+      const fakeMovie = { title: inter.query };
+      inferLatentGenres(fakeMovie).forEach(function (g) {
+        addWeight("genre:" + g.slug, sWeight * 1.8);
+      });
+    } else {
+      const vWeight = 1.2 * timeDecay * rankDecay;
+      const vFeatures = extractMovieFeatures(inter);
+      const keys = Object.keys(vFeatures);
+      for (let k = 0; k < keys.length; k += 1) {
+        addWeight(keys[k], vFeatures[keys[k]] * vWeight);
+      }
+      const tokens = tokenizeMovieText(inter.title || "");
+      if (tokens.bigrams.length > 0) {
+        pushQueryCandidate(tokens.bigrams[0], vWeight * 1.7);
+      }
+    }
+  });
+
+  // L2 Normalization of User Centroid Vector
+  let normSq = 0;
+  const featureKeys = Object.keys(rawWeights);
+  for (let i = 0; i < featureKeys.length; i += 1) {
+    const val = rawWeights[featureKeys[i]];
+    normSq += val * val;
+  }
+  const l2Norm = normSq > 0 ? Math.sqrt(normSq) : 1;
+  const normalizedVector = Object.create(null);
+  for (let i = 0; i < featureKeys.length; i += 1) {
+    const k = featureKeys[i];
+    normalizedVector[k] = rawWeights[k] / l2Norm;
+  }
+
+  // Rank genres by Bayesian posterior affinity
+  const rankedGenres = Object.keys(genreScores)
+    .map(function (gSlug) {
+      return { slug: gSlug, score: genreScores[gSlug] };
+    })
+    .sort(function (a, b) {
+      return b.score - a.score;
+    });
+
+  // Supplement query candidates with top predicted genre seeds
+  rankedGenres.slice(0, 3).forEach(function (gObj) {
+    const gDef = GENRE_PRIORS_AND_KEYWORDS.find(function (item) {
+      return item.slug === gObj.slug;
+    });
+    if (gDef && gDef.searchSeed) {
+      pushQueryCandidate(gDef.searchSeed, gObj.score * 0.9);
+    }
+  });
+
+  queryCandidates.sort(function (a, b) {
+    return b.score - a.score;
+  });
+
+  const isColdStart = history.length === 0 && favorites.length === 0 && interactions.length === 0;
+
+  return {
+    isColdStart: isColdStart,
+    vector: normalizedVector,
+    rawWeights: rawWeights,
+    l2Norm: l2Norm,
+    rankedGenres: rankedGenres,
+    queryCandidates: queryCandidates,
+    watchedSlugs: watchedSlugs,
+    completedSlugs: completedSlugs,
+    favoriteSlugs: favoriteSlugs,
+    signalCount: history.length + favorites.length + interactions.length
+  };
+}
+
+function predictSearchQueries(userProfile, maxQueries) {
+  const limit = maxQueries && maxQueries > 0 ? maxQueries : 5;
+  const profile = userProfile || trainUserPreferenceModel();
+
+  if (profile.isColdStart || !profile.queryCandidates.length) {
+    // Cold-Start exploration seeds
+    return ["hành động", "cổ trang", "tình cảm", "viễn tưởng", "hoạt hình"].slice(0, limit);
+  }
+
+  const selected = [];
+  const seen = new Set();
+
+  for (let i = 0; i < profile.queryCandidates.length && selected.length < limit; i += 1) {
+    const q = profile.queryCandidates[i].query;
+    const norm = stripVietnameseAccents(q).toLowerCase();
+    if (!seen.has(norm)) {
+      seen.add(norm);
+      selected.push(q);
+    }
+  }
+
+  // Ensure diversity by adding top genre seed if slots remain
+  const defaultSeeds = ["cổ trang", "hành động", "tình cảm", "hoạt hình", "kinh dị"];
+  for (let i = 0; i < defaultSeeds.length && selected.length < limit; i += 1) {
+    const s = defaultSeeds[i];
+    const norm = stripVietnameseAccents(s).toLowerCase();
+    if (!seen.has(norm)) {
+      seen.add(norm);
+      selected.push(s);
+    }
+  }
+
+  return selected;
+}
+
+function scoreMovieWithModel(movie, userProfile) {
+  if (!movie || typeof movie !== "object") {
+    return { score: 0, matchPercent: 75 };
+  }
+  const profile = userProfile || trainUserPreferenceModel();
+  const movieFeatures = extractMovieFeatures(movie);
+  const mKeys = Object.keys(movieFeatures);
+
+  if (!mKeys.length) {
+    return { score: 0.1, matchPercent: 78 };
+  }
+
+  // Compute Movie L2 Norm and Dot Product with User Centroid Vector
+  let dotProduct = 0;
+  let movieNormSq = 0;
+  let genreAffinityBonus = 0;
+
+  for (let i = 0; i < mKeys.length; i += 1) {
+    const k = mKeys[i];
+    const mVal = movieFeatures[k];
+    movieNormSq += mVal * mVal;
+
+    if (profile.vector && profile.vector[k]) {
+      dotProduct += profile.vector[k] * mVal;
+    }
+    if (k.indexOf("genre:") === 0 && profile.rawWeights && profile.rawWeights[k]) {
+      genreAffinityBonus += 0.08;
+    }
+  }
+
+  const movieNorm = movieNormSq > 0 ? Math.sqrt(movieNormSq) : 1;
+  const cosineSim = profile.isColdStart ? 0.45 : (dotProduct / movieNorm);
+
+  // Quality & Recency Prior
+  let qualityPrior = 0;
+  const yr = parseInt(movie.year, 10);
+  if (!isNaN(yr)) {
+    if (yr >= 2025) {
+      qualityPrior += 0.08;
+    } else if (yr >= 2022) {
+      qualityPrior += 0.04;
+    }
+  }
+  if (movie.quality && /4k|fhd|hd/i.test(movie.quality)) {
+    qualityPrior += 0.04;
+  }
+
+  // Novelty / Diversity Penalty for already completed movies
+  const slug = movie.slug || movie.id || "";
+  let noveltyAdjustment = 0;
+  if (slug && profile.completedSlugs && profile.completedSlugs.has(slug)) {
+    noveltyAdjustment -= 0.35;
+  } else if (slug && profile.watchedSlugs && profile.watchedSlugs.has(slug)) {
+    noveltyAdjustment -= 0.12;
+  }
+
+  const rawScore = Math.max(0.05, cosineSim * 0.78 + Math.min(0.22, genreAffinityBonus) + qualityPrior + noveltyAdjustment);
+
+  // Calibrated sigmoid mapping into [82%, 99%] match percentage
+  const calibrated = 1 / (1 + Math.exp(-4.2 * (rawScore - 0.22)));
+  const matchPercent = Math.max(80, Math.min(99, Math.round(78 + calibrated * 21)));
+
+  return {
+    score: Number(rawScore.toFixed(4)),
+    cosineSimilarity: Number(cosineSim.toFixed(4)),
+    matchPercent: matchPercent
+  };
+}
+
+function buildProfileSignature(profile) {
+  const topQueries = predictSearchQueries(profile, 4).join("|");
+  const topGenres = (profile.rankedGenres || []).slice(0, 3).map(function (g) { return g.slug; }).join(",");
+  return profile.signalCount + ":" + topGenres + ":" + topQueries;
+}
+
+function getMlRecommendations(kkphimApi, options) {
+  const force = Boolean(options && options.force);
+  const maxResults = (options && options.limit > 0) ? options.limit : 16;
+  const profile = trainUserPreferenceModel();
+  const signature = buildProfileSignature(profile);
+
+  if (!force && memoryRecommendationCache) {
+    const age = Date.now() - memoryRecommendationCache.timestamp;
+    if (age < ML_CACHE_TTL_MS && memoryRecommendationCache.signature === signature && memoryRecommendationCache.movies.length) {
+      return Promise.resolve({
+        movies: memoryRecommendationCache.movies.slice(0, maxResults),
+        queries: memoryRecommendationCache.queries,
+        topGenres: memoryRecommendationCache.topGenres,
+        isColdStart: profile.isColdStart,
+        isCached: true
+      });
+    }
+  }
+
+  const queries = predictSearchQueries(profile, 4);
+  const topGenreSlug = (profile.rankedGenres && profile.rankedGenres.length > 0)
+    ? profile.rankedGenres[0].slug
+    : "hanh-dong";
+
+  const searchTasks = queries.map(function (kw) {
+    if (!kkphimApi || typeof kkphimApi.searchMovies !== "function") {
+      return Promise.resolve([]);
+    }
+    return kkphimApi.searchMovies(kw, 8, 1).then(function (res) {
+      return (res && Array.isArray(res.movies)) ? res.movies : [];
+    }).catch(function () {
+      return [];
+    });
+  });
+
+  if (kkphimApi && typeof kkphimApi.getMoviesByGenre === "function") {
+    searchTasks.push(
+      kkphimApi.getMoviesByGenre(topGenreSlug, 1, 12).then(function (res) {
+        return (res && Array.isArray(res.movies)) ? res.movies : [];
+      }).catch(function () {
+        return [];
+      })
+    );
+  }
+
+  return Promise.all(searchTasks).then(function (resultsLists) {
+    const candidateMap = new Map();
+    resultsLists.forEach(function (list) {
+      if (!Array.isArray(list)) {
+        return;
+      }
+      list.forEach(function (movie) {
+        if (!movie) {
+          return;
+        }
+        const key = movie.slug || movie.id;
+        if (key && !candidateMap.has(key)) {
+          candidateMap.set(key, movie);
+        }
+      });
+    });
+
+    let candidates = Array.from(candidateMap.values());
+
+    function finalizeCandidates(movieList) {
+      const scored = movieList.map(function (movie) {
+        const evaluation = scoreMovieWithModel(movie, profile);
+        const enriched = Object.assign({}, movie, {
+          mlScore: evaluation.score,
+          mlMatchPercent: evaluation.matchPercent
+        });
+        return enriched;
+      });
+
+      scored.sort(function (a, b) {
+        return b.mlScore - a.mlScore;
+      });
+
+      const finalMovies = scored.slice(0, maxResults);
+      const topGenres = (profile.rankedGenres || []).slice(0, 3).map(function (g) { return g.slug; });
+
+      if (finalMovies.length > 0) {
+        memoryRecommendationCache = {
+          timestamp: Date.now(),
+          signature: signature,
+          movies: finalMovies,
+          queries: queries,
+          topGenres: topGenres
+        };
+      }
+
+      return {
+        movies: finalMovies,
+        queries: queries,
+        topGenres: topGenres,
+        isColdStart: profile.isColdStart,
+        isCached: false
+      };
+    }
+
+    if (candidates.length >= 10 || !kkphimApi || typeof kkphimApi.getMoviesByCategory !== "function") {
+      return finalizeCandidates(candidates);
+    }
+
+    // Fallback enrichment if search returned fewer than 10 items
+    return kkphimApi.getMoviesByCategory("phim-le", 1, 14).then(function (res) {
+      const extra = (res && Array.isArray(res.movies)) ? res.movies : [];
+      extra.forEach(function (m) {
+        const key = m && (m.slug || m.id);
+        if (key && !candidateMap.has(key)) {
+          candidateMap.set(key, m);
+        }
+      });
+      return finalizeCandidates(Array.from(candidateMap.values()));
+    }).catch(function () {
+      return finalizeCandidates(candidates);
+    });
+  });
+}
+
+function createMlRecommendationService(kkphimApi) {
+  return {
+    trainModel: trainUserPreferenceModel,
+    predictQueries: predictSearchQueries,
+    scoreMovie: scoreMovieWithModel,
+    extractFeatures: extractMovieFeatures,
+    inferGenres: inferLatentGenres,
+    recordInteraction: recordUserMovieInteraction,
+    recordSearch: recordUserSearchQuery,
+    invalidateCache: invalidateMlRecommendationCache,
+    getRecommendations(options) {
+      return getMlRecommendations(kkphimApi, options);
+    }
+  };
+}
+
+return {stripVietnameseAccents: stripVietnameseAccents, tokenizeMovieText: tokenizeMovieText, inferLatentGenres: inferLatentGenres, extractMovieFeatures: extractMovieFeatures, invalidateMlRecommendationCache: invalidateMlRecommendationCache, recordUserMovieInteraction: recordUserMovieInteraction, recordUserSearchQuery: recordUserSearchQuery, trainUserPreferenceModel: trainUserPreferenceModel, predictSearchQueries: predictSearchQueries, scoreMovieWithModel: scoreMovieWithModel, getMlRecommendations: getMlRecommendations, createMlRecommendationService: createMlRecommendationService};
+});
 registerModule("js/home/movie-detail-modal.js", function (requireModule) {
 var isFavorite = requireModule("js/services/favorites-service.js")["isFavorite"];
 var toggleFavorite = requireModule("js/services/favorites-service.js")["toggleFavorite"];
+var getWatchHistoryItem = requireModule("js/services/watch-history-service.js")["getWatchHistoryItem"];
+var getEpisodeResumeInfo = requireModule("js/services/watch-history-service.js")["getEpisodeResumeInfo"];
+var enrichWatchHistoryMetadata = requireModule("js/services/watch-history-service.js")["enrichWatchHistoryMetadata"];
+var recordUserMovieInteraction = requireModule("js/services/ml-recommendation-service.js")["recordUserMovieInteraction"];
 var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
 var buildMovieUrl = requireModule("js/utils/url.js")["buildMovieUrl"];
 var copyTextToClipboard = requireModule("js/utils/url.js")["copyTextToClipboard"];
+var formatTime = requireModule("js/utils/format-time.js")["formatTime"];
 function cleanHtmlContent(html) {
   if (!html) {
     return "Chưa có mô tả nội dung cho phim này.";
@@ -3797,6 +4992,7 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
   let currentFocusIndex = 0;
 
   let cachedCloseBtn = null;
+  let cachedResumeBtn = null;
   let cachedFavBtn = null;
   let cachedShareBtn = null;
   let cachedServerTabs = [];
@@ -3814,6 +5010,7 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
   function updateModalLayoutCache() {
     cachedCloseBtn = modal.querySelector(".movie-detail-close");
+    cachedResumeBtn = modal.querySelector(".movie-detail-resume-btn");
     cachedFavBtn = modal.querySelector(".movie-detail-fav-btn");
     cachedShareBtn = modal.querySelector(".movie-detail-share-btn");
     cachedServerTabs = Array.from(modal.querySelectorAll(".movie-server-tab"));
@@ -3882,6 +5079,12 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
     const episodes = data.episodes || [];
     const favActive = isFavorite(movie.slug);
 
+    enrichWatchHistoryMetadata(movie);
+    recordUserMovieInteraction(movie, "view");
+
+    const historyItem = getWatchHistoryItem(movie.slug);
+    const resumeInfo = getEpisodeResumeInfo(movie.slug);
+
     let badgesHtml = "";
     if (movie.quality) {
       badgesHtml += '<span class="movie-badge badge-quality">' + movie.quality + '</span>';
@@ -3917,11 +5120,26 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
     if (serverData.length > 0) {
       episodesHtml = '<div class="movie-detail-episodes-grid" role="group" aria-label="Danh sách tập">';
       serverData.forEach(function (ep, epIdx) {
-        episodesHtml += '<button type="button" class="movie-episode-btn" data-ep-index="' + epIdx + '" data-m3u8="' + (ep.link_m3u8 || '') + '" data-embed="' + (ep.link_embed || '') + '" data-ep-name="' + (ep.name || '') + '">' + (ep.name || ('Tập ' + (epIdx + 1))) + '</button>';
+        const epResume = getEpisodeResumeInfo(movie.slug, epIdx);
+        const isCurrentEp = Boolean(historyItem && historyItem.currentEpisodeIndex === epIdx);
+        const extraClass = (isCurrentEp ? " is-current-episode" : "") + (epResume ? " is-watched-episode" : "");
+        const epLabel = ep.name || ("Tập " + (epIdx + 1));
+        const timeHint = epResume ? (' · ' + formatTime(epResume.currentTime)) : '';
+        episodesHtml += '<button type="button" class="movie-episode-btn' + extraClass + '" data-ep-index="' + epIdx + '" data-m3u8="' + (ep.link_m3u8 || '') + '" data-embed="' + (ep.link_embed || '') + '" data-ep-name="' + (ep.name || '') + '" title="' + epLabel + timeHint + '">' + epLabel + '</button>';
       });
       episodesHtml += '</div>';
     } else {
       episodesHtml = '<p class="movie-episodes-empty">Chưa có tập phim nào trên server này.</p>';
+    }
+
+    let resumeBtnHtml = "";
+    if (resumeInfo && serverData.length > 0 && resumeInfo.episodeIndex < serverData.length) {
+      const resumeEpLabel = serverData[resumeInfo.episodeIndex].name || resumeInfo.episodeName || ("Tập " + (resumeInfo.episodeIndex + 1));
+      resumeBtnHtml = '' +
+        '<button type="button" class="movie-detail-btn movie-detail-resume-btn" data-ep-index="' + resumeInfo.episodeIndex + '">' +
+          '<span class="resume-icon">▶</span> ' +
+          '<span class="resume-label">Tiếp tục ' + resumeEpLabel + ' (' + formatTime(resumeInfo.currentTime) + ')</span>' +
+        '</button>';
     }
 
     modal.innerHTML = "" +
@@ -3942,6 +5160,7 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
           '<div class="movie-detail-badges">' + badgesHtml + '</div>' +
           '<p class="movie-detail-desc">' + descText + '</p>' +
           '<div class="movie-detail-actions">' +
+            resumeBtnHtml +
             '<button type="button" class="movie-detail-btn movie-detail-fav-btn' + (favActive ? ' is-favorite' : '') + '" aria-pressed="' + (favActive ? 'true' : 'false') + '">' +
               '<span class="fav-icon">' + (favActive ? '♥' : '♡') + '</span> ' +
               '<span class="fav-label">' + (favActive ? 'Đã yêu thích' : 'Thêm vào yêu thích') + '</span>' +
@@ -4023,60 +5242,87 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
       });
     });
 
+    function launchEpisodeAtIndex(epIndex) {
+      const epObj = serverData[epIndex];
+      if (!epObj) {
+        return;
+      }
+      const m3u8Url = epObj.link_m3u8 || epObj.link_embed;
+      if (!m3u8Url) {
+        alert("Tập phim này hiện không có đường dẫn phát.");
+        return;
+      }
+
+      const serverName = currentServer ? currentServer.server_name : "Vietsub";
+      const epResume = getEpisodeResumeInfo(movie.slug, epIndex);
+      const playbackMovie = {
+        id: movie.slug + "-" + (epObj.slug || epIndex),
+        slug: movie.slug,
+        seriesTitle: movie.title,
+        originTitle: movie.originTitle || "",
+        episodeName: epObj.name,
+        title: movie.title + " - " + epObj.name,
+        poster: movie.poster,
+        thumb: movie.thumb || movie.poster,
+        year: movie.year || "",
+        quality: movie.quality || "",
+        lang: movie.lang || "",
+        type: movie.type || "",
+        categories: Array.isArray(movie.categories) ? movie.categories : [],
+        countries: Array.isArray(movie.countries) ? movie.countries : [],
+        actors: Array.isArray(movie.actors) ? movie.actors : [],
+        m3u8: m3u8Url,
+        fallbackEmbed: epObj.link_embed || "",
+        playbackEnabled: true,
+        source: "KKPhim · " + serverName,
+        episodesList: serverData.map(function (item, idx) {
+          return {
+            index: idx,
+            name: item.name,
+            slug: item.slug || String(idx),
+            m3u8: item.link_m3u8 || item.link_embed,
+            fallbackEmbed: item.link_embed || ""
+          };
+        }),
+        currentEpisodeIndex: epIndex,
+        resumeTime: epResume ? epResume.currentTime : 0,
+        serverName: serverName
+      };
+
+      close(true);
+      if (options && typeof options.onSelectEpisode === "function") {
+        options.onSelectEpisode(playbackMovie);
+      }
+    }
+
+    // Bind Resume button
+    const resumeBtn = modal.querySelector(".movie-detail-resume-btn");
+    if (resumeBtn) {
+      resumeBtn.addEventListener("click", function () {
+        const epIdx = parseInt(resumeBtn.dataset.epIndex, 10);
+        launchEpisodeAtIndex(isNaN(epIdx) ? 0 : epIdx);
+      });
+    }
+
     // Bind Episode buttons
     const episodeBtns = modal.querySelectorAll(".movie-episode-btn");
     episodeBtns.forEach(function (epBtn) {
       epBtn.addEventListener("click", function () {
         const epIndex = parseInt(epBtn.dataset.epIndex, 10);
-        const epObj = serverData[epIndex];
-        if (!epObj) {
-          return;
-        }
-        const m3u8Url = epObj.link_m3u8 || epObj.link_embed;
-        if (!m3u8Url) {
-          alert("Tập phim này hiện không có đường dẫn phát.");
-          return;
-        }
-
-        const serverName = currentServer ? currentServer.server_name : "Vietsub";
-        const playbackMovie = {
-          id: movie.slug + "-" + (epObj.slug || epIndex),
-          slug: movie.slug,
-          seriesTitle: movie.title,
-          episodeName: epObj.name,
-          title: movie.title + " - " + epObj.name,
-          poster: movie.poster,
-          m3u8: m3u8Url,
-          fallbackEmbed: epObj.link_embed || "",
-          playbackEnabled: true,
-          source: "KKPhim · " + serverName,
-          episodesList: serverData.map(function (item, idx) {
-            return {
-              index: idx,
-              name: item.name,
-              slug: item.slug || String(idx),
-              m3u8: item.link_m3u8 || item.link_embed,
-              fallbackEmbed: item.link_embed || ""
-            };
-          }),
-          currentEpisodeIndex: epIndex,
-          serverName: serverName
-        };
-
-        close(true);
-        if (options && typeof options.onSelectEpisode === "function") {
-          options.onSelectEpisode(playbackMovie);
-        }
+        launchEpisodeAtIndex(epIndex);
       });
     });
 
-    // Set initial focus: current/first episode button, or favorite button if no episodes
+    // Set initial focus: current/watched episode button, or resume/favorite button if no episodes
     updateModalLayoutCache();
-    const initialEpIdx = (currentMovie && typeof currentMovie.currentEpisodeIndex === "number")
-      ? Math.max(0, Math.min(cachedEpisodeBtns.length - 1, currentMovie.currentEpisodeIndex))
-      : 0;
+    const defaultEpIdx = (currentMovie && typeof currentMovie.currentEpisodeIndex === "number" && currentMovie.currentEpisodeIndex > 0)
+      ? currentMovie.currentEpisodeIndex
+      : (historyItem && typeof historyItem.currentEpisodeIndex === "number" ? historyItem.currentEpisodeIndex : 0);
+    const initialEpIdx = Math.max(0, Math.min(cachedEpisodeBtns.length - 1, defaultEpIdx));
     const targetEpBtn = cachedEpisodeBtns.length ? cachedEpisodeBtns[initialEpIdx] : null;
-    if (targetEpBtn) {
+    if (resumeBtn) {
+      resumeBtn.focus();
+    } else if (targetEpBtn) {
       targetEpBtn.focus();
       if (typeof targetEpBtn.scrollIntoView === "function") {
         targetEpBtn.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -4152,6 +5398,7 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
       // Use cached elements to avoid repeated DOM queries & layout thrashing on every key press
       const closeBtn = cachedCloseBtn;
+      const resumeBtn = cachedResumeBtn;
       const favBtn = cachedFavBtn;
       const shareBtn = cachedShareBtn;
       const serverTabs = cachedServerTabs;
@@ -4177,7 +5424,9 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
       if (key.direction === "down") {
         if (activeEl === closeBtn) {
-          if (favBtn) {
+          if (resumeBtn) {
+            resumeBtn.focus();
+          } else if (favBtn) {
             favBtn.focus();
           } else if (shareBtn) {
             shareBtn.focus();
@@ -4188,7 +5437,7 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
             ensureEpVisible(episodeBtns[0]);
           }
           return true;
-        } else if (activeEl === favBtn || activeEl === shareBtn) {
+        } else if (activeEl === resumeBtn || activeEl === favBtn || activeEl === shareBtn) {
           if (serverTabs.length > 0) {
             serverTabs[0].focus();
           } else if (episodeBtns.length > 0) {
@@ -4229,6 +5478,8 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
             ensureEpVisible(episodeBtns[nextIdx]);
           } else if (serverTabs.length > 0) {
             serverTabs[Math.min(activeServerIndex, serverTabs.length - 1)].focus();
+          } else if (resumeBtn) {
+            resumeBtn.focus();
           } else if (shareBtn && focusableElements.indexOf(shareBtn) !== -1) {
             shareBtn.focus();
           } else if (favBtn) {
@@ -4236,7 +5487,9 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
           }
           return true;
         } else if (serverTabs.includes(activeEl)) {
-          if (shareBtn && focusableElements.indexOf(shareBtn) !== -1) {
+          if (resumeBtn) {
+            resumeBtn.focus();
+          } else if (shareBtn && focusableElements.indexOf(shareBtn) !== -1) {
             shareBtn.focus();
           } else if (favBtn) {
             favBtn.focus();
@@ -4244,7 +5497,7 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
             closeBtn.focus();
           }
           return true;
-        } else if (activeEl === favBtn || activeEl === shareBtn) {
+        } else if (activeEl === resumeBtn || activeEl === favBtn || activeEl === shareBtn) {
           if (closeBtn) {
             closeBtn.focus();
           }
@@ -4254,7 +5507,12 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
         if (activeEl === shareBtn) {
           if (favBtn) {
             favBtn.focus();
+          } else if (resumeBtn) {
+            resumeBtn.focus();
           }
+          return true;
+        } else if (activeEl === favBtn && resumeBtn) {
+          resumeBtn.focus();
           return true;
         } else if (episodeBtns.includes(activeEl)) {
           const epIdx = episodeBtns.indexOf(activeEl);
@@ -4278,7 +5536,14 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
           return true;
         }
       } else if (key.direction === "right") {
-        if (activeEl === favBtn) {
+        if (activeEl === resumeBtn) {
+          if (favBtn) {
+            favBtn.focus();
+          } else if (shareBtn) {
+            shareBtn.focus();
+          }
+          return true;
+        } else if (activeEl === favBtn) {
           if (shareBtn) {
             shareBtn.focus();
           }
@@ -4437,6 +5702,27 @@ function fallbackCopy(text) {
 }
 
 return {parseRoute: parseRoute, buildMovieUrl: buildMovieUrl, buildEpisodeUrl: buildEpisodeUrl, buildHomeUrl: buildHomeUrl, copyTextToClipboard: copyTextToClipboard};
+});
+registerModule("js/utils/format-time.js", function (requireModule) {
+function formatTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return "0:00";
+  }
+
+  const total = Math.floor(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainingSeconds = total % 60;
+  const formattedSeconds = remainingSeconds < 10 ? "0" + remainingSeconds : String(remainingSeconds);
+
+  if (hours > 0) {
+    const formattedMinutes = minutes < 10 ? "0" + minutes : String(minutes);
+    return hours + ":" + formattedMinutes + ":" + formattedSeconds;
+  }
+  return minutes + ":" + formattedSeconds;
+}
+
+return {formatTime: formatTime};
 });
 registerModule("js/home/hero-carousel.js", function (requireModule) {
 var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
@@ -4919,6 +6205,7 @@ var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPost
 var isFavorite = requireModule("js/services/favorites-service.js")["isFavorite"];
 var toggleFavorite = requireModule("js/services/favorites-service.js")["toggleFavorite"];
 var lazyLoadImage = requireModule("js/utils/lazy-image.js")["lazyLoadImage"];
+var formatTime = requireModule("js/utils/format-time.js")["formatTime"];
 const GENRE_CATEGORIES = [
   {
     slug: "hanh-dong",
@@ -5064,7 +6351,10 @@ function createCarouselMovieCard(movie, options) {
 
   const metaEl = document.createElement("p");
   metaEl.className = "carousel-card-meta";
-  if (movie.episodeCurrent) {
+  if (movie.mlMatchPercent) {
+    const tail = movie.episodeCurrent || movie.year || movie.lang || "Đề xuất";
+    metaEl.textContent = movie.mlMatchPercent + "% phù hợp • " + tail;
+  } else if (movie.episodeCurrent) {
     metaEl.textContent = movie.episodeCurrent + (movie.year ? (" • " + movie.year) : "");
   } else if (movie.year) {
     metaEl.textContent = movie.year + (movie.lang ? (" • " + movie.lang) : "");
@@ -5303,6 +6593,9 @@ function createContinueWatchingSection(callbacks) {
 
       const thumbUrl = item.thumb || item.poster || fallbackPoster;
       const progressPct = Math.max(5, Math.min(98, Number(item.progress) || 25));
+      const timeLabel = (typeof item.currentTime === "number" && item.currentTime > 5)
+        ? ("Xem tiếp " + formatTime(item.currentTime) + " • " + (item.remainingText || "Đang xem"))
+        : (item.remainingText || "Đang xem");
 
       card.innerHTML = "" +
         '<div class="continue-thumb-wrap">' +
@@ -5319,7 +6612,7 @@ function createContinueWatchingSection(callbacks) {
         '</div>' +
         '<div class="continue-card-info">' +
           '<h3 class="continue-card-title">' + (item.title || "Phim") + '</h3>' +
-          '<p class="continue-card-meta">' + (item.remainingText || "Đang xem") + '</p>' +
+          '<p class="continue-card-meta">' + timeLabel + '</p>' +
         '</div>';
 
       const img = card.querySelector(".continue-thumb-img");
@@ -6107,6 +7400,7 @@ var currentDevice = requireModule("js/utils/device.js")["currentDevice"];
 var buildEpisodeUrl = requireModule("js/utils/url.js")["buildEpisodeUrl"];
 var copyTextToClipboard = requireModule("js/utils/url.js")["copyTextToClipboard"];
 var saveWatchProgress = requireModule("js/services/watch-history-service.js")["saveWatchProgress"];
+var getEpisodeResumeInfo = requireModule("js/services/watch-history-service.js")["getEpisodeResumeInfo"];
 const PLAY_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>';
 const PAUSE_ICON = '<svg class="control-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 5.5A1.5 1.5 0 0 1 7.5 4h1A1.5 1.5 0 0 1 10 5.5v13A1.5 1.5 0 0 1 8.5 20h-1A1.5 1.5 0 0 1 6 18.5v-13zm8 0A1.5 1.5 0 0 1 15.5 4h1a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v-13z"/></svg>';
 
@@ -6277,6 +7571,51 @@ function createPlayerScreen(root, movie, onBackRequest) {
   let seekCommitTimer = 0;
   let lastDirectCommitTime = 0;
   let lastDirectCommitValue = "";
+  let pendingResumeTime = 0;
+
+  function resolveResumeTimeForEpisode(epIndex) {
+    if (typeof currentMovie.resumeTime === "number" && currentMovie.resumeTime > 5) {
+      const explicitTime = Math.floor(currentMovie.resumeTime);
+      currentMovie.resumeTime = 0;
+      return explicitTime;
+    }
+    const slug = currentMovie.slug || currentMovie.id;
+    const resumeInfo = getEpisodeResumeInfo(slug, epIndex);
+    if (resumeInfo && typeof resumeInfo.currentTime === "number" && resumeInfo.currentTime > 5) {
+      return resumeInfo.currentTime;
+    }
+    return 0;
+  }
+
+  function applyPendingResume() {
+    if (disposed || !pendingResumeTime || pendingResumeTime <= 5) {
+      return;
+    }
+    const range = playback.getRange();
+    const dur = (range && range.end > range.start) ? range.end : (Number.isFinite(video.duration) ? video.duration : 0);
+    if (dur <= 0 && video.readyState < 1) {
+      return;
+    }
+    let targetTime = pendingResumeTime;
+    if (dur > 30 && targetTime >= dur - 12) {
+      pendingResumeTime = 0;
+      return;
+    }
+    if (dur > 0) {
+      targetTime = Math.max(0, Math.min(dur - 5, targetTime));
+    }
+    try {
+      video.currentTime = targetTime;
+      if (Math.abs(video.currentTime - targetTime) < 3 || video.seeking) {
+        const resumedAt = targetTime;
+        pendingResumeTime = 0;
+        pendingSeekTime = resumedAt;
+        ignoreTimelineUntil = Date.now() + 1200;
+        updateTimeline();
+        showStatus("Đã tiếp tục phát từ " + formatTime(resumedAt));
+      }
+    } catch (_) {}
+  }
 
   function getEffectiveCurrentTime() {
     if (pendingSeekTime !== null && Date.now() < ignoreTimelineUntil) {
@@ -6799,6 +8138,9 @@ function createPlayerScreen(root, movie, onBackRequest) {
     if (index < 0 || !episodesList || index >= episodesList.length || disposed) {
       return;
     }
+    if (video && video.currentTime > 3) {
+      saveWatchProgress(currentMovie, video.currentTime, video.duration);
+    }
     cancelAutoNext();
     seekController.cancel();
     window.clearTimeout(seekCommitTimer);
@@ -6816,8 +8158,11 @@ function createPlayerScreen(root, movie, onBackRequest) {
     const seriesTitle = currentMovie.seriesTitle || (currentMovie.title ? currentMovie.title.split(" - ")[0] : "Phim");
     const newFullTitle = seriesTitle + " - " + ep.name;
     currentMovie.title = newFullTitle;
+    currentMovie.episodeName = ep.name;
     currentMovie.m3u8 = streamUrl;
     currentMovie.currentEpisodeIndex = index;
+    pendingResumeTime = resolveResumeTimeForEpisode(index);
+    saveWatchProgress(currentMovie, pendingResumeTime > 0 ? pendingResumeTime : 0, 2700);
     if (nowPlayingTitle) {
       nowPlayingTitle.textContent = newFullTitle;
     }
@@ -7084,7 +8429,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
         updateSubtitleDisplay();
       }
       const now = Date.now();
-      if (now - lastHistorySaveTime > 12000 && video.currentTime > 5) {
+      if (now - lastHistorySaveTime > 4000 && video.currentTime > 3 && !pendingResumeTime) {
         lastHistorySaveTime = now;
         saveWatchProgress(currentMovie, video.currentTime, video.duration);
       }
@@ -7110,6 +8455,7 @@ function createPlayerScreen(root, movie, onBackRequest) {
       playButton.hidden = true;
       stage.classList.remove("playback-error");
       status.dataset.visible = "false";
+      applyPendingResume();
       scheduleHide();
       if (!seekController.isScrubbing()) {
         updateSubtitleDisplay();
@@ -7385,15 +8731,30 @@ function createPlayerScreen(root, movie, onBackRequest) {
     if (video.readyState >= 3) {
       hideLoader();
     }
+    if (video.currentTime > 3 && !pendingResumeTime) {
+      lastHistorySaveTime = Date.now();
+      saveWatchProgress(currentMovie, video.currentTime, video.duration);
+    }
+  });
+  listen(video, "pause", function () {
+    if (video.currentTime > 3 && !pendingResumeTime) {
+      lastHistorySaveTime = Date.now();
+      saveWatchProgress(currentMovie, video.currentTime, video.duration);
+    }
+  });
+  listen(video, "loadedmetadata", function () {
+    applyPendingResume();
   });
   listen(video, "waiting", function () {
     showLoader("Buffering...");
   });
   listen(video, "canplay", function () {
     hideLoader();
+    applyPendingResume();
   });
   listen(video, "playing", function () {
     hideLoader();
+    applyPendingResume();
   });
   listen(video, "loadstart", function () {
     showLoader("Loading movie...");
@@ -7438,6 +8799,14 @@ function createPlayerScreen(root, movie, onBackRequest) {
   listen(document, "visibilitychange", function () {
     if (document.hidden) {
       seekController.commitPreview();
+      if (video && video.currentTime > 3 && !pendingResumeTime) {
+        saveWatchProgress(currentMovie, video.currentTime, video.duration);
+      }
+    }
+  });
+  listen(window, "pagehide", function () {
+    if (video && video.currentTime > 3 && !pendingResumeTime) {
+      saveWatchProgress(currentMovie, video.currentTime, video.duration);
     }
   });
 
@@ -7447,7 +8816,8 @@ function createPlayerScreen(root, movie, onBackRequest) {
   initSubtitles();
   updateFullscreenControl();
   updateNextButtonState();
-  saveWatchProgress(currentMovie, 0, 2700);
+  pendingResumeTime = resolveResumeTimeForEpisode(currentEpisodeIndex);
+  saveWatchProgress(currentMovie, pendingResumeTime > 0 ? pendingResumeTime : 0, 2700);
   showLoader("Loading movie...");
   playback.start(movie.m3u8);
   togglePlayButton.focus();
@@ -8723,27 +10093,6 @@ function getActiveSubtitleText(cues, currentTime) {
 }
 
 return {formatVttTimestamp: formatVttTimestamp, stripSubtitleHtml: stripSubtitleHtml, parseSrt: parseSrt, srtToWebVtt: srtToWebVtt, findActiveCues: findActiveCues, getActiveSubtitleText: getActiveSubtitleText};
-});
-registerModule("js/utils/format-time.js", function (requireModule) {
-function formatTime(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return "0:00";
-  }
-
-  const total = Math.floor(seconds);
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const remainingSeconds = total % 60;
-  const formattedSeconds = remainingSeconds < 10 ? "0" + remainingSeconds : String(remainingSeconds);
-
-  if (hours > 0) {
-    const formattedMinutes = minutes < 10 ? "0" + minutes : String(minutes);
-    return hours + ":" + formattedMinutes + ":" + formattedSeconds;
-  }
-  return minutes + ":" + formattedSeconds;
-}
-
-return {formatTime: formatTime};
 });
 registerModule("js/services/catalog-service.js", function (requireModule) {
 var catalogSources = requireModule("js/config/catalog-sources.js")["catalogSources"];

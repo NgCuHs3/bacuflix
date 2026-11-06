@@ -1,6 +1,9 @@
 import { isFavorite, toggleFavorite } from "../services/favorites-service.js";
+import { getWatchHistoryItem, getEpisodeResumeInfo, enrichWatchHistoryMetadata } from "../services/watch-history-service.js";
+import { recordUserMovieInteraction } from "../services/ml-recommendation-service.js";
 import { fallbackPoster } from "../config/catalog-sources.js";
 import { buildMovieUrl, copyTextToClipboard } from "../utils/url.js";
+import { formatTime } from "../utils/format-time.js";
 
 function cleanHtmlContent(html) {
   if (!html) {
@@ -30,6 +33,7 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
   let currentFocusIndex = 0;
 
   let cachedCloseBtn = null;
+  let cachedResumeBtn = null;
   let cachedFavBtn = null;
   let cachedShareBtn = null;
   let cachedServerTabs = [];
@@ -47,6 +51,7 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
   function updateModalLayoutCache() {
     cachedCloseBtn = modal.querySelector(".movie-detail-close");
+    cachedResumeBtn = modal.querySelector(".movie-detail-resume-btn");
     cachedFavBtn = modal.querySelector(".movie-detail-fav-btn");
     cachedShareBtn = modal.querySelector(".movie-detail-share-btn");
     cachedServerTabs = Array.from(modal.querySelectorAll(".movie-server-tab"));
@@ -115,6 +120,12 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
     const episodes = data.episodes || [];
     const favActive = isFavorite(movie.slug);
 
+    enrichWatchHistoryMetadata(movie);
+    recordUserMovieInteraction(movie, "view");
+
+    const historyItem = getWatchHistoryItem(movie.slug);
+    const resumeInfo = getEpisodeResumeInfo(movie.slug);
+
     let badgesHtml = "";
     if (movie.quality) {
       badgesHtml += '<span class="movie-badge badge-quality">' + movie.quality + '</span>';
@@ -150,11 +161,26 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
     if (serverData.length > 0) {
       episodesHtml = '<div class="movie-detail-episodes-grid" role="group" aria-label="Danh sách tập">';
       serverData.forEach(function (ep, epIdx) {
-        episodesHtml += '<button type="button" class="movie-episode-btn" data-ep-index="' + epIdx + '" data-m3u8="' + (ep.link_m3u8 || '') + '" data-embed="' + (ep.link_embed || '') + '" data-ep-name="' + (ep.name || '') + '">' + (ep.name || ('Tập ' + (epIdx + 1))) + '</button>';
+        const epResume = getEpisodeResumeInfo(movie.slug, epIdx);
+        const isCurrentEp = Boolean(historyItem && historyItem.currentEpisodeIndex === epIdx);
+        const extraClass = (isCurrentEp ? " is-current-episode" : "") + (epResume ? " is-watched-episode" : "");
+        const epLabel = ep.name || ("Tập " + (epIdx + 1));
+        const timeHint = epResume ? (' · ' + formatTime(epResume.currentTime)) : '';
+        episodesHtml += '<button type="button" class="movie-episode-btn' + extraClass + '" data-ep-index="' + epIdx + '" data-m3u8="' + (ep.link_m3u8 || '') + '" data-embed="' + (ep.link_embed || '') + '" data-ep-name="' + (ep.name || '') + '" title="' + epLabel + timeHint + '">' + epLabel + '</button>';
       });
       episodesHtml += '</div>';
     } else {
       episodesHtml = '<p class="movie-episodes-empty">Chưa có tập phim nào trên server này.</p>';
+    }
+
+    let resumeBtnHtml = "";
+    if (resumeInfo && serverData.length > 0 && resumeInfo.episodeIndex < serverData.length) {
+      const resumeEpLabel = serverData[resumeInfo.episodeIndex].name || resumeInfo.episodeName || ("Tập " + (resumeInfo.episodeIndex + 1));
+      resumeBtnHtml = '' +
+        '<button type="button" class="movie-detail-btn movie-detail-resume-btn" data-ep-index="' + resumeInfo.episodeIndex + '">' +
+          '<span class="resume-icon">▶</span> ' +
+          '<span class="resume-label">Tiếp tục ' + resumeEpLabel + ' (' + formatTime(resumeInfo.currentTime) + ')</span>' +
+        '</button>';
     }
 
     modal.innerHTML = "" +
@@ -175,6 +201,7 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
           '<div class="movie-detail-badges">' + badgesHtml + '</div>' +
           '<p class="movie-detail-desc">' + descText + '</p>' +
           '<div class="movie-detail-actions">' +
+            resumeBtnHtml +
             '<button type="button" class="movie-detail-btn movie-detail-fav-btn' + (favActive ? ' is-favorite' : '') + '" aria-pressed="' + (favActive ? 'true' : 'false') + '">' +
               '<span class="fav-icon">' + (favActive ? '♥' : '♡') + '</span> ' +
               '<span class="fav-label">' + (favActive ? 'Đã yêu thích' : 'Thêm vào yêu thích') + '</span>' +
@@ -256,60 +283,87 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
       });
     });
 
+    function launchEpisodeAtIndex(epIndex) {
+      const epObj = serverData[epIndex];
+      if (!epObj) {
+        return;
+      }
+      const m3u8Url = epObj.link_m3u8 || epObj.link_embed;
+      if (!m3u8Url) {
+        alert("Tập phim này hiện không có đường dẫn phát.");
+        return;
+      }
+
+      const serverName = currentServer ? currentServer.server_name : "Vietsub";
+      const epResume = getEpisodeResumeInfo(movie.slug, epIndex);
+      const playbackMovie = {
+        id: movie.slug + "-" + (epObj.slug || epIndex),
+        slug: movie.slug,
+        seriesTitle: movie.title,
+        originTitle: movie.originTitle || "",
+        episodeName: epObj.name,
+        title: movie.title + " - " + epObj.name,
+        poster: movie.poster,
+        thumb: movie.thumb || movie.poster,
+        year: movie.year || "",
+        quality: movie.quality || "",
+        lang: movie.lang || "",
+        type: movie.type || "",
+        categories: Array.isArray(movie.categories) ? movie.categories : [],
+        countries: Array.isArray(movie.countries) ? movie.countries : [],
+        actors: Array.isArray(movie.actors) ? movie.actors : [],
+        m3u8: m3u8Url,
+        fallbackEmbed: epObj.link_embed || "",
+        playbackEnabled: true,
+        source: "KKPhim · " + serverName,
+        episodesList: serverData.map(function (item, idx) {
+          return {
+            index: idx,
+            name: item.name,
+            slug: item.slug || String(idx),
+            m3u8: item.link_m3u8 || item.link_embed,
+            fallbackEmbed: item.link_embed || ""
+          };
+        }),
+        currentEpisodeIndex: epIndex,
+        resumeTime: epResume ? epResume.currentTime : 0,
+        serverName: serverName
+      };
+
+      close(true);
+      if (options && typeof options.onSelectEpisode === "function") {
+        options.onSelectEpisode(playbackMovie);
+      }
+    }
+
+    // Bind Resume button
+    const resumeBtn = modal.querySelector(".movie-detail-resume-btn");
+    if (resumeBtn) {
+      resumeBtn.addEventListener("click", function () {
+        const epIdx = parseInt(resumeBtn.dataset.epIndex, 10);
+        launchEpisodeAtIndex(isNaN(epIdx) ? 0 : epIdx);
+      });
+    }
+
     // Bind Episode buttons
     const episodeBtns = modal.querySelectorAll(".movie-episode-btn");
     episodeBtns.forEach(function (epBtn) {
       epBtn.addEventListener("click", function () {
         const epIndex = parseInt(epBtn.dataset.epIndex, 10);
-        const epObj = serverData[epIndex];
-        if (!epObj) {
-          return;
-        }
-        const m3u8Url = epObj.link_m3u8 || epObj.link_embed;
-        if (!m3u8Url) {
-          alert("Tập phim này hiện không có đường dẫn phát.");
-          return;
-        }
-
-        const serverName = currentServer ? currentServer.server_name : "Vietsub";
-        const playbackMovie = {
-          id: movie.slug + "-" + (epObj.slug || epIndex),
-          slug: movie.slug,
-          seriesTitle: movie.title,
-          episodeName: epObj.name,
-          title: movie.title + " - " + epObj.name,
-          poster: movie.poster,
-          m3u8: m3u8Url,
-          fallbackEmbed: epObj.link_embed || "",
-          playbackEnabled: true,
-          source: "KKPhim · " + serverName,
-          episodesList: serverData.map(function (item, idx) {
-            return {
-              index: idx,
-              name: item.name,
-              slug: item.slug || String(idx),
-              m3u8: item.link_m3u8 || item.link_embed,
-              fallbackEmbed: item.link_embed || ""
-            };
-          }),
-          currentEpisodeIndex: epIndex,
-          serverName: serverName
-        };
-
-        close(true);
-        if (options && typeof options.onSelectEpisode === "function") {
-          options.onSelectEpisode(playbackMovie);
-        }
+        launchEpisodeAtIndex(epIndex);
       });
     });
 
-    // Set initial focus: current/first episode button, or favorite button if no episodes
+    // Set initial focus: current/watched episode button, or resume/favorite button if no episodes
     updateModalLayoutCache();
-    const initialEpIdx = (currentMovie && typeof currentMovie.currentEpisodeIndex === "number")
-      ? Math.max(0, Math.min(cachedEpisodeBtns.length - 1, currentMovie.currentEpisodeIndex))
-      : 0;
+    const defaultEpIdx = (currentMovie && typeof currentMovie.currentEpisodeIndex === "number" && currentMovie.currentEpisodeIndex > 0)
+      ? currentMovie.currentEpisodeIndex
+      : (historyItem && typeof historyItem.currentEpisodeIndex === "number" ? historyItem.currentEpisodeIndex : 0);
+    const initialEpIdx = Math.max(0, Math.min(cachedEpisodeBtns.length - 1, defaultEpIdx));
     const targetEpBtn = cachedEpisodeBtns.length ? cachedEpisodeBtns[initialEpIdx] : null;
-    if (targetEpBtn) {
+    if (resumeBtn) {
+      resumeBtn.focus();
+    } else if (targetEpBtn) {
       targetEpBtn.focus();
       if (typeof targetEpBtn.scrollIntoView === "function") {
         targetEpBtn.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -385,6 +439,7 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
       // Use cached elements to avoid repeated DOM queries & layout thrashing on every key press
       const closeBtn = cachedCloseBtn;
+      const resumeBtn = cachedResumeBtn;
       const favBtn = cachedFavBtn;
       const shareBtn = cachedShareBtn;
       const serverTabs = cachedServerTabs;
@@ -410,7 +465,9 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
       if (key.direction === "down") {
         if (activeEl === closeBtn) {
-          if (favBtn) {
+          if (resumeBtn) {
+            resumeBtn.focus();
+          } else if (favBtn) {
             favBtn.focus();
           } else if (shareBtn) {
             shareBtn.focus();
@@ -421,7 +478,7 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
             ensureEpVisible(episodeBtns[0]);
           }
           return true;
-        } else if (activeEl === favBtn || activeEl === shareBtn) {
+        } else if (activeEl === resumeBtn || activeEl === favBtn || activeEl === shareBtn) {
           if (serverTabs.length > 0) {
             serverTabs[0].focus();
           } else if (episodeBtns.length > 0) {
@@ -462,6 +519,8 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
             ensureEpVisible(episodeBtns[nextIdx]);
           } else if (serverTabs.length > 0) {
             serverTabs[Math.min(activeServerIndex, serverTabs.length - 1)].focus();
+          } else if (resumeBtn) {
+            resumeBtn.focus();
           } else if (shareBtn && focusableElements.indexOf(shareBtn) !== -1) {
             shareBtn.focus();
           } else if (favBtn) {
@@ -469,7 +528,9 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
           }
           return true;
         } else if (serverTabs.includes(activeEl)) {
-          if (shareBtn && focusableElements.indexOf(shareBtn) !== -1) {
+          if (resumeBtn) {
+            resumeBtn.focus();
+          } else if (shareBtn && focusableElements.indexOf(shareBtn) !== -1) {
             shareBtn.focus();
           } else if (favBtn) {
             favBtn.focus();
@@ -477,7 +538,7 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
             closeBtn.focus();
           }
           return true;
-        } else if (activeEl === favBtn || activeEl === shareBtn) {
+        } else if (activeEl === resumeBtn || activeEl === favBtn || activeEl === shareBtn) {
           if (closeBtn) {
             closeBtn.focus();
           }
@@ -487,7 +548,12 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
         if (activeEl === shareBtn) {
           if (favBtn) {
             favBtn.focus();
+          } else if (resumeBtn) {
+            resumeBtn.focus();
           }
+          return true;
+        } else if (activeEl === favBtn && resumeBtn) {
+          resumeBtn.focus();
           return true;
         } else if (episodeBtns.includes(activeEl)) {
           const epIdx = episodeBtns.indexOf(activeEl);
@@ -511,7 +577,14 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
           return true;
         }
       } else if (key.direction === "right") {
-        if (activeEl === favBtn) {
+        if (activeEl === resumeBtn) {
+          if (favBtn) {
+            favBtn.focus();
+          } else if (shareBtn) {
+            shareBtn.focus();
+          }
+          return true;
+        } else if (activeEl === favBtn) {
           if (shareBtn) {
             shareBtn.focus();
           }
