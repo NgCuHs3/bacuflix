@@ -397,16 +397,16 @@ video {
 
 .control-button {
   display: inline-flex;
-  min-width: 70px;
-  min-width: clamp(54px, 6vw, 82px);
+  min-width: 68px;
+  min-width: clamp(52px, 5.2vw, 76px);
   min-height: 52px;
   min-height: clamp(40px, 5vh, 60px);
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 3px 8px;
-  padding: 3px clamp(4px, 0.7vw, 9px);
+  padding: 3px clamp(4px, 0.65vw, 8px);
   border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
@@ -510,8 +510,8 @@ video {
 }
 
 .remote-hint {
-  margin: 6px 0 0;
-  margin: clamp(3px, 0.6vh, 6px) 0 0;
+  margin: 9px 0 0;
+  margin: clamp(7px, 1vh, 10px) 0 0;
   color: rgba(255, 255, 255, 0.55);
   font-size: 11px;
   font-size: clamp(9px, 0.9vw, 12px);
@@ -669,6 +669,7 @@ video {
 .video-stage.is-loading .player-loader,
 .video-stage.is-buffering .player-loader {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
   transform: translate(-50%, -50%) scale(1);
 }
@@ -915,12 +916,19 @@ video {
     width: 100%;
     max-width: 100%;
     font-size: 8px;
+    letter-spacing: -0.02em;
     line-height: 1.15;
     margin-top: 2px;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  #prev-episode-button,
+  #next-episode-button,
+  #fullscreen-button {
+    flex: 1.18 1 0 !important;
   }
 
   .remote-hint {
@@ -1392,12 +1400,22 @@ video {
     width: 100%;
     max-width: 100%;
     font-size: 8px;
+    letter-spacing: -0.02em;
     line-height: 1.15;
     margin-top: 2px;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  #prev-episode-button,
+  #next-episode-button {
+    flex: 1.18 1 0 !important;
+  }
+
+  #fullscreen-button {
+    flex: 1.32 1 0 !important;
   }
 }
 
@@ -1506,6 +1524,7 @@ video {
   width: 100%;
   max-width: 100%;
   font-size: 8px;
+  letter-spacing: -0.02em;
   line-height: 1.15;
   margin-top: 2px;
   text-align: center;
@@ -1514,9 +1533,18 @@ video {
   text-overflow: ellipsis;
 }
 
+[data-device="mobile"] #prev-episode-button,
+[data-device="mobile"] #next-episode-button {
+  flex: 1.18 1 0 !important;
+}
+
+[data-device="mobile"] #fullscreen-button {
+  flex: 1.32 1 0 !important;
+}
+
 [data-device="mobile"] .remote-hint {
   font-size: 8.5px;
-  margin-top: 2px;
+  margin-top: 6px;
   color: rgba(255, 255, 255, 0.65);
   white-space: nowrap;
   overflow: hidden;
@@ -1774,6 +1802,7 @@ video {
 }
 
 [data-device="tv"] .remote-hint {
+  margin-top: 12px;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.7);
 }
@@ -1794,7 +1823,7 @@ video {
 
 /* 3. Desktop / PC: smooth relative width with cursor autohiding */
 [data-device="desktop"] .control-panel {
-  max-width: 960px;
+  max-width: 1040px;
 }
 
 [data-device="desktop"] .video-stage:not(.controls-visible) {

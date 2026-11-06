@@ -754,7 +754,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       cachedColumnsCount = 3;
     } else if (width < 1024) {
       cachedColumnsCount = kbOpen ? 3 : 4;
-    } else if (width < 1440) {
+    } else if (width < 1280) {
       cachedColumnsCount = kbOpen ? 3 : 5;
     } else {
       cachedColumnsCount = kbOpen ? 4 : 6;
@@ -1595,7 +1595,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       gap = 14;
       const cardWidth = Math.max(140, (width - 48 - gap * (cols - 1)) / cols);
       baseCardHeight = Math.round(cardWidth * 1.5);
-    } else if (width < 1440) {
+    } else if (width < 1280) {
       cols = kbOpen ? 3 : 5;
       gap = 18;
       const effectiveWidth = Math.max(600, width - 240);
@@ -1839,6 +1839,18 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
   screen.appendChild(mobileBottomNav);
   screen.appendChild(toast);
 
+  function focusPrimaryNav() {
+    if (isTv() && sidebarButtons.length) {
+      const activeSideBtn = sidebarButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || sidebarButtons[0];
+      activeSideBtn.focus();
+      return;
+    }
+    const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
+    if (activeTabBtn) {
+      activeTabBtn.focus();
+    }
+  }
+
   // Mount Custom TV Search Keyboard
   tvKeyboard = createTvSearchKeyboard(screen, {
     onChange: function (newVal) {
@@ -1855,11 +1867,11 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
         setSelectedCard(cards[targetIdx], true);
       } else {
         tvKeyboard.close();
-        tabButtons[0].focus();
+        focusPrimaryNav();
       }
     },
     onMoveUpToHeader: function () {
-      tabButtons[0].focus();
+      focusPrimaryNav();
     },
     onClose: function () {
       searchBox.classList.remove("is-keyboard-active");
@@ -2460,8 +2472,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       if (isTyping) {
         if (key.isEscape || key.isBack) {
           active.blur();
-          const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
-          activeTabBtn.focus();
+          focusPrimaryNav();
           return true;
         }
         if (key.direction === "down") {
@@ -2484,8 +2495,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       if (key.isBack) {
         if (tvKeyboard && tvKeyboard.isOpen()) {
           tvKeyboard.close();
-          const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
-          activeTabBtn.focus();
+          focusPrimaryNav();
           return true;
         }
         if (currentActionEntry || (selectedCardEntry && selectedCardEntry.element && selectedCardEntry.element.classList.contains("has-action-focus"))) {
@@ -2770,8 +2780,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
 
         if (key.direction === "up") {
           if (isHeroActive) {
-            const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
-            activeTabBtn.focus();
+            focusPrimaryNav();
             return true;
           }
 
@@ -2802,8 +2811,7 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
                   return true;
                 }
               }
-              const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
-              activeTabBtn.focus();
+              focusPrimaryNav();
               return true;
             }
           }
@@ -5016,8 +5024,19 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
     cachedServerTabs = Array.from(modal.querySelectorAll(".movie-server-tab"));
     cachedEpisodeBtns = Array.from(modal.querySelectorAll(".movie-episode-btn"));
     cachedEpContainer = modal.querySelector(".movie-episodes-container");
+    const epGrid = modal.querySelector(".movie-detail-episodes-grid");
     const width = (typeof window !== "undefined" ? window.innerWidth : 0) || 1280;
-    cachedGridCols = width <= 480 ? 3 : (width <= 768 ? 4 : 5);
+    let detectedCols = width <= 767 ? 4 : 5;
+    if (epGrid && typeof window !== "undefined" && typeof window.getComputedStyle === "function") {
+      const tpl = window.getComputedStyle(epGrid).gridTemplateColumns;
+      if (tpl && tpl !== "none") {
+        const parts = tpl.trim().split(/\s+/).filter(Boolean);
+        if (parts.length > 0) {
+          detectedCols = parts.length;
+        }
+      }
+    }
+    cachedGridCols = detectedCols;
     updateFocusables();
   }
 
@@ -5315,12 +5334,26 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
     // Set initial focus: current/watched episode button, or resume/favorite button if no episodes
     updateModalLayoutCache();
+    const isMobileView = (typeof window !== "undefined" && window.innerWidth <= 767) ||
+      (typeof document !== "undefined" && document.body && document.body.getAttribute("data-device") === "mobile");
     const defaultEpIdx = (currentMovie && typeof currentMovie.currentEpisodeIndex === "number" && currentMovie.currentEpisodeIndex > 0)
       ? currentMovie.currentEpisodeIndex
       : (historyItem && typeof historyItem.currentEpisodeIndex === "number" ? historyItem.currentEpisodeIndex : 0);
     const initialEpIdx = Math.max(0, Math.min(cachedEpisodeBtns.length - 1, defaultEpIdx));
     const targetEpBtn = cachedEpisodeBtns.length ? cachedEpisodeBtns[initialEpIdx] : null;
-    if (resumeBtn) {
+    if (isMobileView) {
+      modal.scrollTop = 0;
+      if (resumeBtn) {
+        resumeBtn.focus({ preventScroll: true });
+      } else if (targetEpBtn) {
+        targetEpBtn.focus({ preventScroll: true });
+      } else if (favBtn) {
+        favBtn.focus({ preventScroll: true });
+      } else if (closeBtn) {
+        closeBtn.focus({ preventScroll: true });
+      }
+      modal.scrollTop = 0;
+    } else if (resumeBtn) {
       resumeBtn.focus();
     } else if (targetEpBtn) {
       targetEpBtn.focus();
@@ -5650,21 +5683,38 @@ function parseRoute(search, hash) {
   };
 }
 
+function getDeviceQueryPrefix(sep) {
+  if (typeof window === "undefined" || !window.location || !window.location.search) {
+    return "";
+  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const dev = (params.get("device") || "").toLowerCase().trim();
+    if (dev === "tv" || dev === "mobile" || dev === "desktop") {
+      return (sep || "?") + "device=" + encodeURIComponent(dev);
+    }
+  } catch (_) {}
+  return "";
+}
+
 function buildMovieUrl(slug) {
   const base = (typeof window !== "undefined" && window.location) ?
     (window.location.origin + window.location.pathname) : "";
-  return base + "?movie=" + encodeURIComponent(slug);
+  const devParam = getDeviceQueryPrefix("&");
+  return base + "?movie=" + encodeURIComponent(slug) + devParam;
 }
 
 function buildEpisodeUrl(slug, ep) {
   const base = (typeof window !== "undefined" && window.location) ?
     (window.location.origin + window.location.pathname) : "";
-  return base + "?movie=" + encodeURIComponent(slug) + "&ep=" + encodeURIComponent(ep);
+  const devParam = getDeviceQueryPrefix("&");
+  return base + "?movie=" + encodeURIComponent(slug) + "&ep=" + encodeURIComponent(ep) + devParam;
 }
 
 function buildHomeUrl() {
-  return (typeof window !== "undefined" && window.location) ?
+  const base = (typeof window !== "undefined" && window.location) ?
     (window.location.origin + window.location.pathname) : "";
+  return base + getDeviceQueryPrefix("?");
 }
 
 function copyTextToClipboard(text) {
@@ -6289,7 +6339,7 @@ function createCarouselMovieCard(movie, options) {
     img.src = fallbackPoster;
   });
 
-  if (rank > 0 && rank <= 4) {
+  if (rank > 0 && rank <= 8) {
     img.loading = "lazy";
     img.src = posterUrl;
   } else {
@@ -6592,14 +6642,18 @@ function createContinueWatchingSection(callbacks) {
       card.setAttribute("aria-label", "Tiếp tục xem " + (item.title || "Phim") + " " + (item.episodeName || ""));
 
       const thumbUrl = item.thumb || item.poster || fallbackPoster;
-      const progressPct = Math.max(5, Math.min(98, Number(item.progress) || 25));
+      const isInitialFallback = thumbUrl === fallbackPoster;
+      const rawProgress = (item.progress !== undefined && item.progress !== null)
+        ? Number(item.progress)
+        : Number(item.progressPercent);
+      const progressPct = Math.max(5, Math.min(98, rawProgress || 25));
       const timeLabel = (typeof item.currentTime === "number" && item.currentTime > 5)
         ? ("Xem tiếp " + formatTime(item.currentTime) + " • " + (item.remainingText || "Đang xem"))
         : (item.remainingText || "Đang xem");
 
       card.innerHTML = "" +
         '<div class="continue-thumb-wrap">' +
-          '<img class="continue-thumb-img" src="' + thumbUrl + '" alt="" loading="lazy" decoding="async">' +
+          '<img class="continue-thumb-img' + (isInitialFallback ? ' is-fallback' : '') + '" src="' + thumbUrl + '" alt="" loading="lazy" decoding="async">' +
           '<div class="continue-thumb-shade"></div>' +
           '<div class="continue-play-badge" aria-hidden="true">' +
             '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>' +
@@ -6617,7 +6671,14 @@ function createContinueWatchingSection(callbacks) {
 
       const img = card.querySelector(".continue-thumb-img");
       if (img) {
+        let triedPoster = false;
         img.addEventListener("error", function () {
+          if (!triedPoster && item.poster && item.poster !== thumbUrl && item.poster !== fallbackPoster) {
+            triedPoster = true;
+            img.src = item.poster;
+            return;
+          }
+          img.classList.add("is-fallback");
           img.src = fallbackPoster;
         });
       }
@@ -6746,6 +6807,7 @@ function createGenreSection(callbacks) {
 return {GENRE_CATEGORIES: GENRE_CATEGORIES, createCarouselMovieCard: createCarouselMovieCard, createMovieCarouselSection: createMovieCarouselSection, createContinueWatchingSection: createContinueWatchingSection, createGenreSection: createGenreSection};
 });
 registerModule("js/utils/lazy-image.js", function (requireModule) {
+const PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 let observer = null;
 
 function getObserver() {
@@ -6765,7 +6827,7 @@ function getObserver() {
         img.src = url;
       }
     });
-  }, { rootMargin: "120px 80px 120px 80px" });
+  }, { rootMargin: "320px 260px 320px 260px" });
   return observer;
 }
 
@@ -6779,6 +6841,9 @@ function lazyLoadImage(img, url) {
   if (!obs) {
     img.src = url;
     return;
+  }
+  if (!img.getAttribute("src")) {
+    img.src = PLACEHOLDER_SRC;
   }
   img.dataset.lazySrc = url;
   obs.observe(img);
@@ -7322,6 +7387,17 @@ function detectDevice() {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
     return "desktop";
   }
+
+  if (window.location && window.location.search) {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const forced = (params.get("device") || "").toLowerCase().trim();
+      if (forced === "tv" || forced === "mobile" || forced === "desktop") {
+        return forced;
+      }
+    } catch (_) {}
+  }
+
   const ua = navigator.userAgent || "";
 
   // 1. Smart TV detection (Samsung Tizen, LG webOS, Android TV, etc.)

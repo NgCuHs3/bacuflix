@@ -57,8 +57,19 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
     cachedServerTabs = Array.from(modal.querySelectorAll(".movie-server-tab"));
     cachedEpisodeBtns = Array.from(modal.querySelectorAll(".movie-episode-btn"));
     cachedEpContainer = modal.querySelector(".movie-episodes-container");
+    const epGrid = modal.querySelector(".movie-detail-episodes-grid");
     const width = (typeof window !== "undefined" ? window.innerWidth : 0) || 1280;
-    cachedGridCols = width <= 480 ? 3 : (width <= 768 ? 4 : 5);
+    let detectedCols = width <= 767 ? 4 : 5;
+    if (epGrid && typeof window !== "undefined" && typeof window.getComputedStyle === "function") {
+      const tpl = window.getComputedStyle(epGrid).gridTemplateColumns;
+      if (tpl && tpl !== "none") {
+        const parts = tpl.trim().split(/\s+/).filter(Boolean);
+        if (parts.length > 0) {
+          detectedCols = parts.length;
+        }
+      }
+    }
+    cachedGridCols = detectedCols;
     updateFocusables();
   }
 
@@ -356,12 +367,26 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
     // Set initial focus: current/watched episode button, or resume/favorite button if no episodes
     updateModalLayoutCache();
+    const isMobileView = (typeof window !== "undefined" && window.innerWidth <= 767) ||
+      (typeof document !== "undefined" && document.body && document.body.getAttribute("data-device") === "mobile");
     const defaultEpIdx = (currentMovie && typeof currentMovie.currentEpisodeIndex === "number" && currentMovie.currentEpisodeIndex > 0)
       ? currentMovie.currentEpisodeIndex
       : (historyItem && typeof historyItem.currentEpisodeIndex === "number" ? historyItem.currentEpisodeIndex : 0);
     const initialEpIdx = Math.max(0, Math.min(cachedEpisodeBtns.length - 1, defaultEpIdx));
     const targetEpBtn = cachedEpisodeBtns.length ? cachedEpisodeBtns[initialEpIdx] : null;
-    if (resumeBtn) {
+    if (isMobileView) {
+      modal.scrollTop = 0;
+      if (resumeBtn) {
+        resumeBtn.focus({ preventScroll: true });
+      } else if (targetEpBtn) {
+        targetEpBtn.focus({ preventScroll: true });
+      } else if (favBtn) {
+        favBtn.focus({ preventScroll: true });
+      } else if (closeBtn) {
+        closeBtn.focus({ preventScroll: true });
+      }
+      modal.scrollTop = 0;
+    } else if (resumeBtn) {
       resumeBtn.focus();
     } else if (targetEpBtn) {
       targetEpBtn.focus();

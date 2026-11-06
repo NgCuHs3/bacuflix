@@ -1269,6 +1269,13 @@
   object-fit: cover;
 }
 
+.continue-thumb-img.is-fallback {
+  object-fit: contain;
+  padding: 22px;
+  opacity: 0.28;
+  background: #101117;
+}
+
 .continue-thumb-shade {
   position: absolute;
   top: 0;
@@ -1304,6 +1311,7 @@
   position: absolute;
   top: 8px;
   left: 8px;
+  max-width: calc(100% - 48px);
   padding: 2px 8px;
   border-radius: 4px;
   background: rgba(8, 9, 13, 0.84);
@@ -1311,6 +1319,10 @@
   color: #FFFFFF;
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 
 .continue-remove-btn {
@@ -1367,6 +1379,9 @@
   margin: 0;
   color: var(--home-text-secondary);
   font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ==========================================================================
@@ -2178,7 +2193,8 @@
   max-height: 340px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 6px;
+  padding: 6px;
+  margin: -6px;
 }
 
 .movie-detail-episodes-grid {
@@ -2904,6 +2920,15 @@
     flex-direction: column;
     align-items: center;
     padding: 0 16px 24px;
+  }
+
+  .movie-detail-info {
+    width: 100%;
+  }
+
+  .movie-detail-resume-btn {
+    width: 100%;
+    justify-content: center;
   }
 
   .movie-detail-poster-wrap {

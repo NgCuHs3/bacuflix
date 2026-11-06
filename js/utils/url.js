@@ -46,21 +46,38 @@ export function parseRoute(search, hash) {
   };
 }
 
+function getDeviceQueryPrefix(sep) {
+  if (typeof window === "undefined" || !window.location || !window.location.search) {
+    return "";
+  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const dev = (params.get("device") || "").toLowerCase().trim();
+    if (dev === "tv" || dev === "mobile" || dev === "desktop") {
+      return (sep || "?") + "device=" + encodeURIComponent(dev);
+    }
+  } catch (_) {}
+  return "";
+}
+
 export function buildMovieUrl(slug) {
   const base = (typeof window !== "undefined" && window.location) ?
     (window.location.origin + window.location.pathname) : "";
-  return base + "?movie=" + encodeURIComponent(slug);
+  const devParam = getDeviceQueryPrefix("&");
+  return base + "?movie=" + encodeURIComponent(slug) + devParam;
 }
 
 export function buildEpisodeUrl(slug, ep) {
   const base = (typeof window !== "undefined" && window.location) ?
     (window.location.origin + window.location.pathname) : "";
-  return base + "?movie=" + encodeURIComponent(slug) + "&ep=" + encodeURIComponent(ep);
+  const devParam = getDeviceQueryPrefix("&");
+  return base + "?movie=" + encodeURIComponent(slug) + "&ep=" + encodeURIComponent(ep) + devParam;
 }
 
 export function buildHomeUrl() {
-  return (typeof window !== "undefined" && window.location) ?
+  const base = (typeof window !== "undefined" && window.location) ?
     (window.location.origin + window.location.pathname) : "";
+  return base + getDeviceQueryPrefix("?");
 }
 
 export function copyTextToClipboard(text) {

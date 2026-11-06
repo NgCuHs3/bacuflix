@@ -409,7 +409,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       cachedColumnsCount = 3;
     } else if (width < 1024) {
       cachedColumnsCount = kbOpen ? 3 : 4;
-    } else if (width < 1440) {
+    } else if (width < 1280) {
       cachedColumnsCount = kbOpen ? 3 : 5;
     } else {
       cachedColumnsCount = kbOpen ? 4 : 6;
@@ -1250,7 +1250,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       gap = 14;
       const cardWidth = Math.max(140, (width - 48 - gap * (cols - 1)) / cols);
       baseCardHeight = Math.round(cardWidth * 1.5);
-    } else if (width < 1440) {
+    } else if (width < 1280) {
       cols = kbOpen ? 3 : 5;
       gap = 18;
       const effectiveWidth = Math.max(600, width - 240);
@@ -1494,6 +1494,18 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
   screen.appendChild(mobileBottomNav);
   screen.appendChild(toast);
 
+  function focusPrimaryNav() {
+    if (isTv() && sidebarButtons.length) {
+      const activeSideBtn = sidebarButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || sidebarButtons[0];
+      activeSideBtn.focus();
+      return;
+    }
+    const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
+    if (activeTabBtn) {
+      activeTabBtn.focus();
+    }
+  }
+
   // Mount Custom TV Search Keyboard
   tvKeyboard = createTvSearchKeyboard(screen, {
     onChange: function (newVal) {
@@ -1510,11 +1522,11 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
         setSelectedCard(cards[targetIdx], true);
       } else {
         tvKeyboard.close();
-        tabButtons[0].focus();
+        focusPrimaryNav();
       }
     },
     onMoveUpToHeader: function () {
-      tabButtons[0].focus();
+      focusPrimaryNav();
     },
     onClose: function () {
       searchBox.classList.remove("is-keyboard-active");
@@ -2115,8 +2127,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       if (isTyping) {
         if (key.isEscape || key.isBack) {
           active.blur();
-          const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
-          activeTabBtn.focus();
+          focusPrimaryNav();
           return true;
         }
         if (key.direction === "down") {
@@ -2139,8 +2150,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       if (key.isBack) {
         if (tvKeyboard && tvKeyboard.isOpen()) {
           tvKeyboard.close();
-          const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
-          activeTabBtn.focus();
+          focusPrimaryNav();
           return true;
         }
         if (currentActionEntry || (selectedCardEntry && selectedCardEntry.element && selectedCardEntry.element.classList.contains("has-action-focus"))) {
@@ -2425,8 +2435,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
 
         if (key.direction === "up") {
           if (isHeroActive) {
-            const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
-            activeTabBtn.focus();
+            focusPrimaryNav();
             return true;
           }
 
@@ -2457,8 +2466,7 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
                   return true;
                 }
               }
-              const activeTabBtn = tabButtons.find(function (b) { return b.dataset.tabId === activeTab; }) || tabButtons[0];
-              activeTabBtn.focus();
+              focusPrimaryNav();
               return true;
             }
           }

@@ -1,3 +1,4 @@
+const PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 let observer = null;
 
 function getObserver() {
@@ -17,7 +18,7 @@ function getObserver() {
         img.src = url;
       }
     });
-  }, { rootMargin: "120px 80px 120px 80px" });
+  }, { rootMargin: "320px 260px 320px 260px" });
   return observer;
 }
 
@@ -31,6 +32,9 @@ export function lazyLoadImage(img, url) {
   if (!obs) {
     img.src = url;
     return;
+  }
+  if (!img.getAttribute("src")) {
+    img.src = PLACEHOLDER_SRC;
   }
   img.dataset.lazySrc = url;
   obs.observe(img);

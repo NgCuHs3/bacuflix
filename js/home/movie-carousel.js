@@ -86,7 +86,7 @@ export function createCarouselMovieCard(movie, options) {
     img.src = fallbackPoster;
   });
 
-  if (rank > 0 && rank <= 4) {
+  if (rank > 0 && rank <= 8) {
     img.loading = "lazy";
     img.src = posterUrl;
   } else {
@@ -389,14 +389,18 @@ export function createContinueWatchingSection(callbacks) {
       card.setAttribute("aria-label", "Tiếp tục xem " + (item.title || "Phim") + " " + (item.episodeName || ""));
 
       const thumbUrl = item.thumb || item.poster || fallbackPoster;
-      const progressPct = Math.max(5, Math.min(98, Number(item.progress) || 25));
+      const isInitialFallback = thumbUrl === fallbackPoster;
+      const rawProgress = (item.progress !== undefined && item.progress !== null)
+        ? Number(item.progress)
+        : Number(item.progressPercent);
+      const progressPct = Math.max(5, Math.min(98, rawProgress || 25));
       const timeLabel = (typeof item.currentTime === "number" && item.currentTime > 5)
         ? ("Xem tiếp " + formatTime(item.currentTime) + " • " + (item.remainingText || "Đang xem"))
         : (item.remainingText || "Đang xem");
 
       card.innerHTML = "" +
         '<div class="continue-thumb-wrap">' +
-          '<img class="continue-thumb-img" src="' + thumbUrl + '" alt="" loading="lazy" decoding="async">' +
+          '<img class="continue-thumb-img' + (isInitialFallback ? ' is-fallback' : '') + '" src="' + thumbUrl + '" alt="" loading="lazy" decoding="async">' +
           '<div class="continue-thumb-shade"></div>' +
           '<div class="continue-play-badge" aria-hidden="true">' +
             '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>' +
@@ -414,7 +418,14 @@ export function createContinueWatchingSection(callbacks) {
 
       const img = card.querySelector(".continue-thumb-img");
       if (img) {
+        let triedPoster = false;
         img.addEventListener("error", function () {
+          if (!triedPoster && item.poster && item.poster !== thumbUrl && item.poster !== fallbackPoster) {
+            triedPoster = true;
+            img.src = item.poster;
+            return;
+          }
+          img.classList.add("is-fallback");
           img.src = fallbackPoster;
         });
       }
