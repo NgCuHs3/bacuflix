@@ -901,9 +901,32 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       }
       return;
     }
+
+    // Instant response if search query is cached
+    const cachedSearch = (typeof kkphimApi.getCachedSearch === "function") ? kkphimApi.getCachedSearch(val, 1) : null;
+    if (cachedSearch && cachedSearch.movies && cachedSearch.movies.length > 0) {
+      if (activeTab !== "search") {
+        previousTab = activeTab;
+      }
+      activeTab = "search";
+      currentPage = 1;
+      currentSearchQuery = val;
+      updateNavButtonsUI();
+      heroCarousel.element.hidden = true;
+      heroCarousel.stopAutoSlide();
+      homeCarouselsContainer.hidden = true;
+      heading.textContent = 'Kết quả tìm kiếm: "' + val + '"';
+      render({
+        movies: cachedSearch.movies,
+        errors: [],
+        diagnostics: [],
+        failedAll: false
+      });
+    }
+
     searchDebounceTimer = window.setTimeout(function () {
       executeSearch(val);
-    }, 350);
+    }, 220);
   }
 
   function openCustomTvKeyboard(focusFirstKey) {

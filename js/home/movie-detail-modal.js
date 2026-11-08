@@ -85,47 +85,41 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
   }
 
   function renderLoading(movie) {
-    modal.innerHTML = "" +
-      '<div class="movie-detail-header">' +
-        '<button type="button" class="movie-detail-close" aria-label="Đóng chi tiết">×</button>' +
-      '</div>' +
-      '<div class="movie-detail-loading">' +
-        '<div class="loader-spinner" aria-hidden="true">' +
-          '<svg class="spinner-svg" viewBox="0 0 50 50">' +
-            '<circle class="spinner-track" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>' +
-            '<circle class="spinner-circle" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>' +
-          '</svg>' +
-        '</div>' +
-        '<p class="movie-detail-loading-text">Đang tải thông tin phim "' + (movie.title || "") + '"...</p>' +
-      '</div>';
-
-    const closeBtn = modal.querySelector(".movie-detail-close");
-    closeBtn.addEventListener("click", close);
-    closeBtn.focus();
+    renderDetail({
+      movie: movie,
+      episodes: []
+    }, true);
   }
 
   function renderError(message) {
-    modal.innerHTML = "" +
-      '<div class="movie-detail-header">' +
-        '<button type="button" class="movie-detail-close" aria-label="Đóng chi tiết">×</button>' +
-      '</div>' +
-      '<div class="movie-detail-error">' +
-        '<p class="movie-detail-error-message">' + (message || "Không thể tải thông tin phim.") + '</p>' +
-        '<button type="button" class="movie-detail-btn movie-detail-btn-retry">Thử lại</button>' +
-      '</div>';
+    if (currentMovie) {
+      renderDetail({
+        movie: currentMovie,
+        episodes: []
+      }, false, message || "Không thể tải thông tin chi tiết phim.");
+    } else {
+      modal.innerHTML = "" +
+        '<div class="movie-detail-header">' +
+          '<button type="button" class="movie-detail-close" aria-label="Đóng chi tiết">×</button>' +
+        '</div>' +
+        '<div class="movie-detail-error">' +
+          '<p class="movie-detail-error-message">' + (message || "Không thể tải thông tin phim.") + '</p>' +
+          '<button type="button" class="movie-detail-btn movie-detail-btn-retry">Thử lại</button>' +
+        '</div>';
 
-    const closeBtn = modal.querySelector(".movie-detail-close");
-    closeBtn.addEventListener("click", close);
-    const retryBtn = modal.querySelector(".movie-detail-btn-retry");
-    if (retryBtn) {
-      retryBtn.addEventListener("click", function () {
-        loadDetail(currentMovie.slug);
-      });
-      retryBtn.focus();
+      const closeBtn = modal.querySelector(".movie-detail-close");
+      if (closeBtn) closeBtn.addEventListener("click", close);
+      const retryBtn = modal.querySelector(".movie-detail-btn-retry");
+      if (retryBtn) {
+        retryBtn.addEventListener("click", function () {
+          loadDetail(currentMovie ? currentMovie.slug : "");
+        });
+        retryBtn.focus();
+      }
     }
   }
 
-  function renderDetail(data) {
+  function renderDetail(data, isLoading = false, errorMessage = null) {
     detailData = data;
     const movie = data.movie;
     const episodes = data.episodes || [];
@@ -169,7 +163,24 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
     const serverData = (currentServer && Array.isArray(currentServer.server_data)) ? currentServer.server_data : [];
 
     let episodesHtml = "";
-    if (serverData.length > 0) {
+    if (isLoading) {
+      episodesHtml = '' +
+        '<div class="movie-episodes-loading" style="padding: 24px; text-align: center; color: #94a3b8;">' +
+          '<div class="loader-spinner" aria-hidden="true" style="margin: 0 auto 10px;">' +
+            '<svg class="spinner-svg" viewBox="0 0 50 50">' +
+              '<circle class="spinner-track" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>' +
+              '<circle class="spinner-circle" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>' +
+            '</svg>' +
+          '</div>' +
+          '<p class="movie-detail-loading-text">Đang tải nguồn phát & danh sách tập...</p>' +
+        '</div>';
+    } else if (errorMessage) {
+      episodesHtml = '' +
+        '<div class="movie-detail-error" style="padding: 16px; text-align: center;">' +
+          '<p class="movie-detail-error-message" style="color: #ef4444; margin-bottom: 12px;">' + errorMessage + '</p>' +
+          '<button type="button" class="movie-detail-btn movie-detail-btn-retry">Thử lại</button>' +
+        '</div>';
+    } else if (serverData.length > 0) {
       episodesHtml = '<div class="movie-detail-episodes-grid" role="group" aria-label="Danh sách tập">';
       serverData.forEach(function (ep, epIdx) {
         const epResume = getEpisodeResumeInfo(movie.slug, epIdx);
@@ -191,6 +202,13 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
         '<button type="button" class="movie-detail-btn movie-detail-resume-btn" data-ep-index="' + resumeInfo.episodeIndex + '">' +
           '<span class="resume-icon">▶</span> ' +
           '<span class="resume-label">Tiếp tục ' + resumeEpLabel + ' (' + formatTime(resumeInfo.currentTime) + ')</span>' +
+        '</button>';
+    } else if (serverData.length > 0) {
+      const firstEp = serverData[0];
+      resumeBtnHtml = '' +
+        '<button type="button" class="movie-detail-btn movie-detail-resume-btn" data-ep-index="0">' +
+          '<span class="resume-icon">▶</span> ' +
+          '<span class="resume-label">Xem ngay (' + (firstEp.name || 'Tập 1') + ')</span>' +
         '</button>';
     }
 
@@ -401,22 +419,42 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
   }
 
   function loadDetail(slug) {
-    const cached = (typeof kkphimApi.getCachedMovieDetail === "function") ? kkphimApi.getCachedMovieDetail(slug) : null;
+    const cleanSlug = (slug || "").trim();
+    const cached = cleanSlug && (typeof kkphimApi.getCachedMovieDetail === "function") ? kkphimApi.getCachedMovieDetail(cleanSlug) : null;
     if (cached) {
-      renderDetail(cached);
+      renderDetail(cached, false);
       return;
     }
     renderLoading(currentMovie);
-    kkphimApi.getMovieDetail(slug).then(function (data) {
+    kkphimApi.getMovieDetail(cleanSlug).then(function (data) {
       if (disposed) {
         return;
       }
-      renderDetail(data);
+      renderDetail(data, false);
     }).catch(function (error) {
       if (disposed) {
         return;
       }
-      renderError(error.message || "Không thể tải thông tin chi tiết phim.");
+      if (currentMovie && currentMovie.title && currentMovie.title.length >= 2) {
+        kkphimApi.searchMovies(currentMovie.title, 5, 1).then(function (searchRes) {
+          if (disposed) return;
+          const match = searchRes && searchRes.movies && searchRes.movies[0];
+          if (match && match.slug && match.slug !== cleanSlug) {
+            kkphimApi.getMovieDetail(match.slug).then(function (altData) {
+              if (disposed) return;
+              renderDetail(altData, false);
+            }).catch(function () {
+              renderError(error.message || "Không thể tải thông tin chi tiết phim.");
+            });
+            return;
+          }
+          renderError(error.message || "Không thể tải thông tin chi tiết phim.");
+        }).catch(function () {
+          renderError(error.message || "Không thể tải thông tin chi tiết phim.");
+        });
+      } else {
+        renderError(error.message || "Không thể tải thông tin chi tiết phim.");
+      }
     });
   }
 
