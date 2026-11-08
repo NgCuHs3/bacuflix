@@ -1917,6 +1917,16 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
     heroCarousel.stopAutoSlide();
     homeCarouselsContainer.hidden = true;
     heading.textContent = 'Kết quả tìm kiếm: "' + kw + '"';
+    const cachedSearch = (typeof kkphimApi.getCachedSearch === "function") ? kkphimApi.getCachedSearch(kw, 1) : null;
+    if (cachedSearch && cachedSearch.movies && cachedSearch.movies.length > 0) {
+      render({
+        movies: cachedSearch.movies,
+        errors: [],
+        diagnostics: [],
+        failedAll: false
+      });
+      return;
+    }
     message.textContent = "Đang tìm kiếm phim...";
     message.classList.remove("is-error");
 

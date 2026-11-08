@@ -401,6 +401,11 @@ export function createMovieDetailModal(parentContainer, kkphimApi, options) {
   }
 
   function loadDetail(slug) {
+    const cached = (typeof kkphimApi.getCachedMovieDetail === "function") ? kkphimApi.getCachedMovieDetail(slug) : null;
+    if (cached) {
+      renderDetail(cached);
+      return;
+    }
     renderLoading(currentMovie);
     kkphimApi.getMovieDetail(slug).then(function (data) {
       if (disposed) {
