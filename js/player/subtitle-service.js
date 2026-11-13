@@ -1,4 +1,5 @@
 import { parseSrt, srtToWebVtt } from "./subtitle-parser.js";
+import { resolveSubtitleUrl } from "../config/api-config.js";
 
 const SUBTITLE_TIMEOUT_MS = 15000;
 const memoryCache = new Map();
@@ -102,8 +103,9 @@ export function createSubtitleService() {
         }, SUBTITLE_TIMEOUT_MS);
       });
 
+      const targetUrl = resolveSubtitleUrl(url);
       const requestPromise = fetchImpl
-        ? fetchImpl(url, fetchOptions).then(function (response) {
+        ? fetchImpl(targetUrl, fetchOptions).then(function (response) {
             if (!response.ok) {
               throw new Error("Subtitle request returned HTTP " + response.status + ".");
             }
@@ -118,7 +120,7 @@ export function createSubtitleService() {
               return;
             }
             const xhr = new XMLHttpRequest();
-            xhr.open("GET", url, true);
+            xhr.open("GET", targetUrl, true);
             xhr.timeout = SUBTITLE_TIMEOUT_MS;
             xhr.responseType = "arraybuffer";
             xhr.onload = function () {

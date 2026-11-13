@@ -3222,6 +3222,8 @@ return {catalogSources: catalogSources, fallbackPoster: fallbackPoster};
 });
 registerModule("js/services/kkphim-api.js", function (requireModule) {
 var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
+var getApiBaseUrl = requireModule("js/config/api-config.js")["getApiBaseUrl"];
+var resolveStreamUrl = requireModule("js/config/api-config.js")["resolveStreamUrl"];
 const BASE_URL = "https://phimapi.com";
 const DEFAULT_CDN = "https://phimimg.com";
 const VSMOV_BASE_URL = "https://vsmov.com/api";
@@ -3398,7 +3400,7 @@ function parseStandardEpisodeServers(episodesArray, sourcePrefix = "KKPhim") {
           name: name,
           slug: slug,
           filename: ep.filename || name,
-          link_m3u8: directM3u8 || rawEmbed,
+          link_m3u8: resolveStreamUrl(directM3u8 || rawEmbed),
           link_embed: rawEmbed
         });
       }
@@ -3438,7 +3440,7 @@ function parseNguoncEpisodeServers(episodesArray, sourcePrefix = "NguonC") {
           name: name,
           slug: slug,
           filename: ep.filename || name,
-          link_m3u8: stream,
+          link_m3u8: resolveStreamUrl(stream),
           link_embed: embed
         });
       }
@@ -3468,6 +3470,10 @@ function createKkphimApi() {
   }
 
   return {
+    getBaseUrl() {
+      return getApiBaseUrl() || BASE_URL;
+    },
+
     getCachedMovieDetail(slug) {
       if (!slug) return null;
       const cached = detailCache.get(slug.toLowerCase().trim());
@@ -3493,7 +3499,8 @@ function createKkphimApi() {
     },
 
     getHome() {
-      return fetchJson(BASE_URL + "/v1/api/home").then(function (res) {
+      const baseUrl = getApiBaseUrl() || BASE_URL;
+      return fetchJson(baseUrl + "/v1/api/home").then(function (res) {
         const data = res && res.data ? res.data : {};
         const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
         const rawItems = Array.isArray(data.items) ? data.items : [];
@@ -3513,8 +3520,9 @@ function createKkphimApi() {
       if (pageNum === 1) {
         return this.getHome();
       }
+      const baseUrl = getApiBaseUrl() || BASE_URL;
       const category = (pageNum % 2 === 0) ? "phim-bo" : "phim-le";
-      return fetchJson(BASE_URL + "/v1/api/danh-sach/" + category + "?page=" + Math.floor(pageNum / 2 + 1)).then(function (res) {
+      return fetchJson(baseUrl + "/v1/api/danh-sach/" + category + "?page=" + Math.floor(pageNum / 2 + 1)).then(function (res) {
         const data = res && res.data ? res.data : {};
         const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
         const rawItems = Array.isArray(data.items) ? data.items : [];
@@ -3531,7 +3539,8 @@ function createKkphimApi() {
 
     getNewUpdated(page) {
       const pageNum = page && page > 0 ? page : 1;
-      return fetchJson(BASE_URL + "/v1/api/danh-sach/phim-moi-cap-nhat?page=" + pageNum).then(function (res) {
+      const baseUrl = getApiBaseUrl() || BASE_URL;
+      return fetchJson(baseUrl + "/v1/api/danh-sach/phim-moi-cap-nhat?page=" + pageNum).then(function (res) {
         const data = res && res.data ? res.data : {};
         const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
         const rawItems = Array.isArray(data.items) ? data.items : [];
@@ -3551,7 +3560,8 @@ function createKkphimApi() {
       const slug = (categorySlug || "phim-bo").trim();
       const pageNum = page && page > 0 ? page : 1;
       const limitNum = limit && limit > 0 ? limit : 24;
-      const url = BASE_URL + "/v1/api/danh-sach/" + encodeURIComponent(slug) + "?page=" + pageNum + "&limit=" + limitNum;
+      const baseUrl = getApiBaseUrl() || BASE_URL;
+      const url = baseUrl + "/v1/api/danh-sach/" + encodeURIComponent(slug) + "?page=" + pageNum + "&limit=" + limitNum;
       return fetchJson(url).then(function (res) {
         const data = res && res.data ? res.data : {};
         const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
@@ -3572,7 +3582,8 @@ function createKkphimApi() {
       const slug = (genreSlug || "hanh-dong").trim();
       const pageNum = page && page > 0 ? page : 1;
       const limitNum = limit && limit > 0 ? limit : 24;
-      const url = BASE_URL + "/v1/api/the-loai/" + encodeURIComponent(slug) + "?page=" + pageNum + "&limit=" + limitNum;
+      const baseUrl = getApiBaseUrl() || BASE_URL;
+      const url = baseUrl + "/v1/api/the-loai/" + encodeURIComponent(slug) + "?page=" + pageNum + "&limit=" + limitNum;
       return fetchJson(url).then(function (res) {
         const data = res && res.data ? res.data : {};
         const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
@@ -3627,7 +3638,8 @@ function createKkphimApi() {
       const pageNum = page > 0 ? page : 1;
       const encoded = encodeURIComponent(kw);
 
-      const kkphimPromise = fetchJson(BASE_URL + "/v1/api/tim-kiem?keyword=" + encoded + "&limit=" + limitNum + "&page=" + pageNum, DEFAULT_TIMEOUT_MS)
+      const baseUrl = getApiBaseUrl() || BASE_URL;
+      const kkphimPromise = fetchJson(baseUrl + "/v1/api/tim-kiem?keyword=" + encoded + "&limit=" + limitNum + "&page=" + pageNum, DEFAULT_TIMEOUT_MS)
         .catch(function () { return null; });
 
       const vsmovPromise = fetchJson(VSMOV_BASE_URL + "/tim-kiem?keyword=" + encoded + "&limit=" + limitNum + "&page=" + pageNum, BACKUP_TIMEOUT_MS)
@@ -3723,7 +3735,8 @@ function createKkphimApi() {
 
       const encoded = encodeURIComponent(cleanSlug);
 
-      const kkphimPromise = fetchJson(BASE_URL + "/phim/" + encoded, DEFAULT_TIMEOUT_MS)
+      const baseUrl = getApiBaseUrl() || BASE_URL;
+      const kkphimPromise = fetchJson(baseUrl + "/phim/" + encoded, DEFAULT_TIMEOUT_MS)
         .catch(function () { return null; });
 
       const vsmovPromise = fetchJson(VSMOV_BASE_URL + "/phim/" + encoded, BACKUP_TIMEOUT_MS)
@@ -3789,6 +3802,167 @@ function createKkphimApi() {
 }
 
 return {BASE_URL: BASE_URL, DEFAULT_CDN: DEFAULT_CDN, VSMOV_BASE_URL: VSMOV_BASE_URL, VSMOV_CDN: VSMOV_CDN, NGUONC_BASE_URL: NGUONC_BASE_URL, extractDirectM3u8: extractDirectM3u8, buildImageUrl: buildImageUrl, normalizeMovie: normalizeMovie, createKkphimApi: createKkphimApi};
+});
+registerModule("js/config/api-config.js", function (requireModule) {
+const PROXY_API_BASE_URL = "https://bacuflix-proxy.vercel.app";
+const ORIGINAL_API_BASE_URL = "https://phimapi.com";
+const DEFAULT_API_BASE_URL = PROXY_API_BASE_URL;
+const DEFAULT_CDN_URL = "https://phimimg.com";
+
+let currentApiBaseUrl = "";
+let currentProxyStreaming = null;
+
+function getApiBaseUrl() {
+  if (currentApiBaseUrl) {
+    return currentApiBaseUrl;
+  }
+
+  // 1. Check window.location query parameter (?proxy=... or ?api=...)
+  if (typeof window !== "undefined" && window.location && window.location.search) {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const queryProxy = params.get("proxy") || params.get("api");
+      if (queryProxy && (queryProxy.startsWith("http://") || queryProxy.startsWith("https://"))) {
+        return queryProxy.replace(/\/+$/, "");
+      }
+    } catch (_) {}
+  }
+
+  // 2. Check window.BACUFLIX_CONFIG or window.BACUFLIX_API_BASE_URL
+  if (typeof window !== "undefined") {
+    if (window.BACUFLIX_CONFIG && typeof window.BACUFLIX_CONFIG.API_BASE_URL === "string") {
+      const configured = window.BACUFLIX_CONFIG.API_BASE_URL.trim();
+      if (configured) {
+        return configured.replace(/\/+$/, "");
+      }
+    }
+    if (typeof window.BACUFLIX_API_BASE_URL === "string" && window.BACUFLIX_API_BASE_URL.trim()) {
+      return window.BACUFLIX_API_BASE_URL.trim().replace(/\/+$/, "");
+    }
+  }
+
+  // 3. Check localStorage
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      const stored = window.localStorage.getItem("bacuflix_api_base_url") ||
+        window.localStorage.getItem("bacuflix_proxy_url");
+      if (stored && typeof stored === "string" && stored.trim()) {
+        return stored.trim().replace(/\/+$/, "");
+      }
+    } catch (_) {}
+  }
+
+  // 4. Check Node process.env in test/server environments
+  if (typeof process !== "undefined" && process.env) {
+    const envUrl = process.env.BACUFLIX_API_BASE_URL || process.env.BACUFLIX_PROXY_URL;
+    if (envUrl && typeof envUrl === "string" && envUrl.trim()) {
+      return envUrl.trim().replace(/\/+$/, "");
+    }
+  }
+
+  return DEFAULT_API_BASE_URL;
+}
+
+function setApiBaseUrl(url) {
+  if (!url || typeof url !== "string") {
+    currentApiBaseUrl = "";
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        window.localStorage.removeItem("bacuflix_api_base_url");
+      } catch (_) {}
+    }
+    return;
+  }
+  const clean = url.trim().replace(/\/+$/, "");
+  currentApiBaseUrl = clean;
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      window.localStorage.setItem("bacuflix_api_base_url", clean);
+    } catch (_) {}
+  }
+}
+
+function isProxyStreamingEnabled() {
+  if (typeof currentProxyStreaming === "boolean") {
+    return currentProxyStreaming;
+  }
+
+  // If using the proxy base URL (or any custom proxy), streaming proxy is enabled
+  const activeBaseUrl = getApiBaseUrl();
+  if (activeBaseUrl !== ORIGINAL_API_BASE_URL) {
+    return true;
+  }
+
+  if (typeof window !== "undefined") {
+    if (window.BACUFLIX_CONFIG && typeof window.BACUFLIX_CONFIG.PROXY_STREAMING === "boolean") {
+      return window.BACUFLIX_CONFIG.PROXY_STREAMING;
+    }
+    if (window.localStorage) {
+      try {
+        const stored = window.localStorage.getItem("bacuflix_proxy_streaming");
+        if (stored === "true") return true;
+        if (stored === "false") return false;
+      } catch (_) {}
+    }
+  }
+
+  return false;
+}
+
+function setProxyStreamingEnabled(enabled) {
+  currentProxyStreaming = Boolean(enabled);
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      window.localStorage.setItem("bacuflix_proxy_streaming", String(Boolean(enabled)));
+    } catch (_) {}
+  }
+}
+
+function resolveStreamUrl(streamUrl) {
+  if (!streamUrl || typeof streamUrl !== "string") {
+    return "";
+  }
+  const clean = streamUrl.trim();
+  if (!clean) {
+    return "";
+  }
+
+  // If not enabled or already a proxied URL, return as-is
+  if (!isProxyStreamingEnabled() || clean.includes("/api/proxy?url=")) {
+    return clean;
+  }
+
+  // Only proxy external HTTP/HTTPS streams
+  if (clean.startsWith("http://") || clean.startsWith("https://")) {
+    const proxyBase = getApiBaseUrl().replace(/\/+$/, "");
+    return proxyBase + "/api/proxy?url=" + encodeURIComponent(clean);
+  }
+
+  return clean;
+}
+
+function resolveSubtitleUrl(subtitleUrl) {
+  if (!subtitleUrl || typeof subtitleUrl !== "string") {
+    return "";
+  }
+  const clean = subtitleUrl.trim();
+  if (!clean) {
+    return "";
+  }
+
+  if (!isProxyStreamingEnabled() || clean.includes("/api/proxy?url=")) {
+    return clean;
+  }
+
+  if (clean.startsWith("http://") || clean.startsWith("https://")) {
+    const proxyBase = getApiBaseUrl().replace(/\/+$/, "");
+    return proxyBase + "/api/proxy?url=" + encodeURIComponent(clean);
+  }
+
+  return clean;
+}
+
+return {PROXY_API_BASE_URL: PROXY_API_BASE_URL, ORIGINAL_API_BASE_URL: ORIGINAL_API_BASE_URL, DEFAULT_API_BASE_URL: DEFAULT_API_BASE_URL, DEFAULT_CDN_URL: DEFAULT_CDN_URL, getApiBaseUrl: getApiBaseUrl, setApiBaseUrl: setApiBaseUrl, isProxyStreamingEnabled: isProxyStreamingEnabled, setProxyStreamingEnabled: setProxyStreamingEnabled, resolveStreamUrl: resolveStreamUrl, resolveSubtitleUrl: resolveSubtitleUrl};
 });
 registerModule("js/services/favorites-service.js", function (requireModule) {
 const STORAGE_KEY = "kkphim_favorites";
@@ -9794,6 +9968,7 @@ return {createPlayerScreen: createPlayerScreen};
 });
 registerModule("js/player/playback-service.js", function (requireModule) {
 var createSegmentLoader = requireModule("js/player/segment-loader.js")["createSegmentLoader"];
+var resolveStreamUrl = requireModule("js/config/api-config.js")["resolveStreamUrl"];
 function createPlaybackService(video, callbacks) {
   let hls = null;
   let sourceUrl = "";
@@ -9973,7 +10148,7 @@ function createPlaybackService(video, callbacks) {
       }
       sourceUrl = "";
       cleanupMedia();
-      sourceUrl = url;
+      sourceUrl = resolveStreamUrl(url);
       failed = false;
       fallbackAttempted = false;
       video.muted = false;
@@ -10644,6 +10819,7 @@ return {createSeekController: createSeekController};
 registerModule("js/player/subtitle-service.js", function (requireModule) {
 var parseSrt = requireModule("js/player/subtitle-parser.js")["parseSrt"];
 var srtToWebVtt = requireModule("js/player/subtitle-parser.js")["srtToWebVtt"];
+var resolveSubtitleUrl = requireModule("js/config/api-config.js")["resolveSubtitleUrl"];
 const SUBTITLE_TIMEOUT_MS = 15000;
 const memoryCache = new Map();
 
@@ -10746,8 +10922,9 @@ function createSubtitleService() {
         }, SUBTITLE_TIMEOUT_MS);
       });
 
+      const targetUrl = resolveSubtitleUrl(url);
       const requestPromise = fetchImpl
-        ? fetchImpl(url, fetchOptions).then(function (response) {
+        ? fetchImpl(targetUrl, fetchOptions).then(function (response) {
             if (!response.ok) {
               throw new Error("Subtitle request returned HTTP " + response.status + ".");
             }
@@ -10762,7 +10939,7 @@ function createSubtitleService() {
               return;
             }
             const xhr = new XMLHttpRequest();
-            xhr.open("GET", url, true);
+            xhr.open("GET", targetUrl, true);
             xhr.timeout = SUBTITLE_TIMEOUT_MS;
             xhr.responseType = "arraybuffer";
             xhr.onload = function () {

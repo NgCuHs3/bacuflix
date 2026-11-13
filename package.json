@@ -10,7 +10,7 @@
     "cap:sync": "npm run build:www && node ./node_modules/@capacitor/cli/bin/capacitor sync android",
     "cap:open": "node ./node_modules/@capacitor/cli/bin/capacitor open android",
     "start": "node scripts/serve.js",
-    "test": "node tests/catalog-tests.js && node tests/kkphim-tests.js && node tests/seek-and-url-tests.js && node tests/media-session-tests.js"
+    "test": "node tests/catalog-tests.js && node tests/kkphim-tests.js && node tests/seek-and-url-tests.js && node tests/media-session-tests.js && node tests/proxy-config-tests.js"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",

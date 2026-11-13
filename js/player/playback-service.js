@@ -1,4 +1,5 @@
 import { createSegmentLoader } from "./segment-loader.js";
+import { resolveStreamUrl } from "../config/api-config.js";
 
 export function createPlaybackService(video, callbacks) {
   let hls = null;
@@ -179,7 +180,7 @@ export function createPlaybackService(video, callbacks) {
       }
       sourceUrl = "";
       cleanupMedia();
-      sourceUrl = url;
+      sourceUrl = resolveStreamUrl(url);
       failed = false;
       fallbackAttempted = false;
       video.muted = false;

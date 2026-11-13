@@ -1,4 +1,5 @@
 import { fallbackPoster } from "../config/catalog-sources.js";
+import { getApiBaseUrl, resolveStreamUrl } from "../config/api-config.js";
 
 export const BASE_URL = "https://phimapi.com";
 export const DEFAULT_CDN = "https://phimimg.com";
@@ -176,7 +177,7 @@ function parseStandardEpisodeServers(episodesArray, sourcePrefix = "KKPhim") {
           name: name,
           slug: slug,
           filename: ep.filename || name,
-          link_m3u8: directM3u8 || rawEmbed,
+          link_m3u8: resolveStreamUrl(directM3u8 || rawEmbed),
           link_embed: rawEmbed
         });
       }
@@ -216,7 +217,7 @@ function parseNguoncEpisodeServers(episodesArray, sourcePrefix = "NguonC") {
           name: name,
           slug: slug,
           filename: ep.filename || name,
-          link_m3u8: stream,
+          link_m3u8: resolveStreamUrl(stream),
           link_embed: embed
         });
       }
@@ -246,6 +247,10 @@ export function createKkphimApi() {
   }
 
   return {
+    getBaseUrl() {
+      return getApiBaseUrl() || BASE_URL;
+    },
+
     getCachedMovieDetail(slug) {
       if (!slug) return null;
       const cached = detailCache.get(slug.toLowerCase().trim());
@@ -271,7 +276,8 @@ export function createKkphimApi() {
     },
 
     getHome() {
-      return fetchJson(BASE_URL + "/v1/api/home").then(function (res) {
+      const baseUrl = getApiBaseUrl() || BASE_URL;
+      return fetchJson(baseUrl + "/v1/api/home").then(function (res) {
         const data = res && res.data ? res.data : {};
         const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
         const rawItems = Array.isArray(data.items) ? data.items : [];
@@ -291,8 +297,9 @@ export function createKkphimApi() {
       if (pageNum === 1) {
         return this.getHome();
       }
+      const baseUrl = getApiBaseUrl() || BASE_URL;
       const category = (pageNum % 2 === 0) ? "phim-bo" : "phim-le";
-      return fetchJson(BASE_URL + "/v1/api/danh-sach/" + category + "?page=" + Math.floor(pageNum / 2 + 1)).then(function (res) {
+      return fetchJson(baseUrl + "/v1/api/danh-sach/" + category + "?page=" + Math.floor(pageNum / 2 + 1)).then(function (res) {
         const data = res && res.data ? res.data : {};
         const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
         const rawItems = Array.isArray(data.items) ? data.items : [];
@@ -309,7 +316,8 @@ export function createKkphimApi() {
 
     getNewUpdated(page) {
       const pageNum = page && page > 0 ? page : 1;
-      return fetchJson(BASE_URL + "/v1/api/danh-sach/phim-moi-cap-nhat?page=" + pageNum).then(function (res) {
+      const baseUrl = getApiBaseUrl() || BASE_URL;
+      return fetchJson(baseUrl + "/v1/api/danh-sach/phim-moi-cap-nhat?page=" + pageNum).then(function (res) {
         const data = res && res.data ? res.data : {};
         const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
         const rawItems = Array.isArray(data.items) ? data.items : [];
@@ -329,7 +337,8 @@ export function createKkphimApi() {
       const slug = (categorySlug || "phim-bo").trim();
       const pageNum = page && page > 0 ? page : 1;
       const limitNum = limit && limit > 0 ? limit : 24;
-      const url = BASE_URL + "/v1/api/danh-sach/" + encodeURIComponent(slug) + "?page=" + pageNum + "&limit=" + limitNum;
+      const baseUrl = getApiBaseUrl() || BASE_URL;
+      const url = baseUrl + "/v1/api/danh-sach/" + encodeURIComponent(slug) + "?page=" + pageNum + "&limit=" + limitNum;
       return fetchJson(url).then(function (res) {
         const data = res && res.data ? res.data : {};
         const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
@@ -350,7 +359,8 @@ export function createKkphimApi() {
       const slug = (genreSlug || "hanh-dong").trim();
       const pageNum = page && page > 0 ? page : 1;
       const limitNum = limit && limit > 0 ? limit : 24;
-      const url = BASE_URL + "/v1/api/the-loai/" + encodeURIComponent(slug) + "?page=" + pageNum + "&limit=" + limitNum;
+      const baseUrl = getApiBaseUrl() || BASE_URL;
+      const url = baseUrl + "/v1/api/the-loai/" + encodeURIComponent(slug) + "?page=" + pageNum + "&limit=" + limitNum;
       return fetchJson(url).then(function (res) {
         const data = res && res.data ? res.data : {};
         const cdn = data.APP_DOMAIN_CDN_IMAGE || DEFAULT_CDN;
@@ -405,7 +415,8 @@ export function createKkphimApi() {
       const pageNum = page > 0 ? page : 1;
       const encoded = encodeURIComponent(kw);
 
-      const kkphimPromise = fetchJson(BASE_URL + "/v1/api/tim-kiem?keyword=" + encoded + "&limit=" + limitNum + "&page=" + pageNum, DEFAULT_TIMEOUT_MS)
+      const baseUrl = getApiBaseUrl() || BASE_URL;
+      const kkphimPromise = fetchJson(baseUrl + "/v1/api/tim-kiem?keyword=" + encoded + "&limit=" + limitNum + "&page=" + pageNum, DEFAULT_TIMEOUT_MS)
         .catch(function () { return null; });
 
       const vsmovPromise = fetchJson(VSMOV_BASE_URL + "/tim-kiem?keyword=" + encoded + "&limit=" + limitNum + "&page=" + pageNum, BACKUP_TIMEOUT_MS)
@@ -501,7 +512,8 @@ export function createKkphimApi() {
 
       const encoded = encodeURIComponent(cleanSlug);
 
-      const kkphimPromise = fetchJson(BASE_URL + "/phim/" + encoded, DEFAULT_TIMEOUT_MS)
+      const baseUrl = getApiBaseUrl() || BASE_URL;
+      const kkphimPromise = fetchJson(baseUrl + "/phim/" + encoded, DEFAULT_TIMEOUT_MS)
         .catch(function () { return null; });
 
       const vsmovPromise = fetchJson(VSMOV_BASE_URL + "/phim/" + encoded, BACKUP_TIMEOUT_MS)
