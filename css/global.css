@@ -5,11 +5,22 @@
   color: #FFFFFF;
   --flix-bg-primary: #08090D;
   --flix-bg-secondary: #14151B;
+  --flix-bg-card: #181A22;
+  --flix-bg-elevated: #1F222D;
   --flix-red: #E50920;
   --flix-red-bright: #FF1F35;
+  --flix-cyan-glow: #06B6D4;
+  --flix-match-green: #10B981;
+  --flix-amber-gold: #F59E0B;
   --flix-text-primary: #FFFFFF;
   --flix-text-secondary: #A1A1AA;
+  --flix-text-muted: #71717A;
   --flix-border: rgba(255, 255, 255, 0.08);
+  --flix-border-subtle: rgba(255, 255, 255, 0.05);
+  --flix-border-hover: rgba(255, 255, 255, 0.22);
+  --flix-shadow-card: 0 8px 24px rgba(0, 0, 0, 0.55);
+  --flix-shadow-card-hover: 0 16px 36px rgba(0, 0, 0, 0.75);
+  --flix-shadow-glow: 0 4px 20px rgba(229, 9, 32, 0.45);
 }
 
 * {
@@ -27,6 +38,7 @@ body,
   color: #FFFFFF;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
 }
 
 button {
@@ -35,6 +47,7 @@ button {
 
 button:focus-visible,
 a:focus-visible {
-  outline: 3px solid #FFFFFF;
+  outline: 2.5px solid #FFFFFF;
   outline-offset: 3px;
+  box-shadow: 0 0 18px var(--flix-shadow-glow);
 }

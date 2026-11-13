@@ -365,6 +365,14 @@ export function createHomeScreen(root, catalogService, actionsHandler, options) 
       if (typeof actionsHandler.onCloseDetail === "function") {
         actionsHandler.onCloseDetail();
       }
+    },
+    onSearchTag: function (tag) {
+      if (typeof handleSearchValueChange === "function") {
+        handleSearchValueChange(tag);
+        if (header && !header.classList.contains("is-scrolled")) {
+          header.classList.add("is-scrolled");
+        }
+      }
     }
   });
 

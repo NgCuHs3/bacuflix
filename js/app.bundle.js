@@ -710,6 +710,14 @@ function createHomeScreen(root, catalogService, actionsHandler, options) {
       if (typeof actionsHandler.onCloseDetail === "function") {
         actionsHandler.onCloseDetail();
       }
+    },
+    onSearchTag: function (tag) {
+      if (typeof handleSearchValueChange === "function") {
+        handleSearchValueChange(tag);
+        if (header && !header.classList.contains("is-scrolled")) {
+          header.classList.add("is-scrolled");
+        }
+      }
     }
   });
 
@@ -6041,6 +6049,9 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
   let currentMovie = null;
   let detailData = null;
   let activeServerIndex = 0;
+  let activeChunkIndex = 0;
+  let epFilterQuery = "";
+  const CHUNK_SIZE = 50;
   let focusableElements = [];
   let currentFocusIndex = 0;
 
@@ -6049,6 +6060,8 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
   let cachedFavBtn = null;
   let cachedShareBtn = null;
   let cachedServerTabs = [];
+  let cachedChunkTabs = [];
+  let cachedEpSearchInput = null;
   let cachedEpisodeBtns = [];
   let cachedEpContainer = null;
   let cachedGridCols = 5;
@@ -6058,7 +6071,7 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
   }
 
   function updateFocusables() {
-    focusableElements = Array.from(modal.querySelectorAll('button:not([disabled]), [tabindex="0"]'));
+    focusableElements = Array.from(modal.querySelectorAll('button:not([disabled]), input:not([disabled]), [tabindex="0"]'));
   }
 
   function updateModalLayoutCache() {
@@ -6067,6 +6080,8 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
     cachedFavBtn = modal.querySelector(".movie-detail-fav-btn");
     cachedShareBtn = modal.querySelector(".movie-detail-share-btn");
     cachedServerTabs = Array.from(modal.querySelectorAll(".movie-server-tab"));
+    cachedChunkTabs = Array.from(modal.querySelectorAll(".movie-chunk-tab"));
+    cachedEpSearchInput = modal.querySelector(".movie-ep-search-input");
     cachedEpisodeBtns = Array.from(modal.querySelectorAll(".movie-episode-btn"));
     cachedEpContainer = modal.querySelector(".movie-episodes-container");
     const epGrid = modal.querySelector(".movie-detail-episodes-grid");
@@ -6159,6 +6174,42 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
 
     const descText = cleanHtmlContent(movie.content);
 
+    // Clickable Category & Country Tags
+    let tagsHtml = "";
+    const categories = Array.isArray(movie.categories) ? movie.categories : [];
+    const countries = Array.isArray(movie.countries) ? movie.countries : [];
+    if (categories.length > 0 || countries.length > 0) {
+      tagsHtml += '<div class="movie-detail-tags-row">';
+      if (categories.length > 0) {
+        tagsHtml += '<span class="movie-detail-tags-label">Thể loại:</span>';
+        categories.forEach(function (cat) {
+          tagsHtml += '<button type="button" class="movie-tag-chip" data-tag="' + cat.replace(/"/g, '&quot;') + '">' + cat + '</button>';
+        });
+      }
+      if (countries.length > 0) {
+        tagsHtml += '<span class="movie-detail-tags-label" style="margin-left:8px;">Quốc gia:</span>';
+        countries.forEach(function (c) {
+          tagsHtml += '<button type="button" class="movie-tag-chip" data-tag="' + c.replace(/"/g, '&quot;') + '">' + c + '</button>';
+        });
+      }
+      tagsHtml += '</div>';
+    }
+
+    // Clickable Actor Chips
+    let actorsHtml = "";
+    const actors = Array.isArray(movie.actors) ? movie.actors : [];
+    if (actors.length > 0) {
+      actorsHtml += '<div class="movie-detail-tags-row movie-detail-actors-row">';
+      actorsHtml += '<span class="movie-detail-tags-label">Diễn viên:</span>';
+      actors.slice(0, 8).forEach(function (actor) {
+        actorsHtml += '<button type="button" class="movie-actor-chip" data-tag="' + actor.replace(/"/g, '&quot;') + '">' +
+          '<svg class="movie-actor-icon" viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>' +
+          '<span>' + actor + '</span>' +
+        '</button>';
+      });
+      actorsHtml += '</div>';
+    }
+
     // Server tabs HTML
     let serverTabsHtml = "";
     if (episodes.length > 0) {
@@ -6170,9 +6221,61 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
       serverTabsHtml += '</div>';
     }
 
-    // Episode list HTML
+    // Episode list & Chunking
     const currentServer = episodes[activeServerIndex] || episodes[0];
     const serverData = (currentServer && Array.isArray(currentServer.server_data)) ? currentServer.server_data : [];
+    const totalEpisodesCount = serverData.length;
+    const totalChunks = Math.ceil(totalEpisodesCount / CHUNK_SIZE);
+    if (activeChunkIndex >= totalChunks && totalChunks > 0) {
+      activeChunkIndex = 0;
+    }
+
+    let chunkTabsHtml = "";
+    if (totalChunks > 1 && !epFilterQuery.trim()) {
+      chunkTabsHtml = '<div class="movie-ep-chunks-bar" role="tablist" aria-label="Khoảng tập">';
+      for (let c = 0; c < totalChunks; c++) {
+        const startNum = c * CHUNK_SIZE + 1;
+        const endNum = Math.min((c + 1) * CHUNK_SIZE, totalEpisodesCount);
+        const isChunkActive = c === activeChunkIndex;
+        chunkTabsHtml += '<button type="button" class="movie-chunk-tab' + (isChunkActive ? ' is-active' : '') + '" role="tab" aria-selected="' + (isChunkActive ? 'true' : 'false') + '" data-chunk-index="' + c + '">Tập ' + startNum + ' – ' + endNum + '</button>';
+      }
+      chunkTabsHtml += '</div>';
+    }
+
+    let searchEpisodeHtml = "";
+    if (totalEpisodesCount >= 12) {
+      searchEpisodeHtml = '' +
+        '<div class="movie-ep-search-wrap">' +
+          '<span class="movie-ep-search-icon" aria-hidden="true">' +
+            '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>' +
+          '</span>' +
+          '<input type="text" class="movie-ep-search-input" placeholder="Tìm số tập..." value="' + (epFilterQuery ? epFilterQuery.replace(/"/g, '&quot;') : '') + '" aria-label="Tìm tập phim">' +
+          (epFilterQuery ? '<button type="button" class="movie-ep-search-clear" aria-label="Xóa tìm kiếm tập">×</button>' : '') +
+        '</div>';
+    }
+
+    // Filter or Slice episodes to display
+    let displayedEpisodes = [];
+    const trimmedQuery = epFilterQuery.trim().toLowerCase();
+    if (trimmedQuery) {
+      serverData.forEach(function (ep, epIdx) {
+        const name = (ep.name || '').toLowerCase();
+        const epNum = String(epIdx + 1);
+        if (name.includes(trimmedQuery) || epNum === trimmedQuery) {
+          displayedEpisodes.push({ ep: ep, originalIndex: epIdx });
+        }
+      });
+    } else if (totalChunks > 1) {
+      const startIdx = activeChunkIndex * CHUNK_SIZE;
+      const endIdx = Math.min((activeChunkIndex + 1) * CHUNK_SIZE, totalEpisodesCount);
+      for (let i = startIdx; i < endIdx; i++) {
+        displayedEpisodes.push({ ep: serverData[i], originalIndex: i });
+      }
+    } else {
+      serverData.forEach(function (ep, epIdx) {
+        displayedEpisodes.push({ ep: ep, originalIndex: epIdx });
+      });
+    }
 
     let episodesHtml = "";
     if (isLoading) {
@@ -6192,9 +6295,11 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
           '<p class="movie-detail-error-message" style="color: #ef4444; margin-bottom: 12px;">' + errorMessage + '</p>' +
           '<button type="button" class="movie-detail-btn movie-detail-btn-retry">Thử lại</button>' +
         '</div>';
-    } else if (serverData.length > 0) {
+    } else if (displayedEpisodes.length > 0) {
       episodesHtml = '<div class="movie-detail-episodes-grid" role="group" aria-label="Danh sách tập">';
-      serverData.forEach(function (ep, epIdx) {
+      displayedEpisodes.forEach(function (item) {
+        const ep = item.ep;
+        const epIdx = item.originalIndex;
         const epResume = getEpisodeResumeInfo(movie.slug, epIdx);
         const isCurrentEp = Boolean(historyItem && historyItem.currentEpisodeIndex === epIdx);
         const extraClass = (isCurrentEp ? " is-current-episode" : "") + (epResume ? " is-watched-episode" : "");
@@ -6204,7 +6309,7 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
       });
       episodesHtml += '</div>';
     } else {
-      episodesHtml = '<p class="movie-episodes-empty">Chưa có tập phim nào trên server này.</p>';
+      episodesHtml = '<p class="movie-episodes-empty">' + (epFilterQuery ? 'Không tìm thấy tập phim nào khớp với "' + epFilterQuery + '".' : 'Chưa có tập phim nào trên server này.') + '</p>';
     }
 
     let resumeBtnHtml = "";
@@ -6240,7 +6345,9 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
           '<h1 class="movie-detail-title">' + (movie.title || '') + '</h1>' +
           (movie.originTitle ? '<h2 class="movie-detail-origin">' + movie.originTitle + '</h2>' : '') +
           '<div class="movie-detail-badges">' + badgesHtml + '</div>' +
+          tagsHtml +
           '<p class="movie-detail-desc">' + descText + '</p>' +
+          actorsHtml +
           '<div class="movie-detail-actions">' +
             resumeBtnHtml +
             '<button type="button" class="movie-detail-btn movie-detail-fav-btn' + (favActive ? ' is-favorite' : '') + '" aria-pressed="' + (favActive ? 'true' : 'false') + '">' +
@@ -6252,8 +6359,12 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
               '<span class="share-label">Chia sẻ</span>' +
             '</button>' +
           '</div>' +
-          '<div class="movie-detail-section-title">Chọn tập phim:</div>' +
+          '<div class="movie-detail-episodes-header">' +
+            '<div class="movie-detail-section-title">Chọn tập phim (' + totalEpisodesCount + ' tập):</div>' +
+            searchEpisodeHtml +
+          '</div>' +
           serverTabsHtml +
+          chunkTabsHtml +
           '<div class="movie-episodes-container">' + episodesHtml + '</div>' +
         '</div>' +
       '</div>';
@@ -6395,6 +6506,59 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
       });
     });
 
+    // Bind Tag Chips (Categories, Countries, Actors)
+    const tagChips = modal.querySelectorAll(".movie-tag-chip, .movie-actor-chip");
+    tagChips.forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        const tag = chip.dataset.tag;
+        if (tag && options && typeof options.onSearchTag === "function") {
+          close();
+          options.onSearchTag(tag);
+        }
+      });
+    });
+
+    // Bind Chunk Tabs
+    const chunkTabs = modal.querySelectorAll(".movie-chunk-tab");
+    chunkTabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        const cIdx = parseInt(tab.dataset.chunkIndex, 10);
+        if (!isNaN(cIdx) && cIdx !== activeChunkIndex) {
+          activeChunkIndex = cIdx;
+          renderDetail(detailData);
+        }
+      });
+    });
+
+    // Bind Quick Episode Search Input
+    const epSearchInput = modal.querySelector(".movie-ep-search-input");
+    if (epSearchInput) {
+      epSearchInput.addEventListener("input", function () {
+        epFilterQuery = epSearchInput.value;
+        renderDetail(detailData);
+        const refreshedInput = modal.querySelector(".movie-ep-search-input");
+        if (refreshedInput) {
+          refreshedInput.focus();
+          refreshedInput.setSelectionRange(refreshedInput.value.length, refreshedInput.value.length);
+        }
+      });
+      epSearchInput.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") {
+          epFilterQuery = "";
+          renderDetail(detailData);
+          e.stopPropagation();
+        }
+      });
+    }
+
+    const epSearchClear = modal.querySelector(".movie-ep-search-clear");
+    if (epSearchClear) {
+      epSearchClear.addEventListener("click", function () {
+        epFilterQuery = "";
+        renderDetail(detailData);
+      });
+    }
+
     // Set initial focus: current/watched episode button, or resume/favorite button if no episodes
     updateModalLayoutCache();
     const isMobileView = (typeof window !== "undefined" && window.innerWidth <= 767) ||
@@ -6473,6 +6637,8 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
   function open(movie) {
     currentMovie = movie;
     activeServerIndex = 0;
+    activeChunkIndex = 0;
+    epFilterQuery = "";
     detailData = null;
     parentContainer.appendChild(overlay);
     if (options && typeof options.onOpen === "function") {
@@ -6523,6 +6689,8 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
       const favBtn = cachedFavBtn;
       const shareBtn = cachedShareBtn;
       const serverTabs = cachedServerTabs;
+      const chunkTabs = cachedChunkTabs;
+      const epSearchInput = cachedEpSearchInput;
       const episodeBtns = cachedEpisodeBtns;
       const epContainer = cachedEpContainer;
 
@@ -6553,6 +6721,8 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
             shareBtn.focus();
           } else if (serverTabs.length > 0) {
             serverTabs[0].focus();
+          } else if (chunkTabs.length > 0) {
+            chunkTabs[0].focus();
           } else if (episodeBtns.length > 0) {
             episodeBtns[0].focus();
             ensureEpVisible(episodeBtns[0]);
@@ -6561,12 +6731,30 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
         } else if (activeEl === resumeBtn || activeEl === favBtn || activeEl === shareBtn) {
           if (serverTabs.length > 0) {
             serverTabs[0].focus();
+          } else if (chunkTabs.length > 0) {
+            chunkTabs[0].focus();
           } else if (episodeBtns.length > 0) {
             episodeBtns[0].focus();
             ensureEpVisible(episodeBtns[0]);
           }
           return true;
         } else if (serverTabs.includes(activeEl)) {
+          if (chunkTabs.length > 0) {
+            chunkTabs[0].focus();
+          } else if (epSearchInput) {
+            epSearchInput.focus();
+          } else if (episodeBtns.length > 0) {
+            episodeBtns[0].focus();
+            ensureEpVisible(episodeBtns[0]);
+          }
+          return true;
+        } else if (chunkTabs.includes(activeEl)) {
+          if (episodeBtns.length > 0) {
+            episodeBtns[0].focus();
+            ensureEpVisible(episodeBtns[0]);
+          }
+          return true;
+        } else if (activeEl === epSearchInput) {
           if (episodeBtns.length > 0) {
             episodeBtns[0].focus();
             ensureEpVisible(episodeBtns[0]);
@@ -6597,6 +6785,10 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
           if (nextIdx >= 0) {
             episodeBtns[nextIdx].focus();
             ensureEpVisible(episodeBtns[nextIdx]);
+          } else if (chunkTabs.length > 0) {
+            chunkTabs[Math.min(activeChunkIndex, chunkTabs.length - 1)].focus();
+          } else if (epSearchInput) {
+            epSearchInput.focus();
           } else if (serverTabs.length > 0) {
             serverTabs[Math.min(activeServerIndex, serverTabs.length - 1)].focus();
           } else if (resumeBtn) {
@@ -6605,6 +6797,20 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
             shareBtn.focus();
           } else if (favBtn) {
             favBtn.focus();
+          }
+          return true;
+        } else if (chunkTabs.includes(activeEl)) {
+          if (serverTabs.length > 0) {
+            serverTabs[Math.min(activeServerIndex, serverTabs.length - 1)].focus();
+          } else if (resumeBtn) {
+            resumeBtn.focus();
+          }
+          return true;
+        } else if (activeEl === epSearchInput) {
+          if (serverTabs.length > 0) {
+            serverTabs[Math.min(activeServerIndex, serverTabs.length - 1)].focus();
+          } else if (resumeBtn) {
+            resumeBtn.focus();
           }
           return true;
         } else if (serverTabs.includes(activeEl)) {
@@ -6635,6 +6841,12 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
         } else if (activeEl === favBtn && resumeBtn) {
           resumeBtn.focus();
           return true;
+        } else if (chunkTabs.includes(activeEl)) {
+          const cIdx = chunkTabs.indexOf(activeEl);
+          if (cIdx > 0) {
+            chunkTabs[cIdx - 1].focus();
+          }
+          return true;
         } else if (episodeBtns.includes(activeEl)) {
           const epIdx = episodeBtns.indexOf(activeEl);
           if (epIdx > 0) {
@@ -6657,7 +6869,13 @@ function createMovieDetailModal(parentContainer, kkphimApi, options) {
           return true;
         }
       } else if (key.direction === "right") {
-        if (activeEl === resumeBtn) {
+        if (chunkTabs.includes(activeEl)) {
+          const cIdx = chunkTabs.indexOf(activeEl);
+          if (cIdx < chunkTabs.length - 1) {
+            chunkTabs[cIdx + 1].focus();
+          }
+          return true;
+        } else if (activeEl === resumeBtn) {
           if (favBtn) {
             favBtn.focus();
           } else if (shareBtn) {
