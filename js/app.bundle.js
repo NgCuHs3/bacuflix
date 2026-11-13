@@ -3918,6 +3918,34 @@ function setProxyStreamingEnabled(enabled) {
   }
 }
 
+const DOMESTIC_STREAM_HOSTS = [
+  "phim1280.tv",
+  "kvp726.com",
+  "kkphimplayer6.com",
+  "apiaz.xyz",
+  "abfedgecanme.com",
+  "streamc.xyz",
+  "streamvsmov.com",
+  "vsmov.com",
+  "opstream.com",
+  "opstream1.com",
+  "opstream2.com",
+  "opstream3.com",
+  "bytefury.top"
+];
+
+function isDomesticStream(url) {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    return DOMESTIC_STREAM_HOSTS.some(d => host === d || host.endsWith("." + d));
+  } catch (_) {
+    const lower = url.toLowerCase();
+    return DOMESTIC_STREAM_HOSTS.some(d => lower.includes(d));
+  }
+}
+
 function resolveStreamUrl(streamUrl) {
   if (!streamUrl || typeof streamUrl !== "string") {
     return "";
@@ -3925,6 +3953,13 @@ function resolveStreamUrl(streamUrl) {
   const clean = streamUrl.trim();
   if (!clean) {
     return "";
+  }
+
+  // Domestic stream CDNs (phim1280.tv, kvp726.com, streamc.xyz, etc.) enforce strict IP geo-blocking
+  // and require direct connection from domestic devices. Routing them through international cloud proxies
+  // (like Vercel in the US) breaks playback with 404 errors. They already have CORS enabled.
+  if (isDomesticStream(clean)) {
+    return clean;
   }
 
   // If not enabled or already a proxied URL, return as-is
@@ -3962,7 +3997,7 @@ function resolveSubtitleUrl(subtitleUrl) {
   return clean;
 }
 
-return {PROXY_API_BASE_URL: PROXY_API_BASE_URL, ORIGINAL_API_BASE_URL: ORIGINAL_API_BASE_URL, DEFAULT_API_BASE_URL: DEFAULT_API_BASE_URL, DEFAULT_CDN_URL: DEFAULT_CDN_URL, getApiBaseUrl: getApiBaseUrl, setApiBaseUrl: setApiBaseUrl, isProxyStreamingEnabled: isProxyStreamingEnabled, setProxyStreamingEnabled: setProxyStreamingEnabled, resolveStreamUrl: resolveStreamUrl, resolveSubtitleUrl: resolveSubtitleUrl};
+return {PROXY_API_BASE_URL: PROXY_API_BASE_URL, ORIGINAL_API_BASE_URL: ORIGINAL_API_BASE_URL, DEFAULT_API_BASE_URL: DEFAULT_API_BASE_URL, DEFAULT_CDN_URL: DEFAULT_CDN_URL, getApiBaseUrl: getApiBaseUrl, setApiBaseUrl: setApiBaseUrl, isProxyStreamingEnabled: isProxyStreamingEnabled, setProxyStreamingEnabled: setProxyStreamingEnabled, DOMESTIC_STREAM_HOSTS: DOMESTIC_STREAM_HOSTS, isDomesticStream: isDomesticStream, resolveStreamUrl: resolveStreamUrl, resolveSubtitleUrl: resolveSubtitleUrl};
 });
 registerModule("js/services/favorites-service.js", function (requireModule) {
 const STORAGE_KEY = "kkphim_favorites";

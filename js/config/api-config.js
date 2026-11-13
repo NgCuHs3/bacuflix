@@ -112,6 +112,34 @@ export function setProxyStreamingEnabled(enabled) {
   }
 }
 
+export const DOMESTIC_STREAM_HOSTS = [
+  "phim1280.tv",
+  "kvp726.com",
+  "kkphimplayer6.com",
+  "apiaz.xyz",
+  "abfedgecanme.com",
+  "streamc.xyz",
+  "streamvsmov.com",
+  "vsmov.com",
+  "opstream.com",
+  "opstream1.com",
+  "opstream2.com",
+  "opstream3.com",
+  "bytefury.top"
+];
+
+export function isDomesticStream(url) {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    return DOMESTIC_STREAM_HOSTS.some(d => host === d || host.endsWith("." + d));
+  } catch (_) {
+    const lower = url.toLowerCase();
+    return DOMESTIC_STREAM_HOSTS.some(d => lower.includes(d));
+  }
+}
+
 export function resolveStreamUrl(streamUrl) {
   if (!streamUrl || typeof streamUrl !== "string") {
     return "";
@@ -119,6 +147,13 @@ export function resolveStreamUrl(streamUrl) {
   const clean = streamUrl.trim();
   if (!clean) {
     return "";
+  }
+
+  // Domestic stream CDNs (phim1280.tv, kvp726.com, streamc.xyz, etc.) enforce strict IP geo-blocking
+  // and require direct connection from domestic devices. Routing them through international cloud proxies
+  // (like Vercel in the US) breaks playback with 404 errors. They already have CORS enabled.
+  if (isDomesticStream(clean)) {
+    return clean;
   }
 
   // If not enabled or already a proxied URL, return as-is
