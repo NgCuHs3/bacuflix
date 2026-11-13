@@ -1,10 +1,105 @@
-export const PROXY_API_BASE_URL = "https://bacuflix-proxy.vercel.app";
 export const ORIGINAL_API_BASE_URL = "https://phimapi.com";
-export const DEFAULT_API_BASE_URL = PROXY_API_BASE_URL;
+export const PROXY_API_BASE_URL = "https://bacuflix-proxy.vercel.app";
+export const DEFAULT_API_BASE_URL = ORIGINAL_API_BASE_URL;
 export const DEFAULT_CDN_URL = "https://phimimg.com";
 
 let currentApiBaseUrl = "";
 let currentProxyStreaming = null;
+let activeDetectionPromise = null;
+
+export function pingApiServer(url = ORIGINAL_API_BASE_URL, timeoutMs = 2000) {
+  const fetchFn = (typeof window !== "undefined" && typeof window.fetch === "function")
+    ? window.fetch.bind(window)
+    : (typeof fetch === "function" ? fetch : null);
+
+  if (!fetchFn) {
+    return Promise.resolve(false);
+  }
+
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  let timer = 0;
+  const target = (url || ORIGINAL_API_BASE_URL).replace(/\/+$/, "");
+  const pingReq = fetchFn(target + "/v1/api/home", {
+    method: "GET",
+    signal: controller ? controller.signal : undefined
+  }).then(function (res) {
+    return Boolean(res && res.ok);
+  }).catch(function () {
+    return false;
+  });
+
+  const timeoutReq = new Promise(function (resolve) {
+    timer = setTimeout(function () {
+      if (controller) {
+        try { controller.abort(); } catch (_) {}
+      }
+      resolve(false);
+    }, timeoutMs);
+  });
+
+  return Promise.race([pingReq, timeoutReq]).then(function (result) {
+    clearTimeout(timer);
+    return Boolean(result);
+  });
+}
+
+export function detectBestApiBaseUrl(timeoutMs = 2000) {
+  if (activeDetectionPromise) {
+    return activeDetectionPromise;
+  }
+
+  activeDetectionPromise = (async function () {
+    // 1. If explicitly configured by user via query param or localStorage, respect it
+    if (typeof window !== "undefined") {
+      if (window.location && window.location.search) {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const q = params.get("proxy") || params.get("api");
+          if (q && (q.startsWith("http://") || q.startsWith("https://"))) {
+            const url = q.replace(/\/+$/, "");
+            setApiBaseUrl(url);
+            return url;
+          }
+        } catch (_) {}
+      }
+      if (window.BACUFLIX_CONFIG && typeof window.BACUFLIX_CONFIG.API_BASE_URL === "string" && window.BACUFLIX_CONFIG.API_BASE_URL.trim()) {
+        const url = window.BACUFLIX_CONFIG.API_BASE_URL.trim().replace(/\/+$/, "");
+        setApiBaseUrl(url);
+        return url;
+      }
+      if (window.localStorage) {
+        try {
+          const stored = window.localStorage.getItem("bacuflix_api_base_url");
+          if (stored && stored.trim()) {
+            const url = stored.trim().replace(/\/+$/, "");
+            setApiBaseUrl(url);
+            return url;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 2. Ping original movie server (phimapi.com) first
+    const isOriginalReachable = await pingApiServer(ORIGINAL_API_BASE_URL, timeoutMs);
+    if (isOriginalReachable) {
+      setApiBaseUrl(ORIGINAL_API_BASE_URL);
+      return ORIGINAL_API_BASE_URL;
+    }
+
+    // 3. Fallback to proxy server if original server is unreachable or DNS blocked
+    setApiBaseUrl(PROXY_API_BASE_URL);
+    return PROXY_API_BASE_URL;
+  })();
+
+  return activeDetectionPromise;
+}
+
+// Automatically trigger server ping and best URL detection in browser on startup
+if (typeof window !== "undefined") {
+  try {
+    detectBestApiBaseUrl();
+  } catch (_) {}
+}
 
 export function getApiBaseUrl() {
   if (currentApiBaseUrl) {
@@ -60,6 +155,7 @@ export function getApiBaseUrl() {
 export function setApiBaseUrl(url) {
   if (!url || typeof url !== "string") {
     currentApiBaseUrl = "";
+    activeDetectionPromise = null;
     if (typeof window !== "undefined" && window.localStorage) {
       try {
         window.localStorage.removeItem("bacuflix_api_base_url");
@@ -69,6 +165,7 @@ export function setApiBaseUrl(url) {
   }
   const clean = url.trim().replace(/\/+$/, "");
   currentApiBaseUrl = clean;
+  activeDetectionPromise = Promise.resolve(clean);
   if (typeof window !== "undefined" && window.localStorage) {
     try {
       window.localStorage.setItem("bacuflix_api_base_url", clean);

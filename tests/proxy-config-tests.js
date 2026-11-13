@@ -19,16 +19,22 @@ import {
   isProxyStreamingEnabled,
   setProxyStreamingEnabled,
   resolveStreamUrl,
-  resolveSubtitleUrl
+  resolveSubtitleUrl,
+  pingApiServer,
+  detectBestApiBaseUrl
 } from "../js/config/api-config.js";
 import { createKkphimApi, BASE_URL } from "../js/services/kkphim-api.js";
 
 console.log("Starting Frontend Proxy Configuration Integration Tests...");
 
-// 1. Default configuration checks (Proxy enabled by default)
-assert.equal(getApiBaseUrl(), PROXY_API_BASE_URL, "Default API base URL should be https://bacuflix-proxy.vercel.app");
+// 1. Initial configuration checks (Original server is default target before detection)
+assert.equal(DEFAULT_API_BASE_URL, ORIGINAL_API_BASE_URL, "Default API base URL should be https://phimapi.com");
 assert.equal(BASE_URL, "https://phimapi.com", "BASE_URL constant should remain https://phimapi.com for compatibility");
-assert.equal(isProxyStreamingEnabled(), true, "Proxy streaming should be enabled by default");
+
+// Explicitly set proxy to test proxy behaviors
+setApiBaseUrl(PROXY_API_BASE_URL);
+assert.equal(getApiBaseUrl(), PROXY_API_BASE_URL, "getApiBaseUrl should return proxy URL when set");
+assert.equal(isProxyStreamingEnabled(), true, "Proxy streaming should be enabled when proxy is active");
 
 // Domestic CDN streams (phim1280.tv, kvp726.com) must NOT be proxied through US cloud proxies
 const domesticStream = "https://s2.phim1280.tv/20231021/index.m3u8";
@@ -62,7 +68,7 @@ assert.equal(
   "Subtitle URL should be proxied by default"
 );
 
-console.log("✓ Default proxy configuration verified.");
+console.log("✓ Proxy configuration verified.");
 
 // 2. Switching to Original Upstream (Direct without proxy)
 setApiBaseUrl(ORIGINAL_API_BASE_URL);
@@ -78,14 +84,30 @@ assert.equal(resolveSubtitleUrl(directSub), directSub, "Subtitle URL should not 
 
 console.log("✓ Switching to original upstream verified.");
 
-// 3. Reset back to default proxy
+// 3. Reset back to default
 setApiBaseUrl("");
-assert.equal(getApiBaseUrl(), DEFAULT_API_BASE_URL, "Should revert to default proxy API base URL");
-assert.equal(isProxyStreamingEnabled(), true, "Proxy streaming should revert to enabled");
-assert.equal(resolveStreamUrl(domesticStream), domesticStream, "Domestic stream URL should remain direct");
-assert.equal(resolveStreamUrl(externalStream), proxiedExternalStream, "External stream URL should revert to proxied URL");
-assert.equal(resolveSubtitleUrl(directSub), proxiedSub, "Subtitle URL should revert to proxied URL");
+assert.equal(getApiBaseUrl(), DEFAULT_API_BASE_URL, "Should revert to default API base URL");
 
-console.log("✓ Reversion to default proxy verified.");
+console.log("✓ Reversion to default verified.");
+
+// 4. Test Server Ping & Fallback detection
+// Mock global fetch to test auto-fallback when original server is unreachable
+const originalFetch = global.fetch;
+global.fetch = async (url) => {
+  if (url.includes("phimapi.com")) {
+    throw new Error("DNS resolution blocked by ISP");
+  }
+  return { ok: true, json: async () => ({ status: true }) };
+};
+
+const detectedUrl = await detectBestApiBaseUrl(500);
+assert.equal(detectedUrl, PROXY_API_BASE_URL, "Should automatically detect and switch to proxy when original is blocked");
+assert.equal(getApiBaseUrl(), PROXY_API_BASE_URL, "Active URL should be updated to proxy");
+
+// Restore fetch
+global.fetch = originalFetch;
+setApiBaseUrl("");
+
+console.log("✓ Server ping & automatic proxy fallback verified.");
 
 console.log("\nALL FRONTEND PROXY CONFIGURATION INTEGRATION TESTS PASSED SUCCESSFULLY!\n");

@@ -3223,7 +3223,10 @@ return {catalogSources: catalogSources, fallbackPoster: fallbackPoster};
 registerModule("js/services/kkphim-api.js", function (requireModule) {
 var fallbackPoster = requireModule("js/config/catalog-sources.js")["fallbackPoster"];
 var getApiBaseUrl = requireModule("js/config/api-config.js")["getApiBaseUrl"];
+var setApiBaseUrl = requireModule("js/config/api-config.js")["setApiBaseUrl"];
 var resolveStreamUrl = requireModule("js/config/api-config.js")["resolveStreamUrl"];
+var PROXY_API_BASE_URL = requireModule("js/config/api-config.js")["PROXY_API_BASE_URL"];
+var ORIGINAL_API_BASE_URL = requireModule("js/config/api-config.js")["ORIGINAL_API_BASE_URL"];
 const BASE_URL = "https://phimapi.com";
 const DEFAULT_CDN = "https://phimimg.com";
 const VSMOV_BASE_URL = "https://vsmov.com/api";
@@ -3342,6 +3345,14 @@ function fetchJson(url, timeoutMs = DEFAULT_TIMEOUT_MS) {
       return data;
     }, function (error) {
       clearTimeout(timer);
+      // Auto-fallback: If request failed on ORIGINAL_API_BASE_URL (DNS blocked, timeout, network error),
+      // seamlessly switch to PROXY_API_BASE_URL and retry once immediately.
+      if (url.startsWith(ORIGINAL_API_BASE_URL)) {
+        console.warn("[KKPhim API] Original server failed or DNS blocked, falling back to proxy...", error.message);
+        setApiBaseUrl(PROXY_API_BASE_URL);
+        const fallbackUrl = url.replace(ORIGINAL_API_BASE_URL, PROXY_API_BASE_URL);
+        return fetchJson(fallbackUrl, timeoutMs);
+      }
       throw error;
     });
   }
@@ -3804,13 +3815,108 @@ function createKkphimApi() {
 return {BASE_URL: BASE_URL, DEFAULT_CDN: DEFAULT_CDN, VSMOV_BASE_URL: VSMOV_BASE_URL, VSMOV_CDN: VSMOV_CDN, NGUONC_BASE_URL: NGUONC_BASE_URL, extractDirectM3u8: extractDirectM3u8, buildImageUrl: buildImageUrl, normalizeMovie: normalizeMovie, createKkphimApi: createKkphimApi};
 });
 registerModule("js/config/api-config.js", function (requireModule) {
-const PROXY_API_BASE_URL = "https://bacuflix-proxy.vercel.app";
 const ORIGINAL_API_BASE_URL = "https://phimapi.com";
-const DEFAULT_API_BASE_URL = PROXY_API_BASE_URL;
+const PROXY_API_BASE_URL = "https://bacuflix-proxy.vercel.app";
+const DEFAULT_API_BASE_URL = ORIGINAL_API_BASE_URL;
 const DEFAULT_CDN_URL = "https://phimimg.com";
 
 let currentApiBaseUrl = "";
 let currentProxyStreaming = null;
+let activeDetectionPromise = null;
+
+function pingApiServer(url = ORIGINAL_API_BASE_URL, timeoutMs = 2000) {
+  const fetchFn = (typeof window !== "undefined" && typeof window.fetch === "function")
+    ? window.fetch.bind(window)
+    : (typeof fetch === "function" ? fetch : null);
+
+  if (!fetchFn) {
+    return Promise.resolve(false);
+  }
+
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  let timer = 0;
+  const target = (url || ORIGINAL_API_BASE_URL).replace(/\/+$/, "");
+  const pingReq = fetchFn(target + "/v1/api/home", {
+    method: "GET",
+    signal: controller ? controller.signal : undefined
+  }).then(function (res) {
+    return Boolean(res && res.ok);
+  }).catch(function () {
+    return false;
+  });
+
+  const timeoutReq = new Promise(function (resolve) {
+    timer = setTimeout(function () {
+      if (controller) {
+        try { controller.abort(); } catch (_) {}
+      }
+      resolve(false);
+    }, timeoutMs);
+  });
+
+  return Promise.race([pingReq, timeoutReq]).then(function (result) {
+    clearTimeout(timer);
+    return Boolean(result);
+  });
+}
+
+function detectBestApiBaseUrl(timeoutMs = 2000) {
+  if (activeDetectionPromise) {
+    return activeDetectionPromise;
+  }
+
+  activeDetectionPromise = (async function () {
+    // 1. If explicitly configured by user via query param or localStorage, respect it
+    if (typeof window !== "undefined") {
+      if (window.location && window.location.search) {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const q = params.get("proxy") || params.get("api");
+          if (q && (q.startsWith("http://") || q.startsWith("https://"))) {
+            const url = q.replace(/\/+$/, "");
+            setApiBaseUrl(url);
+            return url;
+          }
+        } catch (_) {}
+      }
+      if (window.BACUFLIX_CONFIG && typeof window.BACUFLIX_CONFIG.API_BASE_URL === "string" && window.BACUFLIX_CONFIG.API_BASE_URL.trim()) {
+        const url = window.BACUFLIX_CONFIG.API_BASE_URL.trim().replace(/\/+$/, "");
+        setApiBaseUrl(url);
+        return url;
+      }
+      if (window.localStorage) {
+        try {
+          const stored = window.localStorage.getItem("bacuflix_api_base_url");
+          if (stored && stored.trim()) {
+            const url = stored.trim().replace(/\/+$/, "");
+            setApiBaseUrl(url);
+            return url;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 2. Ping original movie server (phimapi.com) first
+    const isOriginalReachable = await pingApiServer(ORIGINAL_API_BASE_URL, timeoutMs);
+    if (isOriginalReachable) {
+      setApiBaseUrl(ORIGINAL_API_BASE_URL);
+      return ORIGINAL_API_BASE_URL;
+    }
+
+    // 3. Fallback to proxy server if original server is unreachable or DNS blocked
+    setApiBaseUrl(PROXY_API_BASE_URL);
+    return PROXY_API_BASE_URL;
+  })();
+
+  return activeDetectionPromise;
+}
+
+// Automatically trigger server ping and best URL detection in browser on startup
+if (typeof window !== "undefined") {
+  try {
+    detectBestApiBaseUrl();
+  } catch (_) {}
+}
 
 function getApiBaseUrl() {
   if (currentApiBaseUrl) {
@@ -3866,6 +3972,7 @@ function getApiBaseUrl() {
 function setApiBaseUrl(url) {
   if (!url || typeof url !== "string") {
     currentApiBaseUrl = "";
+    activeDetectionPromise = null;
     if (typeof window !== "undefined" && window.localStorage) {
       try {
         window.localStorage.removeItem("bacuflix_api_base_url");
@@ -3875,6 +3982,7 @@ function setApiBaseUrl(url) {
   }
   const clean = url.trim().replace(/\/+$/, "");
   currentApiBaseUrl = clean;
+  activeDetectionPromise = Promise.resolve(clean);
   if (typeof window !== "undefined" && window.localStorage) {
     try {
       window.localStorage.setItem("bacuflix_api_base_url", clean);
@@ -3997,7 +4105,7 @@ function resolveSubtitleUrl(subtitleUrl) {
   return clean;
 }
 
-return {PROXY_API_BASE_URL: PROXY_API_BASE_URL, ORIGINAL_API_BASE_URL: ORIGINAL_API_BASE_URL, DEFAULT_API_BASE_URL: DEFAULT_API_BASE_URL, DEFAULT_CDN_URL: DEFAULT_CDN_URL, getApiBaseUrl: getApiBaseUrl, setApiBaseUrl: setApiBaseUrl, isProxyStreamingEnabled: isProxyStreamingEnabled, setProxyStreamingEnabled: setProxyStreamingEnabled, DOMESTIC_STREAM_HOSTS: DOMESTIC_STREAM_HOSTS, isDomesticStream: isDomesticStream, resolveStreamUrl: resolveStreamUrl, resolveSubtitleUrl: resolveSubtitleUrl};
+return {ORIGINAL_API_BASE_URL: ORIGINAL_API_BASE_URL, PROXY_API_BASE_URL: PROXY_API_BASE_URL, DEFAULT_API_BASE_URL: DEFAULT_API_BASE_URL, DEFAULT_CDN_URL: DEFAULT_CDN_URL, pingApiServer: pingApiServer, detectBestApiBaseUrl: detectBestApiBaseUrl, getApiBaseUrl: getApiBaseUrl, setApiBaseUrl: setApiBaseUrl, isProxyStreamingEnabled: isProxyStreamingEnabled, setProxyStreamingEnabled: setProxyStreamingEnabled, DOMESTIC_STREAM_HOSTS: DOMESTIC_STREAM_HOSTS, isDomesticStream: isDomesticStream, resolveStreamUrl: resolveStreamUrl, resolveSubtitleUrl: resolveSubtitleUrl};
 });
 registerModule("js/services/favorites-service.js", function (requireModule) {
 const STORAGE_KEY = "kkphim_favorites";

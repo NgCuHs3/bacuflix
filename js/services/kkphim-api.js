@@ -1,5 +1,11 @@
 import { fallbackPoster } from "../config/catalog-sources.js";
-import { getApiBaseUrl, resolveStreamUrl } from "../config/api-config.js";
+import {
+  getApiBaseUrl,
+  setApiBaseUrl,
+  resolveStreamUrl,
+  PROXY_API_BASE_URL,
+  ORIGINAL_API_BASE_URL
+} from "../config/api-config.js";
 
 export const BASE_URL = "https://phimapi.com";
 export const DEFAULT_CDN = "https://phimimg.com";
@@ -119,6 +125,14 @@ function fetchJson(url, timeoutMs = DEFAULT_TIMEOUT_MS) {
       return data;
     }, function (error) {
       clearTimeout(timer);
+      // Auto-fallback: If request failed on ORIGINAL_API_BASE_URL (DNS blocked, timeout, network error),
+      // seamlessly switch to PROXY_API_BASE_URL and retry once immediately.
+      if (url.startsWith(ORIGINAL_API_BASE_URL)) {
+        console.warn("[KKPhim API] Original server failed or DNS blocked, falling back to proxy...", error.message);
+        setApiBaseUrl(PROXY_API_BASE_URL);
+        const fallbackUrl = url.replace(ORIGINAL_API_BASE_URL, PROXY_API_BASE_URL);
+        return fetchJson(fallbackUrl, timeoutMs);
+      }
       throw error;
     });
   }
